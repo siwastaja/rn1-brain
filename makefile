@@ -5,9 +5,9 @@ LD = arm-none-eabi-gcc
 SIZE = arm-none-eabi-size
 OBJCOPY = arm-none-eabi-objcopy
 
-CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m0 -Wall -fstack-usage -Winline
+CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline
 ASMFLAGS = -S -fverbose-asm
-LDFLAGS = -mcpu=cortex-m0 -mthumb -nostartfiles -gc-sections
+LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
 DEPS = main.h own_std.h
 OBJ = stm32init.o main.o own_std.o
