@@ -10,6 +10,7 @@ extern void main();
 extern void uart_rx_handler();
 extern void adc_int_handler();
 extern void spi1_inthandler();
+extern void i2c1_inthandler();
 
 extern unsigned int _STACKTOP;
 
@@ -63,7 +64,7 @@ unsigned int * the_nvic_vector[97] __attribute__ ((section(".nvic_vector"))) =
 /* 0x00B0                    */ (unsigned int *) invalid_handler,
 /* 0x00B4                    */ (unsigned int *) invalid_handler,
 /* 0x00B8                    */ (unsigned int *) invalid_handler,
-/* 0x00BC                    */ (unsigned int *) invalid_handler,
+/* 0x00BC I2C1 event         */ (unsigned int *) i2c1_inthandler,
 /* 0x00C0                    */ (unsigned int *) invalid_handler,
 /* 0x00C4                    */ (unsigned int *) invalid_handler,
 /* 0x00C8                    */ (unsigned int *) invalid_handler,

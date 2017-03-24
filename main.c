@@ -109,6 +109,102 @@ void spi1_inthandler()
 	last_msg = msg;
 }
 
+
+/*
+	STM32 I2C implementation is a total catastrophe, it requires almost bitbanging-like sequencing.
+	For maximum performance, we hardwrite the optimal sequence of reading the relevant data from the
+	gyro, accelerometer and compass. Because using the I2C implementation requires a lot of waiting
+	for status bits, DMA is of little use; we use an interrupt handler implementing a state machine.
+*/
+volatile int i2c1_ready = 1;
+volatile int latest_gyro = 0;
+void i2c1_inthandler()
+{
+	static int state = 0;
+
+	uint32_t dummy;
+
+	switch(state)
+	{
+		case 0:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x40;
+			state++;
+		}
+		break;
+
+		case 1:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->DR = 0x0C;
+			I2C1->CR1 |= 1UL<<8; // START
+			state++;
+		}
+
+		case 2:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x41;
+			state++;
+		}
+		break;
+
+		case 3:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
+			I2C1->CR1 |= 1UL<<9; // STOP
+			state++;
+		}
+		break;
+
+		case 4:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro = I2C1->DR;
+			state = 0;
+		}
+		break;
+		default:
+		break;
+	}
+
+}
+
+int start_i2c1_sequence()
+{
+	if(!i2c1_ready)
+		return -1;
+
+	I2C1->CR1 |= 1UL<<8; // Instruct the START. The interrupt handler will take over.
+		return 0;
+}
+/*
+		// FXAS:
+		// Single byte read:
+		// Start, Write 0x40, get ACK, write regaddr, get ACK.
+		// StartRepeated, Write 0x41, get ack, get data. Send NACK(yes!) and stop.
+		// RegAddr 0x0C WHO_AM_I should return 0xD7
+		I2C1->CR1 |= 1UL<<8; // START
+		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+		I2C1->DR = 0x40;
+		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+		uint32_t dummy = I2C1->SR2;
+		I2C1->DR = 0x0C;
+		I2C1->CR1 |= 1UL<<8; // START
+		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+		I2C1->DR = 0x41;
+		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+		dummy = I2C1->SR2;
+		I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
+		I2C1->CR1 |= 1UL<<9; // STOP
+		while(!(I2C1->SR1 & (1UL<<6))) ; // Wait for RxNE
+		uint32_t reply = I2C1->DR;
+*/
+
 int main()
 {
 	/*
@@ -217,7 +313,7 @@ int main()
 		TRISE: for standard mode,
 		1us / 0.0333333us = 30 -> TRISE = 31
 	*/
-	I2C1->CR2 = 0b011110 /*APB1 bus is 30MHz*/;
+	I2C1->CR2 = 0b011110 /*APB1 bus is 30MHz*/ | 1UL<<10 /*Buffer IE*/ | 1UL<<9 /*Event IE*/;
 	I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
 	I2C1->TRISE = 30UL;
 	I2C1->CR1 |= 1UL; // Enable I2C
@@ -228,13 +324,12 @@ int main()
 	USART3->BRR = 16UL<<4 | 4UL;
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
-//	NVIC_EnableIRQ(SPI1_IRQn);
-//	__enable_irq();
+	NVIC_EnableIRQ(I2C1_EV_IRQn);
+	__enable_irq();
 	delay_ms(1);
 
 	usart_print("booty booty\r\n");
 
-	
 
 	LED_OFF();
 //	int kakka = 0;
@@ -249,31 +344,13 @@ int main()
 		LED_OFF();
 		delay_ms(1000);
 
-		// FXAS:
-		// Single byte read:
-		// Start, Write 0x40, get ACK, write regaddr, get ACK.
-		// StartRepeated, Write 0x41, get ack, get data. Send NACK(yes!) and stop.
-		// RegAddr 0x0C WHO_AM_I should return 0xD7
-		I2C1->CR1 |= 1UL<<8; // START
-		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
-		I2C1->DR = 0x40;
-		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
-		uint32_t dummy = I2C1->SR2;
-		I2C1->DR = 0x0C;
-		I2C1->CR1 |= 1UL<<8; // START
-		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
-		I2C1->DR = 0x41;
-		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
-		dummy = I2C1->SR2;
-		I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
-		I2C1->CR1 |= 1UL<<9; // STOP
-		while(!(I2C1->SR1 & (1UL<<6))) ; // Wait for RxNE
-		uint32_t reply = I2C1->DR;
-		LED_ON();
 		buf = o_str_append(buf, "gyro_reply=");
-		buf = o_utoa32(reply, buf);
+		buf = o_utoa32(latest_gyro, buf);
 		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
+
+		start_i2c1_sequence();
+
 
 /*		SPI1->DR = 123;
 		while(!(SPI1->SR & 1)) ;
