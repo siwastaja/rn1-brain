@@ -20,7 +20,8 @@
 #define MC2_CS0() {GPIOC->BSRR = 1UL<<(4+16);}
 #define MC1_CS1()  {GPIOC->BSRR = 1UL<<5;}
 #define MC1_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
-
+#define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
+#define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
 
 void delay_us(uint32_t i)
@@ -291,7 +292,7 @@ int main()
 
 
 	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */;
-	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/;
+	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/;
 
 	delay_us(100);
@@ -300,7 +301,7 @@ int main()
 	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
 	                 4UL<<0 | 4UL<<4 /*I2C1*/;
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
-
+	GPIOD->AFR[1] = 2UL<<28 /*TIM4*/;
 
 	             // Mode:
 		     // 00 = General Purpose In
@@ -325,7 +326,7 @@ int main()
 	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOD->MODER   = 0b00000000000000000000000000000000;
+	GPIOD->MODER   = 0b10000000000000000000000100000000;
 	GPIOD->OSPEEDR = 0b00000000000000000000000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -372,6 +373,13 @@ int main()
 	USART3->BRR = 16UL<<4 | 4UL;
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
+	TIM4->CR1 = 1UL<<7 /*auto preload*/ | 0b01UL<<5 /*centermode*/;
+	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
+	TIM4->CCER = 1UL<<12 /*CH4 out ena*/;
+	TIM4->ARR = 1024;
+	TIM4->CCR4 = 500;
+	TIM4->CR1 |= 1UL; // Enable.
+
 //	NVIC_EnableIRQ(I2C1_EV_IRQn);
 	NVIC_EnableIRQ(SPI1_IRQn);
 	NVIC_EnableIRQ(USART3_IRQn);
@@ -380,10 +388,11 @@ int main()
 
 	usart_print("booty booty\r\n");
 
-
+	PSU12V_ENA();
 	LED_OFF();
 	int kakka = 0;
 	uint16_t speed = 0;
+
 	while(1)
 	{
 		char buffer[1000];
