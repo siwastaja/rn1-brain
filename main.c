@@ -12,10 +12,14 @@
 #define CHARGER_DIS() {GPIOA->BSRR = 1UL<<(15+16);}
 #define PSU5V_ENA() {GPIOE->BSRR = 1UL<<15;}
 #define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
-#define SPI1_SSI1() {SPI1->CR1 |= 1UL<<8;}
-#define SPI1_SSI0() {SPI1->CR1 &= ~(1UL<<8);}
 #define MC4_CS1()  {GPIOE->BSRR = 1UL<<6;}
 #define MC4_CS0() {GPIOE->BSRR = 1UL<<(6+16);}
+#define MC3_CS1()  {GPIOA->BSRR = 1UL<<4;}
+#define MC3_CS0() {GPIOA->BSRR = 1UL<<(4+16);}
+#define MC2_CS1()  {GPIOC->BSRR = 1UL<<4;}
+#define MC2_CS0() {GPIOC->BSRR = 1UL<<(4+16);}
+#define MC1_CS1()  {GPIOC->BSRR = 1UL<<5;}
+#define MC1_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
 
 
 
@@ -55,17 +59,6 @@ void error(int code)
 	}
 }
 
-void uart_rx_handler()
-{
-	// This SR-then-DR read sequence clears error flags:
-	uint32_t status = USART3->SR;
-	char byte = USART3->DR;
-	if(status & 1UL<<3)
-	{
-		// Overrun, do something
-	}
-}
-
 void adc_int_handler()
 {
 	LED_ON();
@@ -90,28 +83,83 @@ volatile int sr = 0;
 volatile int cr1 = 0;
 
 volatile uint16_t last_msg;
+
+typedef struct
+{
+	int last_msg;
+	int16_t cur_b;
+	int16_t cur_c;
+} motcon_status_t;
+
+typedef struct
+{
+	int16_t speed;
+	int16_t cur_limit;
+} motcon_cmd_t;
+
+typedef struct
+{
+	motcon_status_t status;
+	motcon_cmd_t cmd;
+} motcon_t;
+
+#define NUM_MOTCONS 4
+volatile motcon_t motcons[NUM_MOTCONS];
+
+
+void uart_rx_handler()
+{
+	// This SR-then-DR read sequence clears error flags:
+	LED_ON();
+	uint32_t status = USART3->SR;
+	char byte = USART3->DR;
+	if(status & 1UL<<3)
+	{
+		// Overrun, do something
+	}
+
+	switch(byte)
+	{
+		case 'a': motcons[2].cmd.speed += 80; break;
+		case 'q': motcons[2].cmd.speed -= 80; break;
+		case 's': motcons[2].cmd.speed += 80; motcons[3].cmd.speed += 80; break;
+		case 'w': motcons[2].cmd.speed -= 80; motcons[3].cmd.speed -= 80;break;
+		case 'd': motcons[3].cmd.speed += 80; break;
+		case 'e': motcons[3].cmd.speed -= 80; break;
+		default: break;
+	}
+}
+
+
+
+volatile int cur_motcon = 0;
 void spi1_inthandler()
 {
 	// Receive done, slave can be de-selected.
-	sr = SPI1->SR;
-	MC4_CS1();
-	uint16_t msg = SPI1->DR;
-	cr1 = SPI1->CR1;
-//	if(SPI1->SR & (1<<6))
-
-//	if(!(SPI1->SR & (1<<1)))
-	if(msg != 0)
+	switch(cur_motcon)
 	{
-		txnotemptys++;
-//		LED_ON();
+		case 0: {MC1_CS1();} break;
+		case 1: {MC2_CS1();} break;
+		case 2: {MC3_CS1();} break;
+		case 3: {MC4_CS1();} break;
+		default: break;
 	}
+	uint16_t msg = SPI1->DR;
 
-	last_msg = msg;
+	motcons[cur_motcon].status.last_msg = msg;
+
+	if(cur_motcon == NUM_MOTCONS-1)
+		cur_motcon = 0;
+	else
+		cur_motcon++;
 }
 
 
 /*
-	STM32 I2C implementation is a total catastrophe, it requires almost bitbanging-like sequencing.
+	STM32 I2C implementation is a total catastrophe, it requires almost bitbanging-like sequencing by software,
+	and provides no proper buffer registers (let alone a FIFO) - so we need to poll some status bits and write
+	the data register at the exactly correct timing!
+
 	For maximum performance, we hardwrite the optimal sequence of reading the relevant data from the
 	gyro, accelerometer and compass. Because using the I2C implementation requires a lot of waiting
 	for status bits, DMA is of little use; we use an interrupt handler implementing a state machine.
@@ -207,6 +255,7 @@ int start_i2c1_sequence()
 
 int main()
 {
+	int i;
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -245,6 +294,14 @@ int main()
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/;
 
+	delay_us(100);
+
+	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
+	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
+	                 4UL<<0 | 4UL<<4 /*I2C1*/;
+	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
+
+
 	             // Mode:
 		     // 00 = General Purpose In
 	             // 01 = General Purpose Out
@@ -260,7 +317,7 @@ int main()
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOB->MODER   = 0b10101000000010100000000000000000;
-	GPIOB->OSPEEDR = 0b00000000000001010000000000000000;
+	GPIOB->OSPEEDR = 0b00000000000001010000010001000000;
 	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -284,22 +341,13 @@ int main()
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
 
-	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28; // SPI1 alternate functions.
-	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
-	                 4UL<<0 | 4UL<<4 /*I2C1*/;
-	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
-
 	// SPI1 @ APB2 = 60 MHz
-//	SPI1->CR1 = 1UL<<11 /*16-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
-//		0b010UL<<3 /*div 8 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
+	SPI1->CR1 = 1UL<<11 /*16-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
+		0b010UL<<3 /*div 8 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
 
+	SPI1->CR2 = 1UL<<6 /*RX not empty interrupt*/;
 
-//	SPI1->CR2 = 1UL<<6 /*RX not empty interrupt*/;
-
-//	SPI1->CR1 |= 1UL<<6; // Enable SPI
-
-	SPI1->CR1 = 1UL<<9 | 1UL<<8 | 0b010UL<<3 | 1UL<<2;
-	SPI1->CR1 |= 1UL<<6;
+	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
 	MC4_CS1();
 
@@ -324,7 +372,9 @@ int main()
 	USART3->BRR = 16UL<<4 | 4UL;
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
-	NVIC_EnableIRQ(I2C1_EV_IRQn);
+//	NVIC_EnableIRQ(I2C1_EV_IRQn);
+	NVIC_EnableIRQ(SPI1_IRQn);
+	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
 	delay_ms(1);
 
@@ -332,67 +382,70 @@ int main()
 
 
 	LED_OFF();
-//	int kakka = 0;
+	int kakka = 0;
 	uint16_t speed = 0;
 	while(1)
 	{
-
 		char buffer[1000];
 		char* buf = buffer;
-		LED_ON();
-		delay_ms(1000);
-		LED_OFF();
-		delay_ms(1000);
 
-		buf = o_str_append(buf, "gyro_reply=");
-		buf = o_utoa32(latest_gyro, buf);
-		buf = o_str_append(buf, "\r\n");
-		usart_print(buffer);
+		delay_ms(1);
 
-		start_i2c1_sequence();
+		switch(cur_motcon)
+		{
+			case 0: {MC1_CS0();} break;
+			case 1: {MC2_CS0();} break;
+			case 2: {MC3_CS0();} break;
+			case 3: {MC4_CS0();} break;
+			default: break;
+		}
 
-
-/*		SPI1->DR = 123;
-		while(!(SPI1->SR & 1)) ;
-		buf = o_str_append(buf, " data read=");
-		buf = o_utoa32(SPI1->DR, buf);
-		buf = o_str_append(buf, "\r\n");
-		usart_print(buffer);
-*/
-
-
-/*		buf = o_str_append(buf, " sr now=");
-		buf = o_utoa32(SPI1->SR, buf);
-		buf = o_str_append(buf, " sr was=");
-		buf = o_utoa32(sr, buf);
-		buf = o_str_append(buf, " cr1 was=");
-		buf = o_utoa32(cr1, buf);
-		buf = o_str_append(buf, " ovrs=");
-		buf = o_utoa32(ovrs, buf);
-		buf = o_str_append(buf, " txnotemptys=");
-		buf = o_utoa32(txnotemptys, buf);
-		buf = o_str_append(buf, " last_msg=");
-		buf = o_utoa16(last_msg, buf);
-		buf = o_str_append(buf, "\r\n");
-		usart_print(buffer);
-*/
-
-/*		kakka++;
-		if(kakka<1000000)
-			continue;
+		if(motcons[cur_motcon].cmd.speed >= 0)
+			SPI1->DR = 11UL<<10 | (motcons[cur_motcon].cmd.speed & 0x3FF);
 		else
-			kakka=0;
-*/
-		MC4_CS0();
-//		SPI1_SSI0();
-//		SPI1->DR = 12345; // 11UL<<10 | speed;
-//		while(!(SPI1->SR & 2)) ;
-//		SPI1->DR = 23456;
+			SPI1->DR = 12UL<<10 | ((motcons[cur_motcon].cmd.speed*-1) & 0x3FF);
 
-		speed += 20;
+		kakka++;
+		if(kakka<100)
+			continue;
 
-		if(speed > 300)
-			speed = 0;
+		for(i=2; i<4; i++)
+		{
+			if(motcons[i].cmd.speed > 0)
+				motcons[i].cmd.speed-=5;
+			else if(motcons[i].cmd.speed < 0)
+				motcons[i].cmd.speed+=5;
+		}
+
+		kakka = 0;
+		LED_OFF();
+//		buf = o_str_append(buf, " gyro_reply=");
+//		buf = o_utoa32(latest_gyro, buf);
+//		buf = o_str_append(buf, " last_msg=");
+//		buf = o_utoa32(last_msg, buf);
+		buf = o_str_append(buf, " MC1 head=");
+		buf = o_utoa32((motcons[0].status.last_msg>>10)&0b111111, buf);
+		buf = o_str_append(buf, " data=");
+		buf = o_utoa32(motcons[0].status.last_msg&0x3ff, buf);
+		buf = o_str_append(buf, "  MC2 head=");
+		buf = o_utoa32((motcons[1].status.last_msg>>10)&0b111111, buf);
+		buf = o_str_append(buf, " data=");
+		buf = o_utoa32(motcons[1].status.last_msg&0x3ff, buf);
+		buf = o_str_append(buf, "  MC3 head=");
+		buf = o_utoa32((motcons[2].status.last_msg>>10)&0b111111, buf);
+		buf = o_str_append(buf, " data=");
+		buf = o_utoa32(motcons[2].status.last_msg&0x3ff, buf);
+		buf = o_str_append(buf, "  MC4 head=");
+		buf = o_utoa32((motcons[3].status.last_msg>>10)&0b111111, buf);
+		buf = o_str_append(buf, " data=");
+		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
+		buf = o_str_append(buf, "\r\n");
+		usart_print(buffer);
+
+//		start_i2c1_sequence();
+
+
+		SPI1->DR = 11UL<<10 | speed;
 
 		CHARGER_ENA();
 //		PSU5V_ENA();
