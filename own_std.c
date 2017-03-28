@@ -51,6 +51,22 @@ char* o_utoa16(uint16_t val, char* str)
 	return str;
 }
 
+char* o_utoa16_fixed(uint16_t val, char* str)
+{
+	static const uint16_t div[5] = {10000,1000,100,10,1};
+	int i;
+	for(i = 0; i < 5; i++)
+	{
+		char c = val/div[i];
+		val -= div[i]*c;
+		c += '0';
+
+		*str++ = c;
+	}
+	*str = 0;
+	return str;
+}
+
 char* o_utoa32(uint32_t val, char* str)
 {
 	static const uint32_t div[10] = {1000000000UL,100000000UL,10000000UL,1000000UL,100000UL,10000UL,1000UL,100UL,10UL,1UL};
@@ -80,6 +96,21 @@ char* o_itoa16(int16_t val, char* str)
 	}
 
 	return o_utoa16(val, str);
+}
+
+char* o_itoa16_fixed(int16_t val, char* str)
+{
+	if(val < 0)
+	{
+		*str++ = '-';
+		val *= -1;
+	}
+	else
+	{
+		*str++ = '+';
+	}
+
+	return o_utoa16_fixed(val, str);
 }
 
 char* o_itoa32(int32_t val, char* str)

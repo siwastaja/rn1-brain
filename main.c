@@ -166,10 +166,30 @@ void spi1_inthandler()
 	for status bits, DMA is of little use; we use an interrupt handler implementing a state machine.
 */
 volatile int i2c1_ready = 1;
-volatile int latest_gyro = 0;
+
+typedef struct
+{
+	uint8_t status_reg;
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} gyro_data_t;
+
+volatile gyro_data_t latest_gyro;
+
+typedef struct
+{
+	uint8_t status_reg;
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} xcel_data_t;
+
+volatile xcel_data_t latest_xcel;
+
 void i2c1_inthandler()
 {
-	static int state = 0;
+	static int state = 11;
 
 	uint32_t dummy;
 
@@ -187,7 +207,7 @@ void i2c1_inthandler()
 		if(I2C1->SR1 & 2) // ADDR = Address sent
 		{
 			dummy = I2C1->SR2;
-			I2C1->DR = 0x0C;
+			I2C1->DR = 0x00; // Status register address
 			I2C1->CR1 |= 1UL<<8; // START
 			state++;
 		}
@@ -204,8 +224,7 @@ void i2c1_inthandler()
 		if(I2C1->SR1 & 2) // ADDR = Address sent
 		{
 			dummy = I2C1->SR2;
-			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
-			I2C1->CR1 |= 1UL<<9; // STOP
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
 			state++;
 		}
 		break;
@@ -213,10 +232,170 @@ void i2c1_inthandler()
 		case 4:
 		if(I2C1->SR1 & (1UL<<6))
 		{
-			latest_gyro = I2C1->DR;
-			state = 0;
+			latest_gyro.status_reg = I2C1->DR;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
 		}
 		break;
+
+		case 5:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.x = (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 6:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.x |= (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 7:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.y = (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 8:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.y |= (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 9:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.z = (I2C1->DR)<<8;
+			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
+			I2C1->CR1 |= 1UL<<9; // generate STOP
+			state++;
+		}
+		break;
+
+		case 10:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_gyro.z |= (I2C1->DR);
+			I2C1->CR1 |= 1UL<<8; // Generate start
+			state++;
+		}
+		break;
+
+
+
+
+		case 11:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x3C; //3A
+			state++;
+		}
+		break;
+
+		case 12:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->DR = 0x27 | 0x80; // Status register w/ autoincr
+			I2C1->CR1 |= 1UL<<8; // START
+			state++;
+		}
+
+		case 13:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x3B;
+			state++;
+		}
+		break;
+
+		case 14:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 15:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.status_reg = I2C1->DR;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 16:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.x = (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 17:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.x |= (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 18:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.y = (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 19:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.y |= (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 20:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.z = (I2C1->DR);
+			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
+			I2C1->CR1 |= 1UL<<9; // generate STOP
+			state++;
+		}
+		break;
+
+		case 21:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_xcel.z |= (I2C1->DR)<<8;
+			state=11;
+		}
+		break;
+
+
+
+
 		default:
 		break;
 	}
@@ -231,28 +410,62 @@ int start_i2c1_sequence()
 	I2C1->CR1 |= 1UL<<8; // Instruct the START. The interrupt handler will take over.
 		return 0;
 }
+
+int init_i2c1_devices()
+{
+	uint32_t dummy;
+	// Init gyro
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x40;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x13;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b10; // Go to ACTIVE mode
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
+	// Init Accel
 /*
-		// FXAS:
-		// Single byte read:
-		// Start, Write 0x40, get ACK, write regaddr, get ACK.
-		// StartRepeated, Write 0x41, get ack, get data. Send NACK(yes!) and stop.
-		// RegAddr 0x0C WHO_AM_I should return 0xD7
-		I2C1->CR1 |= 1UL<<8; // START
-		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
-		I2C1->DR = 0x40;
-		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
-		uint32_t dummy = I2C1->SR2;
-		I2C1->DR = 0x0C;
-		I2C1->CR1 |= 1UL<<8; // START
-		while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
-		I2C1->DR = 0x41;
-		while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
-		dummy = I2C1->SR2;
-		I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
-		I2C1->CR1 |= 1UL<<9; // STOP
-		while(!(I2C1->SR1 & (1UL<<6))) ; // Wait for RxNE
-		uint32_t reply = I2C1->DR;
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x32;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x0F;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b10; // Go to ACTIVE mode
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
 */
+
+	I2C1->SR1 = 0; // Zero regs.
+
+	return 0;
+
+/*	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x40;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	uint32_t dummy = I2C1->SR2;
+	I2C1->DR = 0x13;
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x41;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for last data)
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & (1UL<<6))) ; // Wait for RxNE
+	uint32_t reply = I2C1->DR;
+*/
+}
 
 int main()
 {
@@ -380,11 +593,17 @@ int main()
 	TIM4->CCR4 = 500;
 	TIM4->CR1 |= 1UL; // Enable.
 
-//	NVIC_EnableIRQ(I2C1_EV_IRQn);
 	NVIC_EnableIRQ(SPI1_IRQn);
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
-	delay_ms(1);
+	delay_ms(2000);
+
+//	init_i2c1_devices();
+
+	delay_ms(2000);
+
+	NVIC_EnableIRQ(I2C1_EV_IRQn);
+
 
 	usart_print("booty booty\r\n");
 
@@ -415,7 +634,14 @@ int main()
 			SPI1->DR = 12UL<<10 | ((motcons[cur_motcon].cmd.speed*-1) & 0x3FF);
 
 		kakka++;
-		if(kakka<100)
+
+
+		if(kakka==100)
+		{
+			start_i2c1_sequence();
+		}
+
+		if(kakka<200)
 			continue;
 
 		for(i=2; i<4; i++)
@@ -428,10 +654,22 @@ int main()
 
 		kakka = 0;
 		LED_OFF();
-//		buf = o_str_append(buf, " gyro_reply=");
-//		buf = o_utoa32(latest_gyro, buf);
-//		buf = o_str_append(buf, " last_msg=");
-//		buf = o_utoa32(last_msg, buf);
+		buf = o_str_append(buf, " gyro_stat=");
+		buf = o_utoa16(latest_gyro.status_reg, buf);
+		buf = o_str_append(buf, " gyro=");
+		buf = o_itoa16_fixed(latest_gyro.x, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_gyro.y, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_gyro.z, buf);
+		buf = o_str_append(buf, " xcel_stat=");
+		buf = o_utoa16(latest_xcel.status_reg, buf);
+		buf = o_str_append(buf, " xcel=");
+		buf = o_itoa16_fixed(latest_xcel.x, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_xcel.y, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_xcel.z, buf);
 		buf = o_str_append(buf, " MC1 head=");
 		buf = o_utoa32((motcons[0].status.last_msg>>10)&0b111111, buf);
 		buf = o_str_append(buf, " data=");
@@ -451,13 +689,12 @@ int main()
 		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
 
-//		start_i2c1_sequence();
 
 
 		SPI1->DR = 11UL<<10 | speed;
 
 		CHARGER_ENA();
-//		PSU5V_ENA();
+		PSU5V_ENA();
 
 	}
 
