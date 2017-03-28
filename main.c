@@ -187,6 +187,20 @@ typedef struct
 
 volatile xcel_data_t latest_xcel;
 
+typedef struct __attribute__ ((__packed__))
+{
+	uint8_t start;
+	uint8_t idx;
+	uint16_t speed;
+	uint32_t data0;
+	uint32_t data1;
+	uint32_t data2;
+	uint32_t data3;
+	uint16_t checksum;
+} lidar_data_t;
+
+volatile lidar_data_t latest_lidar;
+
 void i2c1_inthandler()
 {
 	static int state = 11;
@@ -504,13 +518,14 @@ int main()
 	while((RCC->CFGR & (0b11UL<<2)) != (0b10UL<<2)) ; // Wait for switchover to PLL.
 
 
-	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */;
+	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA1*/;
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/;
-	RCC->APB2ENR |= 1UL<<12 /*SPI1*/;
+	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/;
 
 	delay_us(100);
 
 	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
+	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
 	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
 	                 4UL<<0 | 4UL<<4 /*I2C1*/;
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
@@ -530,7 +545,7 @@ int main()
 	GPIOA->OSPEEDR = 0b00000000000000000100010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOB->MODER   = 0b10101000000010100000000000000000;
+	GPIOB->MODER   = 0b10101000000010101010000000000000;
 	GPIOB->OSPEEDR = 0b00000000000001010000010001000000;
 	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
@@ -596,21 +611,48 @@ int main()
 	NVIC_EnableIRQ(SPI1_IRQn);
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
-	delay_ms(2000);
+	delay_ms(1);
 
 //	init_i2c1_devices();
 
-	delay_ms(2000);
+//	delay_ms(2000);
 
-	NVIC_EnableIRQ(I2C1_EV_IRQn);
+//	NVIC_EnableIRQ(I2C1_EV_IRQn);
 
 
 	usart_print("booty booty\r\n");
 
+
 	PSU12V_ENA();
+	PSU5V_ENA();
+	CHARGER_ENA();
+
+	delay_ms(500); // Let the lidar boot.
+
+	// USART1 (lidar) = APB2 = 60 MHz
+	// 16x oversampling
+	// 115200bps -> Baudrate register = 32.5625 = 32 9/16
+	// USART1 RX is mapped to DMA2, Stream2, Ch4
+
+	DMA2_Stream2->PAR = (uint32_t)&(USART1->DR);
+	DMA2_Stream2->M0AR = (uint32_t)(&latest_lidar);
+	DMA2_Stream2->NDTR = 22;
+	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
+
+	DMA2->LIFCR = 0xffffffff; // Clear all flags
+	DMA2->HIFCR = 0xffffffff;
+	DMA2_Stream2->CR |= 1UL; // Enable
+
+	USART1->BRR = 32UL<<4 | 9UL;
+	USART1->CR3 = 1UL<<6 /*RX DMA*/;
+	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+
+
 	LED_OFF();
 	int kakka = 0;
 	uint16_t speed = 0;
+
 
 	while(1)
 	{
@@ -635,10 +677,9 @@ int main()
 
 		kakka++;
 
-
 		if(kakka==100)
 		{
-			start_i2c1_sequence();
+//			start_i2c1_sequence();
 		}
 
 		if(kakka<200)
@@ -654,6 +695,8 @@ int main()
 
 		kakka = 0;
 		LED_OFF();
+
+/*
 		buf = o_str_append(buf, " gyro_stat=");
 		buf = o_utoa16(latest_gyro.status_reg, buf);
 		buf = o_str_append(buf, " gyro=");
@@ -686,15 +729,33 @@ int main()
 		buf = o_utoa32((motcons[3].status.last_msg>>10)&0b111111, buf);
 		buf = o_str_append(buf, " data=");
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
+*/
+
+		buf = o_str_append(buf, "NDTR=");
+		buf = o_utoa16(DMA2_Stream2->NDTR, buf);
+
+		buf = o_str_append(buf, " LIDAR: start=");
+		buf = o_utoa16(latest_lidar.start, buf);
+		buf = o_str_append(buf, " idx=");
+		buf = o_utoa16_fixed(latest_lidar.idx, buf);
+		buf = o_str_append(buf, " speed=");
+		buf = o_utoa16_fixed(latest_lidar.speed, buf);
+		buf = o_str_append(buf, " d0=");
+		buf = o_utoa32(latest_lidar.data0, buf);
+		buf = o_str_append(buf, " d1=");
+		buf = o_utoa32(latest_lidar.data1, buf);
+		buf = o_str_append(buf, " d2=");
+		buf = o_utoa32(latest_lidar.data2, buf);
+		buf = o_str_append(buf, " d3=");
+		buf = o_utoa32(latest_lidar.data3, buf);
+		buf = o_str_append(buf, " chk=");
+		buf = o_utoa16(latest_lidar.checksum, buf);
 		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
 
 
 
 		SPI1->DR = 11UL<<10 | speed;
-
-		CHARGER_ENA();
-		PSU5V_ENA();
 
 	}
 
