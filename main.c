@@ -187,6 +187,18 @@ typedef struct
 
 volatile xcel_data_t latest_xcel;
 
+typedef struct
+{
+	uint8_t status_reg;
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} compass_data_t;
+
+volatile uint8_t x1, x2;
+
+volatile compass_data_t latest_compass;
+
 typedef struct __attribute__ ((__packed__))
 {
 	uint8_t start;
@@ -203,7 +215,7 @@ volatile lidar_data_t latest_lidar;
 
 void i2c1_inthandler()
 {
-	static int state = 11;
+	static int state = 0;
 
 	uint32_t dummy;
 
@@ -313,7 +325,7 @@ void i2c1_inthandler()
 		case 11:
 		if(I2C1->SR1 & 1) // SB = Start Generated
 		{
-			I2C1->DR = 0x3C; //3A
+			I2C1->DR = 0x3A;
 			state++;
 		}
 		break;
@@ -403,10 +415,110 @@ void i2c1_inthandler()
 		if(I2C1->SR1 & (1UL<<6))
 		{
 			latest_xcel.z |= (I2C1->DR)<<8;
-			state=11;
+			I2C1->CR1 |= 1UL<<8; // Generate start
+			state++;
 		}
 		break;
 
+
+
+
+		case 22:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x3C;
+			state++;
+		}
+		break;
+
+		case 23:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->DR = 0x27; // Status register address
+			I2C1->CR1 |= 1UL<<8; // START
+			state++;
+		}
+
+		case 24:
+		if(I2C1->SR1 & 1) // SB = Start Generated
+		{
+			I2C1->DR = 0x3D;
+			state++;
+		}
+		break;
+
+		case 25:
+		if(I2C1->SR1 & 2) // ADDR = Address sent
+		{
+			dummy = I2C1->SR2;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 26:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.status_reg = I2C1->DR;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 27:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.x = (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 28:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.x |= (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 29:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.y = (I2C1->DR);
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 30:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.y |= (I2C1->DR)<<8;
+			I2C1->CR1 |= 1UL<<10; // Generate ACK
+			state++;
+		}
+		break;
+
+		case 31:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.z = (I2C1->DR);
+			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
+			I2C1->CR1 |= 1UL<<9; // generate STOP
+			state++;
+		}
+		break;
+
+		case 32:
+		if(I2C1->SR1 & (1UL<<6))
+		{
+			latest_compass.z |= (I2C1->DR)<<8;
+			state=0;
+		}
+		break;
 
 
 
@@ -444,20 +556,88 @@ int init_i2c1_devices()
 	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
 
 	// Init Accel
-/*
+
 	I2C1->CR1 |= 1UL<<8; // START
 	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
-	I2C1->DR = 0x32;
+	I2C1->DR = 0x3A;
 	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
 	dummy = I2C1->SR2;
 	while(!(I2C1->SR1 & 1UL<<7)) ;
-	I2C1->DR = 0x0F;
+	I2C1->DR = 0x20; // CTRL_REG1_A
 	while(!(I2C1->SR1 & 1UL<<7)) ;
-	I2C1->DR = 0b10; // Go to ACTIVE mode
+	I2C1->DR = 0b101<<4 /*400Hz*/ | 1<<3 /*Must be set*/ | 0b111 /*Z,Y,X ena*/;
 	while(!(I2C1->SR1 & 1UL<<7)) ;
 	I2C1->CR1 |= 1UL<<9; // STOP
 	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
-*/
+
+
+	// Init Compass
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x3C;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x20; // CTRL_REG1_M
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b11<<5 /*Ultra-high performance mode*/ | 0b101<<2 /*20Hz*/ | 0 /* SELF TEST*/;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x3C;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x21; // CTRL_REG2_M
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b11<<5 /*must be set*/;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x3C;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x22; // CTRL_REG3_M
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b00<0 /*continuous*/;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x3C;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x23; // CTRL_REG4_M
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0b11<2 /*Z in ultra-high, too*/;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
+	I2C1->CR1 |= 1UL<<8; // START
+	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	I2C1->DR = 0x3C;
+	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	dummy = I2C1->SR2;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 0x24; // CTRL_REG5_M
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->DR = 1<<6 /*"block data update"; must be set*/;
+	while(!(I2C1->SR1 & 1UL<<7)) ;
+	I2C1->CR1 |= 1UL<<9; // STOP
+	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+
 
 	I2C1->SR1 = 0; // Zero regs.
 
@@ -578,6 +758,15 @@ int main()
 
 	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
+	// SPI2 @ = 30 MHz
+	// ADNS3080 optical flow sensor
+	// Frame rate 2000..6469 fps
+	// Time between write commands min 50 us
+	// Between write and read 50 us
+	// After read 250 us
+	// Time after address: 50 us (for motion+motion burst: 75 us)
+	// 500 ns min period -> 2 MHz max
+
 	MC4_CS1();
 
 	/*
@@ -611,16 +800,17 @@ int main()
 	NVIC_EnableIRQ(SPI1_IRQn);
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
-	delay_ms(1);
-
-//	init_i2c1_devices();
-
-//	delay_ms(2000);
-
-//	NVIC_EnableIRQ(I2C1_EV_IRQn);
-
+	delay_ms(1000);
 
 	usart_print("booty booty\r\n");
+
+	init_i2c1_devices();
+
+	delay_ms(100);
+
+	NVIC_EnableIRQ(I2C1_EV_IRQn);
+
+
 
 
 	PSU12V_ENA();
@@ -679,10 +869,10 @@ int main()
 
 		if(kakka==100)
 		{
-//			start_i2c1_sequence();
+			start_i2c1_sequence();
 		}
 
-		if(kakka<200)
+		if(kakka<1000)
 			continue;
 
 		for(i=2; i<4; i++)
@@ -696,23 +886,37 @@ int main()
 		kakka = 0;
 		LED_OFF();
 
-/*
-		buf = o_str_append(buf, " gyro_stat=");
-		buf = o_utoa16(latest_gyro.status_reg, buf);
-		buf = o_str_append(buf, " gyro=");
+
+/*		buf = o_str_append(buf, " gyro=");
+		buf = o_utoa16_fixed(latest_gyro.status_reg, buf);
+		buf = o_str_append(buf, "  ");
 		buf = o_itoa16_fixed(latest_gyro.x, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_gyro.y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_gyro.z, buf);
-		buf = o_str_append(buf, " xcel_stat=");
-		buf = o_utoa16(latest_xcel.status_reg, buf);
+
+
 		buf = o_str_append(buf, " xcel=");
+		buf = o_utoa16_fixed(latest_xcel.status_reg, buf);
+		buf = o_str_append(buf, "  ");
 		buf = o_itoa16_fixed(latest_xcel.x, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_xcel.y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_xcel.z, buf);
+
+		buf = o_str_append(buf, " compass=");
+		buf = o_utoa16_fixed(latest_compass.status_reg, buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_itoa16_fixed(latest_compass.x, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_compass.y, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_compass.z, buf);
+
+*/
+/*
 		buf = o_str_append(buf, " MC1 head=");
 		buf = o_utoa32((motcons[0].status.last_msg>>10)&0b111111, buf);
 		buf = o_str_append(buf, " data=");
@@ -731,9 +935,7 @@ int main()
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
 */
 
-		buf = o_str_append(buf, "NDTR=");
-		buf = o_utoa16(DMA2_Stream2->NDTR, buf);
-
+/*
 		buf = o_str_append(buf, " LIDAR: start=");
 		buf = o_utoa16(latest_lidar.start, buf);
 		buf = o_str_append(buf, " idx=");
@@ -750,6 +952,8 @@ int main()
 		buf = o_utoa32(latest_lidar.data3, buf);
 		buf = o_str_append(buf, " chk=");
 		buf = o_utoa16(latest_lidar.checksum, buf);
+*/
+
 		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
 
