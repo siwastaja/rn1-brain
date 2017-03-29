@@ -23,6 +23,9 @@
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
+#define FLOW_CS1() {GPIOB->BSRR = 1UL<<12;}
+#define FLOW_CS0() {GPIOB->BSRR = 1UL<<(12+16);}
+
 
 void delay_us(uint32_t i)
 {
@@ -663,7 +666,8 @@ int init_i2c1_devices()
 
 int main()
 {
-	int i;
+	int i, dummy;
+
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -725,8 +729,8 @@ int main()
 	GPIOA->OSPEEDR = 0b00000000000000000100010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOB->MODER   = 0b10101000000010101010000000000000;
-	GPIOB->OSPEEDR = 0b00000000000001010000010001000000;
+	GPIOB->MODER   = 0b10101001000010101010000000000000;
+	GPIOB->OSPEEDR = 0b01000101000001010000010001000000;
 	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -758,7 +762,7 @@ int main()
 
 	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
-	// SPI2 @ = 30 MHz
+	// SPI2 @ APB1 = 30 MHz
 	// ADNS3080 optical flow sensor
 	// Frame rate 2000..6469 fps
 	// Time between write commands min 50 us
@@ -766,6 +770,14 @@ int main()
 	// After read 250 us
 	// Time after address: 50 us (for motion+motion burst: 75 us)
 	// 500 ns min period -> 2 MHz max
+
+	SPI2->CR1 = 0UL<<11 /*8-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
+		0b100UL<<3 /*div 32 = 0.9375 MHz*/ | 1UL<<2 /*Master*/;
+
+//	SPI2->CR2 = 1UL<<6 /*RX not empty interrupt*/;
+
+	SPI2->CR1 |= 1UL<<6; // Enable SPI
+
 
 	MC4_CS1();
 
@@ -797,19 +809,21 @@ int main()
 	TIM4->CCR4 = 500;
 	TIM4->CR1 |= 1UL; // Enable.
 
-	NVIC_EnableIRQ(SPI1_IRQn);
-	NVIC_EnableIRQ(USART3_IRQn);
-	__enable_irq();
+
+	FLOW_CS1();
+
+//	NVIC_EnableIRQ(SPI1_IRQn);
+//	NVIC_EnableIRQ(USART3_IRQn);
+//	__enable_irq();
 	delay_ms(1000);
 
 	usart_print("booty booty\r\n");
 
-	init_i2c1_devices();
+//	init_i2c1_devices();
 
 	delay_ms(100);
 
-	NVIC_EnableIRQ(I2C1_EV_IRQn);
-
+//	NVIC_EnableIRQ(I2C1_EV_IRQn);
 
 
 
@@ -842,6 +856,48 @@ int main()
 	LED_OFF();
 	int kakka = 0;
 	uint16_t speed = 0;
+
+	while(1)
+	{
+		char buffer[1000];
+		char* buf = buffer;
+		uint8_t data[7];
+		FLOW_CS0();
+		delay_us(100);
+		SPI2->DR = 0x50; // motion_burst read
+		while(!(SPI2->SR & 1));
+		dummy = SPI2->DR;
+		delay_us(150);
+		for(i = 0; i < 7; i++)
+		{
+			SPI2->DR = 0; // dummy write
+			while(!(SPI2->SR & 1));
+			data[i] = SPI2->DR;
+		}
+		delay_us(100);
+		FLOW_CS1();
+
+
+		buf = o_str_append(buf, " flow: ");
+		buf = o_utoa16_fixed(data[0], buf);
+		buf = o_str_append(buf, "  X ");
+		buf = o_itoa16_fixed((int8_t)data[1], buf);
+		buf = o_str_append(buf, "  Y ");
+		buf = o_itoa16_fixed((int8_t)data[2], buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(data[3], buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(data[4], buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(data[5], buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(data[6], buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_str_append(buf, "\r\n");
+		usart_print(buffer);
+
+		delay_ms(200);
+	}
 
 
 	while(1)
