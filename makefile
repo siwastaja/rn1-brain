@@ -9,9 +9,9 @@ CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mt
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
-DEPS = main.h own_std.h
-OBJ = stm32init.o main.o own_std.o
-ASMS = stm32init.s main.s own_std.s
+DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h own_std.h
+OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o own_std.o
+ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s own_std.s
 
 all: main.bin
 
@@ -41,7 +41,7 @@ syms:
 asm: $(ASMS)
 
 e: 
-	nano main.c stm32init.c
+	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c stm32init.c
 
 s:
 	sudo screen /dev/ttyUSB0 115200

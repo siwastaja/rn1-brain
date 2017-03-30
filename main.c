@@ -114,7 +114,7 @@ volatile motcon_t motcons[NUM_MOTCONS];
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
-	LED_ON();
+//	LED_ON();
 	uint32_t status = USART3->SR;
 	char byte = USART3->DR;
 	if(status & 1UL<<3)
@@ -158,6 +158,62 @@ void spi1_inthandler()
 		cur_motcon++;
 }
 
+
+#define OPTFLOW_POLL_RATE 100 // unit: 100us, must be at least 4
+
+typedef struct __attribute__ ((__packed__))
+{
+	uint8_t dummy;
+	uint8_t motion;
+	int8_t  dx;
+	int8_t  dy;
+	uint8_t squal;
+	uint8_t shutter_msb;
+	uint8_t shutter_lsb;
+	uint8_t max_pixel;
+} optflow_data_t;
+
+volatile optflow_data_t latest_optflow;
+
+volatile int num_optflows;
+
+// Run this at 10kHz
+void optflow_fsm()
+{
+	static int cycle = 0;
+	if(cycle == 0)
+	{
+		FLOW_CS0();
+	}
+	else if(cycle == 1)
+	{
+		DMA1->LIFCR = 0b111101UL<<22; DMA1_Stream3->CR |= 1UL; // Enable RX DMA
+		SPI2->DR = 0x50; // motion_burst read
+	}
+	else if(cycle == 2)
+	{
+		DMA1->HIFCR = 0b111101UL; DMA1_Stream4->CR |= 1UL; // Enable TX DMA to send dummy data
+	}
+	else if(cycle >= OPTFLOW_POLL_RATE)
+	{
+		FLOW_CS1();
+		if(DMA1_Stream3->CR & 1UL) // Error: RX DMA stream still on (not finished)
+			LED_ON();
+		cycle = -1;
+		num_optflows++;
+	}
+
+	cycle++;
+}
+
+volatile int cnt_10k;
+void timebase_10k_handler()
+{
+	TIM6->SR = 0;
+	cnt_10k++;
+
+	optflow_fsm();
+}
 
 /*
 	STM32 I2C implementation is a total catastrophe, it requires almost bitbanging-like sequencing by software,
@@ -215,6 +271,7 @@ typedef struct __attribute__ ((__packed__))
 } lidar_data_t;
 
 volatile lidar_data_t latest_lidar;
+
 
 void i2c1_inthandler()
 {
@@ -664,6 +721,8 @@ int init_i2c1_devices()
 */
 }
 
+int dummy_data = 42;
+
 int main()
 {
 	int i, dummy;
@@ -702,8 +761,8 @@ int main()
 	while((RCC->CFGR & (0b11UL<<2)) != (0b10UL<<2)) ; // Wait for switchover to PLL.
 
 
-	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA1*/;
-	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/;
+	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA2*/ | 1UL<<21 /*DMA1*/;
+	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/;
 
 	delay_us(100);
@@ -770,11 +829,26 @@ int main()
 	// After read 250 us
 	// Time after address: 50 us (for motion+motion burst: 75 us)
 	// 500 ns min period -> 2 MHz max
+	// SPI2 RX is mapped to DMA1, Stream3, Ch0
+
+	// DMA1 STREAM 3 = flow RX
+	DMA1_Stream3->PAR = (uint32_t)&(SPI2->DR);
+	DMA1_Stream3->M0AR = (uint32_t)(&latest_optflow);
+	DMA1_Stream3->NDTR = 8;
+	DMA1_Stream3->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/;
+
+	// DMA1 STREAM 4 = flow TX (dummy bytes)
+	DMA1_Stream4->PAR = (uint32_t)&(SPI2->DR);
+	DMA1_Stream4->M0AR = (uint32_t)(&dummy_data);
+	DMA1_Stream4->NDTR = 7;
+	DMA1_Stream4->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   0b01<<6 /*mem->periph*/;
+
 
 	SPI2->CR1 = 0UL<<11 /*8-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
 		0b011UL<<3 /*div 16 = 1.875 MHz*/ | 1UL<<2 /*Master*/;
-
-//	SPI2->CR2 = 1UL<<6 /*RX not empty interrupt*/;
+	SPI2->CR2 = 1UL<<1 /* TX DMA enable */ | 1UL<<0 /* RX DMA enable*/;
 
 	SPI2->CR1 |= 1UL<<6; // Enable SPI
 
@@ -782,7 +856,7 @@ int main()
 	MC4_CS1();
 
 	/*
-		APB1 at 30MHz
+		I2C1 @ APB1 at 30MHz
 		"Tpclk1" = 1/30MHz = 0.03333333us
 		100kHz standard mode:
 		Thigh = Tlow = 5us
@@ -809,12 +883,22 @@ int main()
 	TIM4->CCR4 = 500;
 	TIM4->CR1 |= 1UL; // Enable.
 
+	/*
+		TIM6 @ APB1 at 30MHz, but the counter runs at x2 = 60MHz
+		Create 10 kHz timebase
+	*/
+
+	TIM6->DIER |= 1UL; // Update interrupt
+	TIM6->ARR = 6000; // 60MHz -> 10 kHz
+	TIM6->CR1 |= 1UL; // Enable
+
 
 	FLOW_CS1();
 
 //	NVIC_EnableIRQ(SPI1_IRQn);
 //	NVIC_EnableIRQ(USART3_IRQn);
-//	__enable_irq();
+	NVIC_EnableIRQ(TIM6_DAC_IRQn);
+	__enable_irq();
 	delay_ms(1000);
 
 	usart_print("booty booty\r\n");
@@ -853,10 +937,35 @@ int main()
 	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
 
-	LED_OFF();
+//	LED_OFF();
 	int kakka = 0;
 	uint16_t speed = 0;
 
+	while(1)
+	{
+		char buffer[1000];
+		char* buf = buffer;
+		buf = o_str_append(buf, " num=");
+		buf = o_utoa16_fixed(num_optflows, buf);
+		buf = o_str_append(buf, "  flow: ");
+		buf = o_utoa16_fixed(latest_optflow.motion, buf);
+		buf = o_str_append(buf, "  X ");
+		buf = o_itoa16_fixed(latest_optflow.dx, buf);
+		buf = o_str_append(buf, "  Y ");
+		buf = o_itoa16_fixed(latest_optflow.dy, buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(latest_optflow.squal, buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(latest_optflow.shutter_msb<<8 | latest_optflow.shutter_lsb, buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_utoa16_fixed(latest_optflow.max_pixel, buf);
+		buf = o_str_append(buf, "\r\n");
+		usart_print(buffer);
+
+		delay_ms(200);
+	}
+
+/*
 	while(1)
 	{
 		char buffer[1000];
@@ -898,7 +1007,7 @@ int main()
 
 		delay_ms(200);
 	}
-
+*/
 
 	while(1)
 	{
@@ -940,7 +1049,7 @@ int main()
 		}
 
 		kakka = 0;
-		LED_OFF();
+//		LED_OFF();
 
 
 /*		buf = o_str_append(buf, " gyro=");

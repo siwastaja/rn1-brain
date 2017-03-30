@@ -11,6 +11,7 @@ extern void uart_rx_handler();
 extern void adc_int_handler();
 extern void spi1_inthandler();
 extern void i2c1_inthandler();
+extern void timebase_10k_handler();
 
 extern unsigned int _STACKTOP;
 
@@ -87,7 +88,7 @@ unsigned int * the_nvic_vector[97] __attribute__ ((section(".nvic_vector"))) =
 /* 0x010C                    */ (unsigned int *) invalid_handler,
 /* 0x0110                    */ (unsigned int *) invalid_handler,
 /* 0x0114                    */ (unsigned int *) invalid_handler,
-/* 0x0118                    */ (unsigned int *) invalid_handler,
+/* 0x0118 TIM6_DAC           */ (unsigned int *) timebase_10k_handler,
 /* 0x011C                    */ (unsigned int *) invalid_handler,
 /* 0x0120                    */ (unsigned int *) invalid_handler,
 /* 0x0124                    */ (unsigned int *) invalid_handler,
