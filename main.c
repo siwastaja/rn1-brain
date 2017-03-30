@@ -772,7 +772,7 @@ int main()
 	// 500 ns min period -> 2 MHz max
 
 	SPI2->CR1 = 0UL<<11 /*8-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
-		0b100UL<<3 /*div 32 = 0.9375 MHz*/ | 1UL<<2 /*Master*/;
+		0b011UL<<3 /*div 16 = 1.875 MHz*/ | 1UL<<2 /*Master*/;
 
 //	SPI2->CR2 = 1UL<<6 /*RX not empty interrupt*/;
 
