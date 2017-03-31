@@ -8,6 +8,8 @@
 
 #include "gyro_xcel_compass.h"
 #include "optflow.h"
+#include "lidar.h"
+#include "motcons.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -15,14 +17,6 @@
 #define CHARGER_DIS() {GPIOA->BSRR = 1UL<<(15+16);}
 #define PSU5V_ENA() {GPIOE->BSRR = 1UL<<15;}
 #define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
-#define MC4_CS1()  {GPIOE->BSRR = 1UL<<6;}
-#define MC4_CS0() {GPIOE->BSRR = 1UL<<(6+16);}
-#define MC3_CS1()  {GPIOA->BSRR = 1UL<<4;}
-#define MC3_CS0() {GPIOA->BSRR = 1UL<<(4+16);}
-#define MC2_CS1()  {GPIOC->BSRR = 1UL<<4;}
-#define MC2_CS0() {GPIOC->BSRR = 1UL<<(4+16);}
-#define MC1_CS1()  {GPIOC->BSRR = 1UL<<5;}
-#define MC1_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
@@ -81,40 +75,13 @@ void usart_print(const char *buf)
 	}
 }
 
-volatile int ovrs = 0;
-volatile int txnotemptys = 0;
-volatile int sr = 0;
-volatile int cr1 = 0;
-
-volatile uint16_t last_msg;
-
-typedef struct
-{
-	int last_msg;
-	int16_t cur_b;
-	int16_t cur_c;
-} motcon_status_t;
-
-typedef struct
-{
-	int16_t speed;
-	int16_t cur_limit;
-} motcon_cmd_t;
-
-typedef struct
-{
-	motcon_status_t status;
-	motcon_cmd_t cmd;
-} motcon_t;
-
-#define NUM_MOTCONS 4
 volatile motcon_t motcons[NUM_MOTCONS];
 
 
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
-//	LED_ON();
+	LED_ON();
 	uint32_t status = USART3->SR;
 	char byte = USART3->DR;
 	if(status & 1UL<<3)
@@ -136,28 +103,6 @@ void uart_rx_handler()
 
 
 
-volatile int cur_motcon = 0;
-void spi1_inthandler()
-{
-	// Receive done, slave can be de-selected.
-	switch(cur_motcon)
-	{
-		case 0: {MC1_CS1();} break;
-		case 1: {MC2_CS1();} break;
-		case 2: {MC3_CS1();} break;
-		case 3: {MC4_CS1();} break;
-		default: break;
-	}
-	uint16_t msg = SPI1->DR;
-
-	motcons[cur_motcon].status.last_msg = msg;
-
-	if(cur_motcon == NUM_MOTCONS-1)
-		cur_motcon = 0;
-	else
-		cur_motcon++;
-}
-
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
 
@@ -169,9 +114,13 @@ void timebase_10k_handler()
 
 	optflow_fsm();
 
+	// Motcon at 10 kHz
+	motcon_fsm();
+
 	if(cnt_10k % 100) // gyro, xcel, compass at 100Hz
 	{
 		start_gyro_xcel_compass_sequence();
+		LED_OFF();
 	}
 }
 
@@ -193,13 +142,9 @@ typedef struct __attribute__ ((__packed__))
 
 volatile lidar_data_t latest_lidar;
 
-
-
-int dummy_data = 42;
-
 int main()
 {
-	int i, dummy;
+	int i;
 
 	/*
 	XTAL = HSE = 8 MHz
@@ -287,17 +232,6 @@ int main()
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
 
-	// SPI1 @ APB2 = 60 MHz
-	SPI1->CR1 = 1UL<<11 /*16-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
-		0b010UL<<3 /*div 8 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
-
-	SPI1->CR2 = 1UL<<6 /*RX not empty interrupt*/;
-
-	SPI1->CR1 |= 1UL<<6; // Enable SPI
-
-
-	MC4_CS1();
-
 	// USART3 = APB1 = 30 MHz
 	// 16x oversampling
 	// 115200bps -> Baudrate register = 16.25 = 16 1/4 = 16 4/16
@@ -323,18 +257,19 @@ int main()
 
 	FLOW_CS1();
 
-//	NVIC_EnableIRQ(SPI1_IRQn);
-//	NVIC_EnableIRQ(USART3_IRQn);
+	NVIC_EnableIRQ(USART3_IRQn);
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 	__enable_irq();
-	delay_ms(1000);
 
 	usart_print("booty booty\r\n");
+	delay_ms(1000);
 
 	init_gyro_xcel_compass();
+	usart_print("gyro,xcel,compass init ok\r\n");
 	init_optflow();
-
-	usart_print("gyro,xcel,compass,optflow init ok\r\n");
+	usart_print("optflow init ok\r\n");
+	init_motcons();
+	usart_print("motcons init ok\r\n");
 
 	delay_ms(100);
 
@@ -367,7 +302,6 @@ int main()
 
 //	LED_OFF();
 	int kakka = 0;
-	uint16_t speed = 0;
 
 	while(1)
 	{
@@ -375,27 +309,11 @@ int main()
 		char* buf = buffer;
 
 		delay_ms(1);
-/*
-		switch(cur_motcon)
-		{
-			case 0: {MC1_CS0();} break;
-			case 1: {MC2_CS0();} break;
-			case 2: {MC3_CS0();} break;
-			case 3: {MC4_CS0();} break;
-			default: break;
-		}
-
-		if(motcons[cur_motcon].cmd.speed >= 0)
-			SPI1->DR = 11UL<<10 | (motcons[cur_motcon].cmd.speed & 0x3FF);
-		else
-			SPI1->DR = 12UL<<10 | ((motcons[cur_motcon].cmd.speed*-1) & 0x3FF);
-
-*/
 		kakka++;
 
 		if(kakka<1000)
 			continue;
-/*
+
 		for(i=2; i<4; i++)
 		{
 			if(motcons[i].cmd.speed > 0)
@@ -403,7 +321,7 @@ int main()
 			else if(motcons[i].cmd.speed < 0)
 				motcons[i].cmd.speed+=5;
 		}
-*/
+
 		kakka = 0;
 //		LED_OFF();
 
@@ -451,8 +369,8 @@ int main()
 		buf = o_str_append(buf, " errs=");
 		buf = o_utoa16_fixed(optflow_errors, buf);
 
-/*
-		buf = o_str_append(buf, " MC1 head=");
+
+		buf = o_str_append(buf, "\r\nMC1 head=");
 		buf = o_utoa32((motcons[0].status.last_msg>>10)&0b111111, buf);
 		buf = o_str_append(buf, " data=");
 		buf = o_utoa32(motcons[0].status.last_msg&0x3ff, buf);
@@ -468,7 +386,7 @@ int main()
 		buf = o_utoa32((motcons[3].status.last_msg>>10)&0b111111, buf);
 		buf = o_str_append(buf, " data=");
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
-*/
+
 
 /*
 		buf = o_str_append(buf, " LIDAR: start=");
@@ -489,7 +407,7 @@ int main()
 		buf = o_utoa16(latest_lidar.checksum, buf);
 */
 
-		buf = o_str_append(buf, "\r\n");
+		buf = o_str_append(buf, "\r\n\r\n");
 		usart_print(buffer);
 
 
