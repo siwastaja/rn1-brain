@@ -3,10 +3,15 @@
 
 #include <stdint.h>
 
-typedef struct __attribute__ ((__packed__))
-{
 
-}
+#define DEFAULT_LIDAR_RPM 300
+
+extern volatile int lidar_rpm_setpoint_x64;
+
+//typedef struct __attribute__ ((__packed__))
+//{
+//
+//}
 
 typedef union
 {
@@ -27,8 +32,10 @@ typedef union
 
 
 void sync_lidar();
+void resync_lidar();
 void init_lidar();
 uint16_t lidar_calc_checksum(volatile lidar_datum_t* l);
+void lidar_ctrl_loop();
 
 
 #endif

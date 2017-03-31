@@ -97,6 +97,9 @@ void uart_rx_handler()
 		case 'w': motcons[2].cmd.speed -= 80; motcons[3].cmd.speed -= 80;break;
 		case 'd': motcons[3].cmd.speed += 80; break;
 		case 'e': motcons[3].cmd.speed -= 80; break;
+		case ',': lidar_rpm_setpoint_x64 -= 320; break;
+		case '.': lidar_rpm_setpoint_x64 += 320; break;
+
 		default: break;
 	}
 }
@@ -116,6 +119,8 @@ void timebase_10k_handler()
 
 	// Motcon at 10 kHz
 	motcon_fsm();
+
+	lidar_ctrl_loop();
 
 	if(cnt_10k % 100) // gyro, xcel, compass at 100Hz
 	{
@@ -226,11 +231,13 @@ int main()
 	USART3->BRR = 16UL<<4 | 4UL;
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
+	// TIM4 = Lidar motor
+
 	TIM4->CR1 = 1UL<<7 /*auto preload*/ | 0b01UL<<5 /*centermode*/;
 	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
 	TIM4->CCER = 1UL<<12 /*CH4 out ena*/;
 	TIM4->ARR = 1024;
-	TIM4->CCR4 = 500;
+	TIM4->CCR4 = 300;
 	TIM4->CR1 |= 1UL; // Enable.
 
 	/*
@@ -246,7 +253,6 @@ int main()
 	FLOW_CS1();
 
 	NVIC_EnableIRQ(USART3_IRQn);
-	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 	__enable_irq();
 
 	usart_print("booty booty\r\n");
@@ -258,6 +264,10 @@ int main()
 	usart_print("optflow init ok\r\n");
 	init_motcons();
 	usart_print("motcons init ok\r\n");
+	init_lidar();
+	usart_print("lidar init ok\r\n");
+
+	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
 	delay_ms(100);
 
@@ -266,11 +276,12 @@ int main()
 	PSU5V_ENA();
 	CHARGER_ENA();
 
-	delay_ms(1500); // Let the lidar boot.
-
-	init_lidar();
-	usart_print("sync lidar... ");
+	usart_print("pre-syncing lidar... ");
 	sync_lidar();
+	usart_print("stablizing lidar... ");
+	delay_ms(6000);
+	usart_print("re-syncing lidar... ");
+	resync_lidar();
 	usart_print("done\r\n");
 
 
@@ -362,14 +373,16 @@ int main()
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
 
 */
-
-		for(i=0; i < 16; i++)
+		buf = o_str_append(buf, " rpm_set=");
+		buf = o_utoa16_fixed(lidar_rpm_setpoint_x64, buf);
+		buf = o_str_append(buf, "\r\n");
+		for(i=0; i < 90; i++)
 		{
-			buf = o_str_append(buf, "start=");
-			buf = o_utoa16_fixed(lidar_full_rev[i].start, buf);
+//			buf = o_str_append(buf, "start=");
+//			buf = o_utoa16_fixed(lidar_full_rev[i].start, buf);
 			buf = o_str_append(buf, " idx=");
 			buf = o_utoa16_fixed(lidar_full_rev[i].idx, buf);
-			buf = o_str_append(buf, " speed=");
+/*			buf = o_str_append(buf, " speed=");
 			buf = o_utoa16_fixed(lidar_full_rev[i].speed, buf);
 			buf = o_str_append(buf, " d0=");
 			buf = o_utoa32_fixed(lidar_full_rev[i].data0, buf);
@@ -381,12 +394,16 @@ int main()
 			buf = o_utoa32_fixed(lidar_full_rev[i].data3, buf);
 			buf = o_str_append(buf, " chk=");
 			buf = o_utoa16_fixed(lidar_full_rev[i].checksum, buf);
-			buf = o_str_append(buf, " calc=");
+			buf = o_str_append(buf, " calc=");*/
 			uint16_t calc_chk = lidar_calc_checksum(&lidar_full_rev[i]);
-			buf = o_utoa16_fixed(calc_chk, buf);
+//			buf = o_utoa16_fixed(calc_chk, buf);
 			if(lidar_full_rev[i].checksum != calc_chk)
-				buf = o_str_append(buf, " CHK_ERR");
-			buf = o_str_append(buf, "\r\n");
+				buf = o_str_append(buf, "!");
+			else
+				buf = o_str_append(buf, " ");
+
+			if(i%4 == 3)
+				buf = o_str_append(buf, "\r\n");
 		}
 
 
