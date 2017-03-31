@@ -296,7 +296,7 @@ int main()
 		delay_ms(1);
 		kakka++;
 
-		if(kakka<1000)
+		if(kakka<100)
 			continue;
 
 		for(i=2; i<4; i++)
@@ -373,37 +373,50 @@ int main()
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
 
 */
+		int o;
 		buf = o_str_append(buf, " rpm_set=");
 		buf = o_utoa16_fixed(lidar_rpm_setpoint_x64, buf);
 		buf = o_str_append(buf, "\r\n");
-		for(i=0; i < 90; i++)
+/*		for(i=0; i < 30; i++)
 		{
-//			buf = o_str_append(buf, "start=");
-//			buf = o_utoa16_fixed(lidar_full_rev[i].start, buf);
-			buf = o_str_append(buf, " idx=");
-			buf = o_utoa16_fixed(lidar_full_rev[i].idx, buf);
-/*			buf = o_str_append(buf, " speed=");
-			buf = o_utoa16_fixed(lidar_full_rev[i].speed, buf);
-			buf = o_str_append(buf, " d0=");
-			buf = o_utoa32_fixed(lidar_full_rev[i].data0, buf);
-			buf = o_str_append(buf, " d1=");
-			buf = o_utoa32_fixed(lidar_full_rev[i].data1, buf);
-			buf = o_str_append(buf, " d2=");
-			buf = o_utoa32_fixed(lidar_full_rev[i].data2, buf);
-			buf = o_str_append(buf, " d3=");
-			buf = o_utoa32_fixed(lidar_full_rev[i].data3, buf);
-			buf = o_str_append(buf, " chk=");
-			buf = o_utoa16_fixed(lidar_full_rev[i].checksum, buf);
-			buf = o_str_append(buf, " calc=");*/
-			uint16_t calc_chk = lidar_calc_checksum(&lidar_full_rev[i]);
-//			buf = o_utoa16_fixed(calc_chk, buf);
-			if(lidar_full_rev[i].checksum != calc_chk)
-				buf = o_str_append(buf, "!");
-			else
-				buf = o_str_append(buf, " ");
+			for(o=0; o < 4; o++)
+			{
+				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+					buf = o_str_append(buf, "I");
+				else
+					buf = o_str_append(buf, " ");
+			}
+		}
 
-			if(i%4 == 3)
-				buf = o_str_append(buf, "\r\n");
+		buf = o_str_append(buf, "\r\n");
+
+		for(i=0; i < 30; i++)
+		{
+			for(o=0; o < 4; o++)
+			{
+				if(lidar_full_rev[i].d[o].flags_distance&(1<<14))
+					buf = o_str_append(buf, "S");
+				else
+					buf = o_str_append(buf, " ");
+			}
+		}
+
+		buf = o_str_append(buf, "\r\n");
+*/
+		for(i=0; i < 30; i++)
+		{
+			for(o=0; o < 4; o++)
+			{
+				int val = lidar_full_rev[i].d[o].flags_distance & 0x3FFF;
+				val /= 500;
+				if(val > 10) val = 10;
+				if(val < 0) val = 0;
+
+				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+					*buf++ = ' ';
+				else
+					*buf++ = val+'0';
+			}
 		}
 
 

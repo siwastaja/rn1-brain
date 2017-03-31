@@ -8,10 +8,11 @@
 
 extern volatile int lidar_rpm_setpoint_x64;
 
-//typedef struct __attribute__ ((__packed__))
-//{
-//
-//}
+typedef struct __attribute__ ((__packed__))
+{
+	uint16_t flags_distance;
+	uint16_t signal;
+} lidar_d_t;
 
 typedef union
 {
@@ -20,16 +21,12 @@ typedef union
 		uint8_t start;
 		uint8_t idx;
 		uint16_t speed;
-		uint32_t data0;
-		uint32_t data1;
-		uint32_t data2;
-		uint32_t data3;
+		lidar_d_t d[4];
 		uint16_t checksum;
 	};
 	uint16_t u16[11];
 	uint8_t u8[22];
 } lidar_datum_t;
-
 
 void sync_lidar();
 void resync_lidar();
