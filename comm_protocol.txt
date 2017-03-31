@@ -1,7 +1,8 @@
 RN#1 UART communication protocol
 RN#1 BRAIN (STM32F205) <-> Host computer
 
-230400 8N1
+115200 8N1 during first development
+If necessary, going to 1Mbaud/s - at least Raspi needs some config editing to support higher than 115200 baudrates.
 
 
 Bytes 128...255 denote START delimiters for different data types
@@ -9,6 +10,11 @@ After the START delimiter, the data structure follows
 All data bytes have MSb='0'
 
 
-
+Rationale:
+* Good frame synchronization with start delimiter occuring often
+* No special signals or no timing-based delimiters needed -> best portability
+* No TX, RX state machines needed (as with escaping)
+* Constant framing overhead, and constant data structure lengths instead of variability of escaping
+* In many cases, actual values can be represented with 7, 14, 21 etc. bits (instead of 8, 16, 24...) so in these cases, there is no overhead.
 
 
