@@ -128,19 +128,7 @@ volatile xcel_data_t latest_xcel;
 volatile gyro_data_t latest_gyro;
 volatile compass_data_t latest_compass;
 
-typedef struct __attribute__ ((__packed__))
-{
-	uint8_t start;
-	uint8_t idx;
-	uint16_t speed;
-	uint32_t data0;
-	uint32_t data1;
-	uint32_t data2;
-	uint32_t data3;
-	uint16_t checksum;
-} lidar_data_t;
-
-volatile lidar_data_t latest_lidar;
+extern volatile lidar_datum_t lidar_full_rev[90];
 
 int main()
 {
@@ -278,26 +266,12 @@ int main()
 	PSU5V_ENA();
 	CHARGER_ENA();
 
-	delay_ms(500); // Let the lidar boot.
+	delay_ms(1500); // Let the lidar boot.
 
-	// USART1 (lidar) = APB2 = 60 MHz
-	// 16x oversampling
-	// 115200bps -> Baudrate register = 32.5625 = 32 9/16
-	// USART1 RX is mapped to DMA2, Stream2, Ch4
-
-	DMA2_Stream2->PAR = (uint32_t)&(USART1->DR);
-	DMA2_Stream2->M0AR = (uint32_t)(&latest_lidar);
-	DMA2_Stream2->NDTR = 22;
-	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
-	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
-
-	DMA2->LIFCR = 0xffffffff; // Clear all flags
-	DMA2->HIFCR = 0xffffffff;
-	DMA2_Stream2->CR |= 1UL; // Enable
-
-	USART1->BRR = 32UL<<4 | 9UL;
-	USART1->CR3 = 1UL<<6 /*RX DMA*/;
-	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	init_lidar();
+	usart_print("sync lidar... ");
+	sync_lidar();
+	usart_print("done\r\n");
 
 
 //	LED_OFF();
@@ -305,7 +279,7 @@ int main()
 
 	while(1)
 	{
-		char buffer[1000];
+		char buffer[4000];
 		char* buf = buffer;
 
 		delay_ms(1);
@@ -325,7 +299,7 @@ int main()
 		kakka = 0;
 //		LED_OFF();
 
-
+/*
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro.status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -387,25 +361,34 @@ int main()
 		buf = o_str_append(buf, " data=");
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
 
-
-/*
-		buf = o_str_append(buf, " LIDAR: start=");
-		buf = o_utoa16(latest_lidar.start, buf);
-		buf = o_str_append(buf, " idx=");
-		buf = o_utoa16_fixed(latest_lidar.idx, buf);
-		buf = o_str_append(buf, " speed=");
-		buf = o_utoa16_fixed(latest_lidar.speed, buf);
-		buf = o_str_append(buf, " d0=");
-		buf = o_utoa32(latest_lidar.data0, buf);
-		buf = o_str_append(buf, " d1=");
-		buf = o_utoa32(latest_lidar.data1, buf);
-		buf = o_str_append(buf, " d2=");
-		buf = o_utoa32(latest_lidar.data2, buf);
-		buf = o_str_append(buf, " d3=");
-		buf = o_utoa32(latest_lidar.data3, buf);
-		buf = o_str_append(buf, " chk=");
-		buf = o_utoa16(latest_lidar.checksum, buf);
 */
+
+		for(i=0; i < 16; i++)
+		{
+			buf = o_str_append(buf, "start=");
+			buf = o_utoa16_fixed(lidar_full_rev[i].start, buf);
+			buf = o_str_append(buf, " idx=");
+			buf = o_utoa16_fixed(lidar_full_rev[i].idx, buf);
+			buf = o_str_append(buf, " speed=");
+			buf = o_utoa16_fixed(lidar_full_rev[i].speed, buf);
+			buf = o_str_append(buf, " d0=");
+			buf = o_utoa32_fixed(lidar_full_rev[i].data0, buf);
+			buf = o_str_append(buf, " d1=");
+			buf = o_utoa32_fixed(lidar_full_rev[i].data1, buf);
+			buf = o_str_append(buf, " d2=");
+			buf = o_utoa32_fixed(lidar_full_rev[i].data2, buf);
+			buf = o_str_append(buf, " d3=");
+			buf = o_utoa32_fixed(lidar_full_rev[i].data3, buf);
+			buf = o_str_append(buf, " chk=");
+			buf = o_utoa16_fixed(lidar_full_rev[i].checksum, buf);
+			buf = o_str_append(buf, " calc=");
+			uint16_t calc_chk = lidar_calc_checksum(&lidar_full_rev[i]);
+			buf = o_utoa16_fixed(calc_chk, buf);
+			if(lidar_full_rev[i].checksum != calc_chk)
+				buf = o_str_append(buf, " CHK_ERR");
+			buf = o_str_append(buf, "\r\n");
+		}
+
 
 		buf = o_str_append(buf, "\r\n\r\n");
 		usart_print(buffer);

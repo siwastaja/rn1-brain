@@ -12,6 +12,7 @@ char* o_utoa16(uint16_t val, char* str);
 char* o_utoa16_fixed(uint16_t val, char* str);
 char* o_utoa8_fixed(uint8_t val, char* str);
 char* o_utoa32(uint32_t val, char* str);
+char* o_utoa32_fixed(uint32_t val, char* str);
 char* o_itoa16(int16_t val, char* str);
 char* o_itoa16_fixed(int16_t val, char* str);
 char* o_itoa8_fixed(int8_t val, char* str);
