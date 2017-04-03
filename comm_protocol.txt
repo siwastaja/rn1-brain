@@ -8,6 +8,7 @@ If necessary, going to 1Mbaud/s - at least Raspi needs some config editing to su
 Bytes 128...255 denote START delimiters for different data types
 After the START delimiter, the data structure follows
 All data bytes have MSb='0'
+Multi-byte data is always little-endian (LSB is transmitted first)
 
 
 Rationale:
@@ -16,5 +17,60 @@ Rationale:
 * No TX, RX state machines needed (as with escaping)
 * Constant framing overhead, and constant data structure lengths instead of variability of escaping
 * In many cases, actual values can be represented with 7, 14, 21 etc. bits (instead of 8, 16, 24...) so in these cases, there is no overhead.
+
+
+
+MESSAGES PC-->RN#1 (aka commands)
+
+0x80 MSG_MOVE
+	sint7	speed	0 = stop, - = backwards
+	sint7	arc	0 = go directly, - = left
+
+0xFE MSG_MAINTENANCE
+	3xuint7	0x42, 0x11 and 0x7A magic key numbers
+	uint7	Operation:
+		0x41	Reconfig UART speed
+			uint16	STM32F205 baud rate register contents to be applied
+		0x51	KILL_PWR (with emptyish battery: shutdown. With good battery: hard reset)
+		0x52	Run flasher
+			Flasher reconfigs the UART to 115200 8N1. Framing with MSB-denoted delimiters is not being followed anymore.
+			Separate flasher protocol is specified elsewhere.
+			Flasher cannot exit; it always ends up in hard reset.
+		
+
+MESSAGES RN#1-->PC (aka status)
+
+0x80 MSG_GYRO		3D digital MEMS gyroscope data
+	uint7	status	1 = gyro OK
+	sint14	int_x	Integral of gyro X, zeroed at previous MSG_GYRO message
+	sint14	int_y	                 Y
+	sint14	int_z                    Z
+
+0x81 MSG_XCEL		3D digital MEMS accelerometer data
+	uint7	status	1 = xcel OK
+	sint14	int_x	Integral of xcel X, zeroed at previous MSG_XCEL message
+	sint14	int_y	                 Y
+	sint14	int_z                    Z
+
+0x82 MSG_COMPASS	3D digital MEMS compass data
+	uint7	status	1 = compass OK
+	sint14	avg_x	Average of compass X, after the previous MSG_COMPASS message
+	sint14	avg_y	                   Y
+	sint14	avg_z                      Z
+
+0x83 MSG_OPTFLOW	Optical flow sensor (ground camera)
+	uint7	status
+	uint7	dx	X delta after previous MSG_OPTFLOW
+	uint7	dy	Y
+
+0x84 MSG_LIDAR		LIDAR image, latest full turn
+	Note: This is a large data frame, 1Mbps communication is recommend to keep latency of other messages down.
+	uint7	status
+	360*uint14	Distance in mm; 0 = no datapoint (reflectance issue, for example)
+	
+0x85 MSG_SONAR		SONAR data (latest distances, max 7 sonars)
+	uint7	status  List of enabled sonars (0b0001111 for sonars 0,1,2,3 for example)
+	7*uint14 distances	Distances in cm for sonars 0,1,2,3,4,5,6;  0 = no datapoint (no echo received)
+
 
 

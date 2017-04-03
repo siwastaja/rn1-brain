@@ -9,9 +9,9 @@ CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mt
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
-DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h flash.h
-OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o flash.o
-ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s flash.s
+DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h flash.h sonar.h
+OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o flash.o sonar.o
+ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s flash.s sonar.s
 
 all: main.bin
 
@@ -48,7 +48,7 @@ syms:
 asm: $(ASMS)
 
 e: 
-	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c motcons.h motcons.c stm32init.c flash.h flash.c
+	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c motcons.h motcons.c stm32init.c flash.h flash.c sonar.h sonar.c comm.h
 
 s:
 	sudo screen /dev/ttyUSB0 115200

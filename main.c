@@ -11,6 +11,7 @@
 #include "lidar.h"
 #include "motcons.h"
 #include "flash.h"
+#include "comm.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -21,12 +22,7 @@
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
-#define SONAR_PULSE_ON()  {GPIOD->BSRR = 1UL<<3;}
-#define SONAR_PULSE_OFF() {GPIOD->BSRR = 1UL<<(3+16);}
-#define SONAR1_ECHO() (GPIOD->IDR & (1UL<<2))
-#define SONAR2_ECHO() (GPIOD->IDR & (1UL<<0))
-#define SONAR3_ECHO() (GPIOC->IDR & (1UL<<12))
-#define SONAR4_ECHO() (GPIOD->IDR & (1UL<<1))
+uint8_t tx_buffer[1024];
 
 
 void delay_us(uint32_t i)
@@ -126,8 +122,7 @@ void uart_rx_handler()
 	}
 }
 
-#define NUM_SONARS 4
-int latest_sonars[NUM_SONARS]; // in cm
+int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
 
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
@@ -135,9 +130,8 @@ volatile int optflow_errors;
 void timebase_10k_handler()
 {
 	int i;
-	static int cnt_10k;
-	static int cnt_sonar;
-	static int sonar_times[NUM_SONARS];
+	static int cnt_10k = 0;
+	static int gyro_xcel_compass_cnt = 0;
 	TIM6->SR = 0;
 	cnt_10k++;
 
@@ -146,44 +140,26 @@ void timebase_10k_handler()
 	// Motcon at 10 kHz
 	motcon_fsm();
 
+	sonar_fsm(); // at 10 kHz
+
 	lidar_ctrl_loop();
 
-	if(cnt_10k % 100) // gyro, xcel, compass at 100Hz
+	gyro_xcel_compass_cnt++;
+	if(gyro_xcel_compass_cnt == 90)
+	{
+		msg_gyro_t msg;
+		msg.status = 1;
+		msg.x_int = I16_I14(latest_gyro.x);
+		msg.y_int = I16_I14(latest_gyro.y);
+		msg.z_int = I16_I14(latest_gyro.z);
+		memcpy(txbuf, &msg, sizeof(msg_gyro_t));
+		uart_dma_send(sizeof(msg_gyro_t));
+	}
+	else if(gyro_xcel_compass_cnt == 100) // gyro, xcel, compass at 100Hz
 	{
 		start_gyro_xcel_compass_sequence();
-		LED_OFF();
+		gyro_xcel_compass_cnt = 0;
 	}
-
-
-	cnt_sonar++;
-	if(cnt_sonar == 1000) // Sonar with 100ms intervals
-	{
-		SONAR_PULSE_ON();
-		for(i=0; i<NUM_SONARS; i++)
-			sonar_times[i] = 0;
-	}
-	else if(cnt_sonar == 1001)
-	{
-		SONAR_PULSE_OFF();
-	}
-	else if(cnt_sonar > 1000+300) // 30000us pulse = 517 cm top limit
-	{
-		cnt_sonar = 0;
-		for(i=0; i<NUM_SONARS; i++)
-			if(sonar_times[i] == 0)
-				latest_sonars[i] = 0;
-	}
-	else if(cnt_sonar > 1001) // Wait for signals
-	{
-		if(sonar_times[0] == 0 && SONAR1_ECHO())
-			sonar_times[0] = cnt_sonar;
-		else if(sonar_times[0] > 0 && !SONAR1_ECHO())
-		{
-			latest_sonars[0] = ((100*(cnt_sonar-sonar_times[0]))+29/*rounding*/)/58;
-			sonar_times[0] = -1;
-		}
-	}
-
 
 }
 
@@ -286,7 +262,7 @@ int main()
 	// 16x oversampling
 	// 115200bps -> Baudrate register = 16.25 = 16 1/4 = 16 4/16
 	USART3->BRR = 16UL<<4 | 4UL;
-	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<7 /*TX DMA*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
 	// TIM4 = Lidar motor
 
@@ -312,15 +288,15 @@ int main()
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
 
-	usart_print("booty booty\r\n");
+//	usart_print("booty booty\r\n");
 	delay_ms(1000);
 
 	init_gyro_xcel_compass();
-	usart_print("gyro,xcel,compass init ok\r\n");
+//	usart_print("gyro,xcel,compass init ok\r\n");
 	init_optflow();
-	usart_print("optflow init ok\r\n");
+//	usart_print("optflow init ok\r\n");
 	init_motcons();
-	usart_print("motcons init ok\r\n");
+//	usart_print("motcons init ok\r\n");
 //	init_lidar();
 //	usart_print("lidar init ok\r\n");
 
@@ -480,7 +456,7 @@ int main()
 		}
 */
 
-
+/*
 		buf = o_str_append(buf, " SONAR1=");
 		buf = o_utoa16_fixed(latest_sonars[0], buf);
 		buf = o_str_append(buf, " SONAR2=");
@@ -493,7 +469,7 @@ int main()
 
 		buf = o_str_append(buf, "\r\n\r\n");
 		usart_print(buffer);
-
+*/
 
 
 //		SPI1->DR = 11UL<<10 | speed;
