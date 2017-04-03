@@ -21,6 +21,13 @@
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
+#define SONAR_PULSE_ON()  {GPIOD->BSRR = 1UL<<3;}
+#define SONAR_PULSE_OFF() {GPIOD->BSRR = 1UL<<(3+16);}
+#define SONAR1_ECHO() (GPIOD->IDR & (1UL<<2))
+#define SONAR2_ECHO() (GPIOD->IDR & (1UL<<0))
+#define SONAR3_ECHO() (GPIOC->IDR & (1UL<<12))
+#define SONAR4_ECHO() (GPIOD->IDR & (1UL<<1))
+
 
 void delay_us(uint32_t i)
 {
@@ -119,14 +126,18 @@ void uart_rx_handler()
 	}
 }
 
-
+#define NUM_SONARS 4
+int latest_sonars[NUM_SONARS]; // in cm
 
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
 
-volatile int cnt_10k;
 void timebase_10k_handler()
 {
+	int i;
+	static int cnt_10k;
+	static int cnt_sonar;
+	static int sonar_times[NUM_SONARS];
 	TIM6->SR = 0;
 	cnt_10k++;
 
@@ -142,6 +153,38 @@ void timebase_10k_handler()
 		start_gyro_xcel_compass_sequence();
 		LED_OFF();
 	}
+
+
+	cnt_sonar++;
+	if(cnt_sonar == 1000) // Sonar with 100ms intervals
+	{
+		SONAR_PULSE_ON();
+		for(i=0; i<NUM_SONARS; i++)
+			sonar_times[i] = 0;
+	}
+	else if(cnt_sonar == 1001)
+	{
+		SONAR_PULSE_OFF();
+	}
+	else if(cnt_sonar > 1000+300) // 30000us pulse = 517 cm top limit
+	{
+		cnt_sonar = 0;
+		for(i=0; i<NUM_SONARS; i++)
+			if(sonar_times[i] == 0)
+				latest_sonars[i] = 0;
+	}
+	else if(cnt_sonar > 1001) // Wait for signals
+	{
+		if(sonar_times[0] == 0 && SONAR1_ECHO())
+			sonar_times[0] = cnt_sonar;
+		else if(sonar_times[0] > 0 && !SONAR1_ECHO())
+		{
+			latest_sonars[0] = ((100*(cnt_sonar-sonar_times[0]))+29/*rounding*/)/58;
+			sonar_times[0] = -1;
+		}
+	}
+
+
 }
 
 volatile xcel_data_t latest_xcel;
@@ -223,8 +266,8 @@ int main()
 	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOD->MODER   = 0b10000000000000000000010100000000;
-	GPIOD->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOD->MODER   = 0b10000000000000000000010101000000;
+	GPIOD->OSPEEDR = 0b00000000000000000000000001000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOE->MODER   = 0b01000000000000000001000000000000;
@@ -278,8 +321,8 @@ int main()
 	usart_print("optflow init ok\r\n");
 	init_motcons();
 	usart_print("motcons init ok\r\n");
-	init_lidar();
-	usart_print("lidar init ok\r\n");
+//	init_lidar();
+//	usart_print("lidar init ok\r\n");
 
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
@@ -387,10 +430,12 @@ int main()
 		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
 
 */
-		int o;
+
+/*		int o;
 		buf = o_str_append(buf, " rpm_set=");
 		buf = o_utoa16_fixed(lidar_rpm_setpoint_x64, buf);
 		buf = o_str_append(buf, "\r\n");
+*/
 /*		for(i=0; i < 30; i++)
 		{
 			for(o=0; o < 4; o++)
@@ -417,6 +462,7 @@ int main()
 
 		buf = o_str_append(buf, "\r\n");
 */
+/*
 		for(i=0; i < 30; i++)
 		{
 			for(o=0; o < 4; o++)
@@ -432,6 +478,17 @@ int main()
 					*buf++ = val+'0';
 			}
 		}
+*/
+
+
+		buf = o_str_append(buf, " SONAR1=");
+		buf = o_utoa16_fixed(latest_sonars[0], buf);
+		buf = o_str_append(buf, " SONAR2=");
+		buf = o_utoa16_fixed(latest_sonars[1], buf);
+		buf = o_str_append(buf, " SONAR3=");
+		buf = o_utoa16_fixed(latest_sonars[2], buf);
+		buf = o_str_append(buf, " SONAR4=");
+		buf = o_utoa16_fixed(latest_sonars[3], buf);
 
 
 		buf = o_str_append(buf, "\r\n\r\n");
