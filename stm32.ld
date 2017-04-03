@@ -3,7 +3,8 @@ MEMORY
   ram (rwx)        : ORIGIN = 0x20000000, LENGTH = 128K
   stack(rwx)       : ORIGIN = 0x2001FFF8, LENGTH = 0K
 
-  rom (rx)         : ORIGIN = 0x00000000, LENGTH = 768K
+  rom (rx)         : ORIGIN = 0x00000000, LENGTH = 640K
+  fixedrom (rx)    : ORIGIN = 0x000A0000, LENGTH = 128K  /* Includes flasher program etc., cannot be rewritten in-application (STM32 bootloader must be used)*/
 }
 
 SECTIONS
@@ -56,5 +57,16 @@ SECTIONS
     {
         _STACKTOP = .;
     } >stack
+
+
+    . = ALIGN(8);
+
+    .flasher : 
+    {
+        *(.flasher)
+        *(.flasher.*)
+    } >fixedrom
+
+    . = ALIGN(8);
 
 }  

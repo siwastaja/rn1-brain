@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+#include "ext_include/stm32f2xx.h"
+
 void stm32init();
 void nmi_handler();
 void invalid_handler();
@@ -130,6 +132,11 @@ extern unsigned int _BOOSTI_BEGIN;
 
 void stm32init(void)
 {
+	// We need the 5V supply up and running as the very first thing!
+	RCC->AHB1ENR = 1UL<<4;
+	GPIOE->ODR = 1UL<<15;
+	GPIOE->MODER = 0b01UL<<(15*2);
+
 	uint32_t* bss_begin = (uint32_t*)&_BSS_BEGIN;
 	uint32_t* bss_end   = (uint32_t*)&_BSS_END;
 	while(bss_begin < bss_end)

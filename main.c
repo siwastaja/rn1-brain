@@ -10,6 +10,7 @@
 #include "optflow.h"
 #include "lidar.h"
 #include "motcons.h"
+#include "flash.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -78,6 +79,19 @@ void usart_print(const char *buf)
 volatile motcon_t motcons[NUM_MOTCONS];
 
 
+void run_flasher()
+{
+	__disable_irq();
+	USART3->CR1 = 0; // Disable
+	delay_us(10);
+	USART3->SR = 0; // Clear flags
+	USART3->BRR = 16UL<<4 | 4UL; // 115200
+	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	delay_us(10);
+	flasher();
+	while(1);
+}
+
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
@@ -99,6 +113,7 @@ void uart_rx_handler()
 		case 'e': motcons[3].cmd.speed -= 80; break;
 		case ',': lidar_rpm_setpoint_x64 -= 320; break;
 		case '.': lidar_rpm_setpoint_x64 += 320; break;
+		case '9': run_flasher(); break;
 
 		default: break;
 	}
@@ -138,7 +153,6 @@ extern volatile lidar_datum_t lidar_full_rev[90];
 int main()
 {
 	int i;
-
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -209,7 +223,7 @@ int main()
 	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOD->MODER   = 0b10000000000000000000000100000000;
+	GPIOD->MODER   = 0b10000000000000000000010100000000;
 	GPIOD->OSPEEDR = 0b00000000000000000000000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -237,7 +251,7 @@ int main()
 	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
 	TIM4->CCER = 1UL<<12 /*CH4 out ena*/;
 	TIM4->ARR = 1024;
-	TIM4->CCR4 = 300;
+	TIM4->CCR4 = 350;
 	TIM4->CR1 |= 1UL; // Enable.
 
 	/*
@@ -273,9 +287,9 @@ int main()
 
 
 	PSU12V_ENA();
-	PSU5V_ENA();
 	CHARGER_ENA();
 
+/*
 	usart_print("pre-syncing lidar... ");
 	sync_lidar();
 	usart_print("stablizing lidar... ");
@@ -283,7 +297,7 @@ int main()
 	usart_print("re-syncing lidar... ");
 	resync_lidar();
 	usart_print("done\r\n");
-
+*/
 
 //	LED_OFF();
 	int kakka = 0;

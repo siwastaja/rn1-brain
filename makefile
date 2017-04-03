@@ -9,9 +9,9 @@ CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mt
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
-DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h
-OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o
-ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s
+DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h flash.h
+OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o flash.o
+ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s flash.s
 
 all: main.bin
 
@@ -20,11 +20,18 @@ all: main.bin
 
 main.bin: $(OBJ)
 	$(LD) -Tstm32.ld $(LDFLAGS) -o main.elf $^
-	$(OBJCOPY) -Obinary main.elf main.bin
+	$(OBJCOPY) -Obinary main.elf main_full.bin
+	$(OBJCOPY) -Obinary --remove-section=.flasher main.elf main.bin
 	$(SIZE) main.elf
+
+flash_full: main.bin
+	sudo stm32sprog -b 115200 -vw main_full.bin
 
 flash: main.bin
 	sudo stm32sprog -b 115200 -vw main.bin
+
+f: main.bin
+	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin
 
 stack:
 	cat *.su
@@ -41,7 +48,7 @@ syms:
 asm: $(ASMS)
 
 e: 
-	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c motcons.h motcons.c stm32init.c
+	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c motcons.h motcons.c stm32init.c flash.h flash.c
 
 s:
 	sudo screen /dev/ttyUSB0 115200

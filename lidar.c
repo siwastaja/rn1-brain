@@ -85,7 +85,7 @@ uint16_t lidar_calc_checksum(volatile lidar_datum_t* l)
 void lidar_ctrl_loop()
 {
 	static int cycle = 0;
-	static int pwm_shadow_x256 = 400*256;
+	static int pwm_shadow_x256 = 350*256;
 	int i;
 	int actual_speed = 0;
 
