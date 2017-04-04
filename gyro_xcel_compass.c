@@ -3,6 +3,10 @@
 
 #include "gyro_xcel_compass.h"
 
+extern void delay_us(uint32_t i);
+extern void delay_ms(uint32_t i);
+
+
 extern volatile xcel_data_t latest_xcel;
 extern volatile gyro_data_t latest_gyro;
 extern volatile compass_data_t latest_compass;
@@ -356,6 +360,8 @@ int init_gyro_xcel_compass()
 	I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
 	I2C1->TRISE = 30UL;
 	I2C1->CR1 |= 1UL; // Enable I2C
+
+	delay_ms(1);
 
 	// Init gyro
 

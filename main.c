@@ -12,6 +12,7 @@
 #include "motcons.h"
 #include "flash.h"
 #include "comm.h"
+#include "sonar.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -22,8 +23,7 @@
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
 
-uint8_t tx_buffer[1024];
-
+uint8_t txbuf[1024];
 
 void delay_us(uint32_t i)
 {
@@ -98,13 +98,7 @@ void run_flasher()
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
-	LED_ON();
-	uint32_t status = USART3->SR;
 	char byte = USART3->DR;
-	if(status & 1UL<<3)
-	{
-		// Overrun, do something
-	}
 
 	switch(byte)
 	{
@@ -122,6 +116,43 @@ void uart_rx_handler()
 	}
 }
 
+volatile int send_cnt;
+volatile int send_len;
+
+#define SEND(len)  {send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7;}
+#define NONREADY() (send_cnt < send_len)
+#define READY()    (send_len == send_cnt)
+
+void uart_inthandler()
+{
+	LED_ON();
+	uint32_t status = USART3->SR;
+
+	if(status & 1UL<<5)
+	{
+		uart_rx_handler();
+	}
+
+	if(status & 1UL<<3)
+	{
+		// RX Overrun, do something
+	}
+
+	if(status & 1UL<<7)
+	{
+		if(send_cnt < send_len)
+		{
+			USART3->DR = txbuf[send_cnt];
+			send_cnt++;
+			if(send_cnt == send_len)
+			{
+				USART3->CR1 &= ~(1UL<<7);
+			}
+		}
+	}
+	LED_OFF();
+}
+
 int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
 
 volatile optflow_data_t latest_optflow;
@@ -129,7 +160,6 @@ volatile int optflow_errors;
 
 void timebase_10k_handler()
 {
-	int i;
 	static int cnt_10k = 0;
 	static int gyro_xcel_compass_cnt = 0;
 	TIM6->SR = 0;
@@ -145,17 +175,7 @@ void timebase_10k_handler()
 	lidar_ctrl_loop();
 
 	gyro_xcel_compass_cnt++;
-	if(gyro_xcel_compass_cnt == 90)
-	{
-		msg_gyro_t msg;
-		msg.status = 1;
-		msg.x_int = I16_I14(latest_gyro.x);
-		msg.y_int = I16_I14(latest_gyro.y);
-		msg.z_int = I16_I14(latest_gyro.z);
-		memcpy(txbuf, &msg, sizeof(msg_gyro_t));
-		uart_dma_send(sizeof(msg_gyro_t));
-	}
-	else if(gyro_xcel_compass_cnt == 100) // gyro, xcel, compass at 100Hz
+	if(gyro_xcel_compass_cnt == 100) // gyro, xcel, compass at 100Hz
 	{
 		start_gyro_xcel_compass_sequence();
 		gyro_xcel_compass_cnt = 0;
@@ -171,7 +191,6 @@ extern volatile lidar_datum_t lidar_full_rev[90];
 
 int main()
 {
-	int i;
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -190,7 +209,7 @@ int main()
 	Q (for USB etc.)    = 5  -> 48MHz
 	*/
 
-	delay_ms(1);
+	delay_ms(1); // to ensure voltage has ramped up
 
 	// 3 wait states for 120MHz and Vcc over 2.7V
 	FLASH->ACR = 1UL<<8 /*prefetch enable*/ | 3UL /*3 wait states*/;
@@ -210,7 +229,7 @@ int main()
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/;
 
-	delay_us(100);
+	delay_us(10);
 
 	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
 	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
@@ -257,12 +276,18 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
+	NVIC_SetPriorityGrouping(2);
 
-	// USART3 = APB1 = 30 MHz
+	// USART3 = the main USART @ APB1 = 30 MHz
 	// 16x oversampling
 	// 115200bps -> Baudrate register = 16.25 = 16 1/4 = 16 4/16
+
+	// STM32F205 DMA is a total and utter joke. There are practically no connections to anywhere.
+	// SPI2 and USART3 cannot be used at the same time. Even substituting UART4 doensn't help.
+	// So, there is no DMA for UART. So, we are just doing it interrupt-based.
+
 	USART3->BRR = 16UL<<4 | 4UL;
-	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<7 /*TX DMA*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
 	// TIM4 = Lidar motor
 
@@ -285,20 +310,21 @@ int main()
 
 	FLOW_CS1();
 
+	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
 
-//	usart_print("booty booty\r\n");
+	usart_print("booty booty\r\n");
 	delay_ms(1000);
 
 	init_gyro_xcel_compass();
-//	usart_print("gyro,xcel,compass init ok\r\n");
+	usart_print("gyro,xcel,compass init ok\r\n");
 	init_optflow();
-//	usart_print("optflow init ok\r\n");
+	usart_print("optflow init ok\r\n");
 	init_motcons();
-//	usart_print("motcons init ok\r\n");
-//	init_lidar();
-//	usart_print("lidar init ok\r\n");
+	usart_print("motcons init ok\r\n");
+	init_lidar();
+	usart_print("lidar init ok\r\n");
 
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
@@ -308,7 +334,6 @@ int main()
 	PSU12V_ENA();
 	CHARGER_ENA();
 
-/*
 	usart_print("pre-syncing lidar... ");
 	sync_lidar();
 	usart_print("stablizing lidar... ");
@@ -316,15 +341,12 @@ int main()
 	usart_print("re-syncing lidar... ");
 	resync_lidar();
 	usart_print("done\r\n");
-*/
 
 //	LED_OFF();
-	int kakka = 0;
 
+	int kakka = 0;
 	while(1)
 	{
-		char buffer[4000];
-		char* buf = buffer;
 
 		delay_ms(1);
 		kakka++;
@@ -332,18 +354,12 @@ int main()
 		if(kakka<100)
 			continue;
 
-		for(i=2; i<4; i++)
-		{
-			if(motcons[i].cmd.speed > 0)
-				motcons[i].cmd.speed-=5;
-			else if(motcons[i].cmd.speed < 0)
-				motcons[i].cmd.speed+=5;
-		}
-
 		kakka = 0;
-//		LED_OFF();
-
 /*
+		char buffer[4000];
+		char* buf = buffer;
+
+
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro.status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -352,8 +368,6 @@ int main()
 		buf = o_itoa16_fixed(latest_gyro.y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_gyro.z, buf);
-
-
 		buf = o_str_append(buf, " xcel=");
 		buf = o_utoa8_fixed(latest_xcel.status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -362,7 +376,6 @@ int main()
 		buf = o_itoa16_fixed(latest_xcel.y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_xcel.z, buf);
-
 		buf = o_str_append(buf, " compass=");
 		buf = o_utoa8_fixed(latest_compass.status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -371,7 +384,6 @@ int main()
 		buf = o_itoa16_fixed(latest_compass.y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_compass.z, buf);
-
 		buf = o_str_append(buf, " optflow=");
 		buf = o_utoa8_fixed(latest_optflow.motion, buf);
 		buf = o_str_append(buf, " dx=");
@@ -387,93 +399,54 @@ int main()
 		buf = o_str_append(buf, " errs=");
 		buf = o_utoa16_fixed(optflow_errors, buf);
 
-
-		buf = o_str_append(buf, "\r\nMC1 head=");
-		buf = o_utoa32((motcons[0].status.last_msg>>10)&0b111111, buf);
-		buf = o_str_append(buf, " data=");
-		buf = o_utoa32(motcons[0].status.last_msg&0x3ff, buf);
-		buf = o_str_append(buf, "  MC2 head=");
-		buf = o_utoa32((motcons[1].status.last_msg>>10)&0b111111, buf);
-		buf = o_str_append(buf, " data=");
-		buf = o_utoa32(motcons[1].status.last_msg&0x3ff, buf);
-		buf = o_str_append(buf, "  MC3 head=");
-		buf = o_utoa32((motcons[2].status.last_msg>>10)&0b111111, buf);
-		buf = o_str_append(buf, " data=");
-		buf = o_utoa32(motcons[2].status.last_msg&0x3ff, buf);
-		buf = o_str_append(buf, "  MC4 head=");
-		buf = o_utoa32((motcons[3].status.last_msg>>10)&0b111111, buf);
-		buf = o_str_append(buf, " data=");
-		buf = o_utoa32(motcons[3].status.last_msg&0x3ff, buf);
-
-*/
-
-/*		int o;
-		buf = o_str_append(buf, " rpm_set=");
-		buf = o_utoa16_fixed(lidar_rpm_setpoint_x64, buf);
-		buf = o_str_append(buf, "\r\n");
-*/
-/*		for(i=0; i < 30; i++)
-		{
-			for(o=0; o < 4; o++)
-			{
-				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
-					buf = o_str_append(buf, "I");
-				else
-					buf = o_str_append(buf, " ");
-			}
-		}
-
-		buf = o_str_append(buf, "\r\n");
-
-		for(i=0; i < 30; i++)
-		{
-			for(o=0; o < 4; o++)
-			{
-				if(lidar_full_rev[i].d[o].flags_distance&(1<<14))
-					buf = o_str_append(buf, "S");
-				else
-					buf = o_str_append(buf, " ");
-			}
-		}
-
-		buf = o_str_append(buf, "\r\n");
-*/
-/*
-		for(i=0; i < 30; i++)
-		{
-			for(o=0; o < 4; o++)
-			{
-				int val = lidar_full_rev[i].d[o].flags_distance & 0x3FFF;
-				val /= 500;
-				if(val > 10) val = 10;
-				if(val < 0) val = 0;
-
-				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
-					*buf++ = ' ';
-				else
-					*buf++ = val+'0';
-			}
-		}
-*/
-
-/*
-		buf = o_str_append(buf, " SONAR1=");
-		buf = o_utoa16_fixed(latest_sonars[0], buf);
-		buf = o_str_append(buf, " SONAR2=");
-		buf = o_utoa16_fixed(latest_sonars[1], buf);
-		buf = o_str_append(buf, " SONAR3=");
-		buf = o_utoa16_fixed(latest_sonars[2], buf);
-		buf = o_str_append(buf, " SONAR4=");
-		buf = o_utoa16_fixed(latest_sonars[3], buf);
-
-
 		buf = o_str_append(buf, "\r\n\r\n");
 		usart_print(buffer);
+
 */
+		while(NONREADY()) ;
+		msg_gyro_t msg;
+		msg.status = 1;
+		msg.int_x = I16_I14(latest_gyro.x);
+		msg.int_y = I16_I14(latest_gyro.y);
+		msg.int_z = I16_I14(latest_gyro.z);
+		txbuf[0] = 128;
+		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
+		SEND(1+sizeof(msg_gyro_t));
 
+		delay_ms(500);
 
-//		SPI1->DR = 11UL<<10 | speed;
+		while(NONREADY()) ;
+		msg_xcel_t msgx;
+		msgx.status = 1;
+		msgx.int_x = I16_I14(latest_xcel.x);
+		msgx.int_y = I16_I14(latest_xcel.y);
+		msgx.int_z = I16_I14(latest_xcel.z);
+		txbuf[0] = 129;
+		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
+		SEND(1+sizeof(msg_xcel_t));
 
+		while(NONREADY()) ;
+		txbuf[0] = 0x84;
+		txbuf[1] = 1;
+		int i;
+		for(i = 0; i < 90; i++)
+		{
+			int o;
+			for(o = 0; o < 4; o++)
+			{
+				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+				{
+					txbuf[2+8*i+2*o] = 0;
+					txbuf[2+8*i+2*o+1] = 0;
+				}
+				else
+				{
+					txbuf[2+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
+					txbuf[2+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
+				}
+			}
+		}
+		SEND(90*4*2+2);
 	}
 
 
