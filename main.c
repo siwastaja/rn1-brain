@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
 #include "main.h"
 #include "ext_include/stm32f2xx.h"
@@ -97,12 +98,13 @@ void run_flasher()
 
 void uart_rx_handler()
 {
+	static int flash_key_state = 0;
 	// This SR-then-DR read sequence clears error flags:
 	char byte = USART3->DR;
 
 	switch(byte)
 	{
-		case 'a': motcons[2].cmd.speed += 80; break;
+/*		case 'a': motcons[2].cmd.speed += 80; break;
 		case 'q': motcons[2].cmd.speed -= 80; break;
 		case 's': motcons[2].cmd.speed += 80; motcons[3].cmd.speed += 80; break;
 		case 'w': motcons[2].cmd.speed -= 80; motcons[3].cmd.speed -= 80;break;
@@ -110,9 +112,13 @@ void uart_rx_handler()
 		case 'e': motcons[3].cmd.speed -= 80; break;
 		case ',': lidar_rpm_setpoint_x64 -= 320; break;
 		case '.': lidar_rpm_setpoint_x64 += 320; break;
-		case '9': run_flasher(); break;
+*/
+		case '6': if(flash_key_state == 0) flash_key_state = 1; break;
+		case '7': if(flash_key_state == 1) flash_key_state = 2; break;
+		case '8': if(flash_key_state == 2) flash_key_state = 3; break;
+		case '9': if(flash_key_state == 3) run_flasher(); break;
 
-		default: break;
+		default: flash_key_state = 0; break;
 	}
 }
 
@@ -314,17 +320,17 @@ int main()
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
 
-	usart_print("booty booty\r\n");
+//	usart_print("booty booty\r\n");
 	delay_ms(1000);
 
 	init_gyro_xcel_compass();
-	usart_print("gyro,xcel,compass init ok\r\n");
+//	usart_print("gyro,xcel,compass init ok\r\n");
 	init_optflow();
-	usart_print("optflow init ok\r\n");
+//	usart_print("optflow init ok\r\n");
 	init_motcons();
-	usart_print("motcons init ok\r\n");
+//	usart_print("motcons init ok\r\n");
 	init_lidar();
-	usart_print("lidar init ok\r\n");
+//	usart_print("lidar init ok\r\n");
 
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
@@ -334,15 +340,20 @@ int main()
 	PSU12V_ENA();
 	CHARGER_ENA();
 
-	usart_print("pre-syncing lidar... ");
+//	usart_print("pre-syncing lidar... ");
 	sync_lidar();
-	usart_print("stablizing lidar... ");
+//	usart_print("stablizing lidar... ");
 	delay_ms(6000);
-	usart_print("re-syncing lidar... ");
+//	usart_print("re-syncing lidar... ");
 	resync_lidar();
-	usart_print("done\r\n");
+//	usart_print("done\r\n");
 
 //	LED_OFF();
+
+	int compass_x_min = 0;
+	int compass_x_max = 0;
+	int compass_y_min = 0;
+	int compass_y_max = 0;
 
 	int kakka = 0;
 	while(1)
@@ -403,6 +414,7 @@ int main()
 		usart_print(buffer);
 
 */
+
 		while(NONREADY()) ;
 		msg_gyro_t msg;
 		msg.status = 1;
@@ -426,6 +438,17 @@ int main()
 		SEND(1+sizeof(msg_xcel_t));
 
 		while(NONREADY()) ;
+		msg_compass_t msgc;
+		msgc.status = 1;
+		msgc.x = I16_I14(latest_compass.x);
+		msgc.y = I16_I14(latest_compass.y);
+		msgc.z = I16_I14(latest_compass.z);
+		txbuf[0] = 0x82;
+		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
+		SEND(1+sizeof(msg_compass_t));
+
+
+		while(NONREADY()) ;
 		txbuf[0] = 0x84;
 		txbuf[1] = 1;
 		int i;
@@ -447,6 +470,47 @@ int main()
 			}
 		}
 		SEND(90*4*2+2);
+
+		// Do fancy calculation here :)
+
+		int cx = latest_compass.x;
+		int cy = latest_compass.y;
+
+		if(cx < compass_x_min)
+			compass_x_min = cx;
+		if(cy < compass_y_min)
+			compass_y_min = cy;
+
+		if(cx > compass_x_max)
+			compass_x_max = cx;
+		if(cy > compass_y_max)
+			compass_y_max = cy;
+
+		int degrees = 0;
+
+		int dx = compass_x_max - compass_x_min;
+		int dy = compass_y_max - compass_y_min;
+		if(dx > 800 && dy > 800)
+		{
+			int dx2 = compass_x_max + compass_x_min;
+			int dy2 = compass_y_max + compass_y_min;
+			cx = cx - dx2/2;
+			cy = cy - dy2/2;
+			double heading = atan2(cx, cy);
+			heading *= (360.0/2.0*M_PI);
+			degrees = heading;
+		}
+
+		while(NONREADY()) ;
+		txbuf[0] = 0xa0;
+		txbuf[1] = 1;
+		txbuf[2] = degrees&0x7f;
+		txbuf[3] = (degrees&(0x7f<<7)) >> 7;
+		txbuf[4] = 0;
+		txbuf[5] = 0;
+		SEND(6);
+
+
 	}
 
 
