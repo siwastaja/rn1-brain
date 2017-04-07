@@ -15,6 +15,9 @@
 #include "comm.h"
 #include "sonar.h"
 
+#define BINARY_OUTPUT
+//#define TEXT_DEBUG
+
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 #define CHARGER_ENA() {GPIOA->BSRR = 1UL<<15;}
@@ -320,17 +323,27 @@ int main()
 	NVIC_EnableIRQ(USART3_IRQn);
 	__enable_irq();
 
-//	usart_print("booty booty\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("booty booty\r\n");
+#endif
 	delay_ms(1000);
 
 	init_gyro_xcel_compass();
-//	usart_print("gyro,xcel,compass init ok\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("gyro,xcel,compass init ok\r\n");
+#endif
 	init_optflow();
-//	usart_print("optflow init ok\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("optflow init ok\r\n");
+#endif
 	init_motcons();
-//	usart_print("motcons init ok\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("motcons init ok\r\n");
+#endif
 	init_lidar();
-//	usart_print("lidar init ok\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("lidar init ok\r\n");
+#endif
 
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
@@ -340,13 +353,21 @@ int main()
 	PSU12V_ENA();
 	CHARGER_ENA();
 
-//	usart_print("pre-syncing lidar... ");
+#ifdef TEXT_DEBUG
+	usart_print("pre-syncing lidar... ");
+#endif
 	sync_lidar();
-//	usart_print("stablizing lidar... ");
+#ifdef TEXT_DEBUG
+	usart_print("stablizing lidar... ");
+#endif
 	delay_ms(6000);
-//	usart_print("re-syncing lidar... ");
+#ifdef TEXT_DEBUG
+	usart_print("re-syncing lidar... ");
+#endif
 	resync_lidar();
-//	usart_print("done\r\n");
+#ifdef TEXT_DEBUG
+	usart_print("done\r\n");
+#endif
 
 //	LED_OFF();
 
@@ -356,21 +377,23 @@ int main()
 	int compass_y_max = 0;
 
 	int kakka = 0;
+	int first_compass = 3;
 	while(1)
 	{
 
 		delay_ms(1);
 		kakka++;
 
-		if(kakka<100)
+		if(kakka<20)
 			continue;
 
 		kakka = 0;
-/*
+#ifdef TEXT_DEBUG
 		char buffer[4000];
 		char* buf = buffer;
+#endif
 
-
+/*
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro.status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -410,11 +433,9 @@ int main()
 		buf = o_str_append(buf, " errs=");
 		buf = o_utoa16_fixed(optflow_errors, buf);
 
-		buf = o_str_append(buf, "\r\n\r\n");
-		usart_print(buffer);
-
 */
 
+#ifdef BINARY_OUTPUT
 		while(NONREADY()) ;
 		msg_gyro_t msg;
 		msg.status = 1;
@@ -471,10 +492,21 @@ int main()
 		}
 		SEND(90*4*2+2);
 
+#endif
+
 		// Do fancy calculation here :)
 
 		int cx = latest_compass.x;
 		int cy = latest_compass.y;
+
+		if(first_compass > -1)
+			first_compass--;
+
+		if(first_compass == 0)
+		{
+			compass_x_min = compass_x_max = cx;
+			compass_y_min = compass_y_max = cy;
+		}
 
 		if(cx < compass_x_min)
 			compass_x_min = cx;
@@ -488,19 +520,52 @@ int main()
 
 		int degrees = 0;
 
+/*		buf = o_str_append(buf, " compass=");
+		buf = o_utoa8_fixed(latest_compass.status_reg, buf);
+		buf = o_str_append(buf, "  ");
+		buf = o_itoa16_fixed(latest_compass.x, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_compass.y, buf);
+		buf = o_str_append(buf, ", ");
+		buf = o_itoa16_fixed(latest_compass.z, buf);
+		buf = o_str_append(buf, "\r\nxmin=");
+		buf = o_itoa32(compass_x_min, buf);
+		buf = o_str_append(buf, " xmax=");
+		buf = o_itoa32(compass_x_max, buf);
+		buf = o_str_append(buf, " ymin=");
+		buf = o_itoa32(compass_y_min, buf);
+		buf = o_str_append(buf, " ymax=");
+		buf = o_itoa32(compass_y_max, buf);
+*/
 		int dx = compass_x_max - compass_x_min;
 		int dy = compass_y_max - compass_y_min;
 		if(dx > 800 && dy > 800)
 		{
 			int dx2 = compass_x_max + compass_x_min;
 			int dy2 = compass_y_max + compass_y_min;
+//			buf = o_str_append(buf, " cx=");
+//			buf = o_itoa32(cx, buf);
+//			buf = o_str_append(buf, " cy=");
+//			buf = o_itoa32(cy, buf);
+
 			cx = cx - dx2/2;
 			cy = cy - dy2/2;
+
+//			buf = o_str_append(buf, " --> cx=");
+//			buf = o_itoa32(cx, buf);
+//			buf = o_str_append(buf, " cy=");
+//			buf = o_itoa32(cy, buf);
+
 			double heading = atan2(cx, cy);
-			heading *= (360.0/2.0*M_PI);
+			heading *= (360.0/(2.0*M_PI));
 			degrees = heading;
+
+//			buf = o_str_append(buf, " degs=");
+//			buf = o_itoa32(degrees, buf);
+
 		}
 
+#ifdef BINARY_OUTPUT
 		while(NONREADY()) ;
 		txbuf[0] = 0xa0;
 		txbuf[1] = 1;
@@ -509,7 +574,13 @@ int main()
 		txbuf[4] = 0;
 		txbuf[5] = 0;
 		SEND(6);
+#endif
 
+#ifdef TEXT_DEBUG
+
+		buf = o_str_append(buf, "\r\n\r\n");
+		usart_print(buffer);
+#endif
 
 	}
 
