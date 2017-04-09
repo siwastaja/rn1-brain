@@ -19,7 +19,7 @@ all: main.bin
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 main.bin: $(OBJ)
-	$(LD) -Tstm32.ld $(LDFLAGS) -o main.elf $^
+	$(LD) -Tstm32.ld $(LDFLAGS) -o main.elf $^ /usr/arm-none-eabi/lib/armv7-m/libm.a
 	$(OBJCOPY) -Obinary main.elf main_full.bin
 	$(OBJCOPY) -Obinary --remove-section=.flasher main.elf main.bin
 	$(SIZE) main.elf
@@ -31,7 +31,13 @@ flash: main.bin
 	sudo stm32sprog -b 115200 -vw main.bin
 
 f: main.bin
+	../rn1-tools/prog ~/dev/robo ./main.bin
+
+f_local: main.bin
 	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin
+
+ff: main.bin
+	scp main.bin do_flash.txt hrst@proto4:~
 
 stack:
 	cat *.su

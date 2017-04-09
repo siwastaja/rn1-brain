@@ -21,5 +21,13 @@ typedef struct __attribute__ ((__packed__))
 	int16_t int_z;
 } msg_xcel_t;
 
+typedef struct __attribute__ ((__packed__))
+{
+	uint8_t status;
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} msg_compass_t;
+
 #endif
 

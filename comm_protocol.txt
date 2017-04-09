@@ -74,4 +74,8 @@ MESSAGES RN#1-->PC (aka status)
 	7*uint14 distances	Distances in cm for sonars 0,1,2,3,4,5,6;  0 = no datapoint (no echo received)
 
 
+0xa0 MSG_FACING		Actual direction and speed (based on sensors)
+	uint7	status
+	uint14	heading	In degrees, now. 0 = north
+	int14	speed	in mm/s
 
