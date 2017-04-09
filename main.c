@@ -170,7 +170,8 @@ volatile int optflow_errors;
 void timebase_10k_handler()
 {
 	static int cnt_10k = 0;
-	static int gyro_xcel_compass_cnt = 0;
+	int status;
+
 	TIM6->SR = 0;
 	cnt_10k++;
 
@@ -183,13 +184,17 @@ void timebase_10k_handler()
 
 	lidar_ctrl_loop();
 
-	gyro_xcel_compass_cnt++;
-	if(gyro_xcel_compass_cnt == 100) // gyro, xcel, compass at 100Hz
+	status = gyro_xcel_compass_fsm();
+
+	if(status & GYRO_NEW_DATA)
 	{
-		start_gyro_xcel_compass_sequence();
-		gyro_xcel_compass_cnt = 0;
+
 	}
 
+	if(status & XCEL_NEW_DATA)
+	{
+
+	}
 }
 
 volatile xcel_data_t latest_xcel;

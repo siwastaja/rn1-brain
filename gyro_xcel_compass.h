@@ -28,7 +28,10 @@ typedef struct
 	int16_t z;
 } compass_data_t;
 
-int start_gyro_xcel_compass_sequence();
 int init_gyro_xcel_compass();
+
+#define GYRO_NEW_DATA (1)
+#define XCEL_NEW_DATA (2)
+int gyro_xcel_compass_fsm();
 
 #endif
