@@ -60,8 +60,9 @@ MESSAGES RN#1-->PC (aka status)
 
 0x83 MSG_OPTFLOW	Optical flow sensor (ground camera)
 	uint7	status
-	uint7	dx	X delta after previous MSG_OPTFLOW
-	uint7	dy	Y
+	sint14	dx	X delta after previous MSG_OPTFLOW
+	sint14	dy	Y
+	uint7	q	Surface quality
 
 0x84 MSG_LIDAR		LIDAR image, latest full turn
 	Note: This is a large data frame, 1Mbps communication is recommend to keep latency of other messages down.
