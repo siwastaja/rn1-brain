@@ -84,6 +84,7 @@ volatile int xcel_timestep_minuses;
 
 volatile int gyro_new_data;
 volatile int xcel_new_data;
+volatile int compass_new_data;
 
 typedef enum {I2C1_GYRO = 0, I2C1_XCEL, I2C1_COMPASS} i2c1_device_t;
 
@@ -295,6 +296,11 @@ void i2c1_xcel_handler()
 		i2c1_state=0;
 		break;
 
+		case 11:
+		I2C1->DR; // Dummy read needed to clear interrupt
+		i2c1_state=0;
+		break;
+
 		default: break;
 
 	}
@@ -366,6 +372,7 @@ void i2c1_compass_handler()
 
 		case 10:
 		buffer_compass->z |= (I2C1->DR)<<8;
+		compass_new_data = 1;
 		i2c1_state=0;
 		break;
 
@@ -534,6 +541,12 @@ int gyro_xcel_compass_fsm()
 	{
 		xcel_new_data = 0;
 		ret |= XCEL_NEW_DATA;
+	}
+
+	if(compass_new_data)
+	{
+		compass_new_data = 0;
+		ret |= COMPASS_NEW_DATA;
 	}
 
 	return ret;

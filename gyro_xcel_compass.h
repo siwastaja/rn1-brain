@@ -32,6 +32,7 @@ int init_gyro_xcel_compass();
 
 #define GYRO_NEW_DATA (1)
 #define XCEL_NEW_DATA (2)
+#define COMPASS_NEW_DATA (4)
 int gyro_xcel_compass_fsm();
 
 #endif
