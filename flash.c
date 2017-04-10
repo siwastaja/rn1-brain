@@ -179,6 +179,10 @@ void flasher()
 			flash_read(addr, size);
 			break;
 
+			case 151:
+			NVIC_SystemReset();
+			while(1);
+
 			case 150:
 			default:
 			{

@@ -99,30 +99,59 @@ void run_flasher()
 	while(1);
 }
 
+#define RX_BUFFER_LEN 128
+volatile uint8_t rx_buffers[2][RX_BUFFER_LEN];
+int rx_buf_loc = 0;
+
+volatile uint8_t* gather_rx_buf;
+volatile uint8_t* process_rx_buf;
+
+volatile int do_handle_message;
+
+/*
+	Messages are double-buffered;
+	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
+*/
+
+void handle_message()
+{
+	switch(process_rx_buf[0])
+	{
+		case 0xfe:
+		if(process_rx_buf[1] == 0x42 && process_rx_buf[2] == 0x11 && process_rx_buf[3] == 0x7a)
+		{
+			if(process_rx_buf[4] == 0x52)
+				run_flasher();
+		}
+		break;
+		default:
+		break;
+	}
+	do_handle_message = 0;
+}
+
 void uart_rx_handler()
 {
-	static int flash_key_state = 0;
 	// This SR-then-DR read sequence clears error flags:
-	char byte = USART3->DR;
+	uint8_t byte = USART3->DR;
 
-	switch(byte)
+	if(byte > 127)
 	{
-/*		case 'a': motcons[2].cmd.speed += 80; break;
-		case 'q': motcons[2].cmd.speed -= 80; break;
-		case 's': motcons[2].cmd.speed += 80; motcons[3].cmd.speed += 80; break;
-		case 'w': motcons[2].cmd.speed -= 80; motcons[3].cmd.speed -= 80;break;
-		case 'd': motcons[3].cmd.speed += 80; break;
-		case 'e': motcons[3].cmd.speed -= 80; break;
-		case ',': lidar_rpm_setpoint_x64 -= 320; break;
-		case '.': lidar_rpm_setpoint_x64 += 320; break;
-*/
-		case '6': if(flash_key_state == 0) flash_key_state = 1; break;
-		case '7': if(flash_key_state == 1) flash_key_state = 2; break;
-		case '8': if(flash_key_state == 2) flash_key_state = 3; break;
-		case '9': if(flash_key_state == 3) run_flasher(); break;
-
-		default: flash_key_state = 0; break;
+		volatile uint8_t* tmp = gather_rx_buf;
+		gather_rx_buf = process_rx_buf;
+		process_rx_buf = tmp;
+		rx_buf_loc = 0;
+		do_handle_message = 1;
 	}
+
+	if(byte != 255)
+	{
+		gather_rx_buf[rx_buf_loc] = byte;
+		rx_buf_loc++;
+		if(rx_buf_loc >= RX_BUFFER_LEN)
+			rx_buf_loc = 0;
+	}
+
 }
 
 volatile int send_cnt;
@@ -232,6 +261,9 @@ int main()
 	P (for main system) = 2  -> 120 MHz
 	Q (for USB etc.)    = 5  -> 48MHz
 	*/
+
+	gather_rx_buf = rx_buffers[0];
+	process_rx_buf = rx_buffers[1];
 
 	delay_ms(1); // to ensure voltage has ramped up
 
@@ -409,7 +441,7 @@ int main()
 		char* buf = buffer;
 #endif
 
-
+/*
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -455,17 +487,7 @@ int main()
 		buf = o_str_append(buf, " comps=");
 		buf = o_utoa16_fixed(new_compass, buf);
 
-/*		buf = o_str_append(buf, " STATE=");
-		buf = o_utoa16_fixed(i2c1_state, buf);
-
-		buf = o_str_append(buf, " SR=");
-		buf = o_utoa16_fixed(last_sr1, buf);
-
-
-		buf = o_str_append(buf, " fails=");
-		buf = o_utoa16_fixed(i2c1_fails, buf);
 */
-
 /*		buf = o_str_append(buf, " optflow=");
 		buf = o_utoa8_fixed(latest_optflow.motion, buf);
 		buf = o_str_append(buf, " dx=");
