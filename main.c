@@ -15,8 +15,8 @@
 #include "comm.h"
 #include "sonar.h"
 
-#define BINARY_OUTPUT
-//#define TEXT_DEBUG
+//#define BINARY_OUTPUT
+#define TEXT_DEBUG
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -134,7 +134,7 @@ volatile int send_len;
 
 void uart_inthandler()
 {
-	LED_ON();
+//	LED_ON();
 	uint32_t status = USART3->SR;
 
 	if(status & 1UL<<5)
@@ -159,13 +159,15 @@ void uart_inthandler()
 			}
 		}
 	}
-	LED_OFF();
+//	LED_OFF();
 }
 
 int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
 
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
+
+volatile int new_gyro, new_xcel;
 
 void timebase_10k_handler()
 {
@@ -188,20 +190,23 @@ void timebase_10k_handler()
 
 	if(status & GYRO_NEW_DATA)
 	{
-
+		new_gyro++;
 	}
 
 	if(status & XCEL_NEW_DATA)
 	{
-
+		new_xcel++;
 	}
 }
 
-volatile xcel_data_t latest_xcel;
-volatile gyro_data_t latest_gyro;
-volatile compass_data_t latest_compass;
-
 extern volatile lidar_datum_t lidar_full_rev[90];
+
+extern volatile int i2c1_state;
+extern volatile int last_sr1;
+extern volatile int i2c1_fails;
+
+extern volatile int gyro_timestep_len;
+extern volatile int xcel_timestep_len;
 
 int main()
 {
@@ -326,12 +331,11 @@ int main()
 
 	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
 	NVIC_EnableIRQ(USART3_IRQn);
-	__enable_irq();
 
 #ifdef TEXT_DEBUG
 	usart_print("booty booty\r\n");
 #endif
-	delay_ms(1000);
+	delay_ms(100);
 
 	init_gyro_xcel_compass();
 #ifdef TEXT_DEBUG
@@ -345,14 +349,16 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("motcons init ok\r\n");
 #endif
-	init_lidar();
+//	init_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("lidar init ok\r\n");
 #endif
 
-	NVIC_EnableIRQ(TIM6_DAC_IRQn);
+	__enable_irq();
 
 	delay_ms(100);
+	NVIC_EnableIRQ(TIM6_DAC_IRQn);
+
 
 
 	PSU12V_ENA();
@@ -361,15 +367,15 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("pre-syncing lidar... ");
 #endif
-	sync_lidar();
+//	sync_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("stablizing lidar... ");
 #endif
-	delay_ms(6000);
+//	delay_ms(6000);
 #ifdef TEXT_DEBUG
 	usart_print("re-syncing lidar... ");
 #endif
-	resync_lidar();
+//	resync_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("done\r\n");
 #endif
@@ -398,32 +404,62 @@ int main()
 		char* buf = buffer;
 #endif
 
-/*
+
 		buf = o_str_append(buf, " gyro=");
-		buf = o_utoa8_fixed(latest_gyro.status_reg, buf);
+		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
 		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_gyro.x, buf);
+		buf = o_itoa16_fixed(latest_gyro->x, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_gyro.y, buf);
+		buf = o_itoa16_fixed(latest_gyro->y, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_gyro.z, buf);
+		buf = o_itoa16_fixed(latest_gyro->z, buf);
 		buf = o_str_append(buf, " xcel=");
-		buf = o_utoa8_fixed(latest_xcel.status_reg, buf);
+		buf = o_utoa8_fixed(latest_xcel->status_reg, buf);
 		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_xcel.x, buf);
+		buf = o_itoa16_fixed(latest_xcel->x, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_xcel.y, buf);
+		buf = o_itoa16_fixed(latest_xcel->y, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_xcel.z, buf);
-		buf = o_str_append(buf, " compass=");
-		buf = o_utoa8_fixed(latest_compass.status_reg, buf);
+		buf = o_itoa16_fixed(latest_xcel->z, buf);
+/*		buf = o_str_append(buf, " compass=");
+		buf = o_utoa8_fixed(latest_compass->status_reg, buf);
 		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_compass.x, buf);
+		buf = o_itoa16_fixed(latest_compass->x, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass.y, buf);
+		buf = o_itoa16_fixed(latest_compass->y, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass.z, buf);
-		buf = o_str_append(buf, " optflow=");
+		buf = o_itoa16_fixed(latest_compass->z, buf);
+*/
+
+		buf = o_str_append(buf, " gyros=");
+		buf = o_utoa16_fixed(new_gyro, buf);
+		buf = o_str_append(buf, " +=");
+		buf = o_utoa16_fixed(gyro_timestep_plusses, buf);
+		buf = o_str_append(buf, " -=");
+		buf = o_utoa16_fixed(gyro_timestep_minuses, buf);
+		buf = o_str_append(buf, " l=");
+		buf = o_utoa16_fixed(gyro_timestep_len, buf);
+		buf = o_str_append(buf, " xcels=");
+		buf = o_utoa16_fixed(new_xcel, buf);
+		buf = o_str_append(buf, " +=");
+		buf = o_utoa16_fixed(xcel_timestep_plusses, buf);
+		buf = o_str_append(buf, " -=");
+		buf = o_utoa16_fixed(xcel_timestep_minuses, buf);
+		buf = o_str_append(buf, " l=");
+		buf = o_utoa16_fixed(xcel_timestep_len, buf);
+
+/*		buf = o_str_append(buf, " STATE=");
+		buf = o_utoa16_fixed(i2c1_state, buf);
+
+		buf = o_str_append(buf, " SR=");
+		buf = o_utoa16_fixed(last_sr1, buf);
+
+
+		buf = o_str_append(buf, " fails=");
+		buf = o_utoa16_fixed(i2c1_fails, buf);
+*/
+
+/*		buf = o_str_append(buf, " optflow=");
 		buf = o_utoa8_fixed(latest_optflow.motion, buf);
 		buf = o_str_append(buf, " dx=");
 		buf = o_itoa8_fixed(latest_optflow.dx, buf);
@@ -437,16 +473,16 @@ int main()
 		buf = o_utoa8_fixed(latest_optflow.max_pixel, buf);
 		buf = o_str_append(buf, " errs=");
 		buf = o_utoa16_fixed(optflow_errors, buf);
-
 */
+
 
 #ifdef BINARY_OUTPUT
 		while(NONREADY()) ;
 		msg_gyro_t msg;
 		msg.status = 1;
-		msg.int_x = I16_I14(latest_gyro.x);
-		msg.int_y = I16_I14(latest_gyro.y);
-		msg.int_z = I16_I14(latest_gyro.z);
+		msg.int_x = I16_I14(latest_gyro->x);
+		msg.int_y = I16_I14(latest_gyro->y);
+		msg.int_z = I16_I14(latest_gyro->z);
 		txbuf[0] = 128;
 		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
 		SEND(1+sizeof(msg_gyro_t));
@@ -456,9 +492,9 @@ int main()
 		while(NONREADY()) ;
 		msg_xcel_t msgx;
 		msgx.status = 1;
-		msgx.int_x = I16_I14(latest_xcel.x);
-		msgx.int_y = I16_I14(latest_xcel.y);
-		msgx.int_z = I16_I14(latest_xcel.z);
+		msgx.int_x = I16_I14(latest_xcel->x);
+		msgx.int_y = I16_I14(latest_xcel->y);
+		msgx.int_z = I16_I14(latest_xcel->z);
 		txbuf[0] = 129;
 		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
 		SEND(1+sizeof(msg_xcel_t));
@@ -466,9 +502,9 @@ int main()
 		while(NONREADY()) ;
 		msg_compass_t msgc;
 		msgc.status = 1;
-		msgc.x = I16_I14(latest_compass.x);
-		msgc.y = I16_I14(latest_compass.y);
-		msgc.z = I16_I14(latest_compass.z);
+		msgc.x = I16_I14(latest_compass->x);
+		msgc.y = I16_I14(latest_compass->y);
+		msgc.z = I16_I14(latest_compass->z);
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
 		SEND(1+sizeof(msg_compass_t));
@@ -501,8 +537,8 @@ int main()
 
 		// Do fancy calculation here :)
 
-		int cx = latest_compass.x;
-		int cy = latest_compass.y;
+		int cx = latest_compass->x;
+		int cy = latest_compass->y;
 
 		if(first_compass > -1)
 			first_compass--;
@@ -526,13 +562,13 @@ int main()
 		int degrees = 0;
 
 /*		buf = o_str_append(buf, " compass=");
-		buf = o_utoa8_fixed(latest_compass.status_reg, buf);
+		buf = o_utoa8_fixed(latest_compass->status_reg, buf);
 		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_compass.x, buf);
+		buf = o_itoa16_fixed(latest_compass->x, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass.y, buf);
+		buf = o_itoa16_fixed(latest_compass->y, buf);
 		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass.z, buf);
+		buf = o_itoa16_fixed(latest_compass->z, buf);
 		buf = o_str_append(buf, "\r\nxmin=");
 		buf = o_itoa32(compass_x_min, buf);
 		buf = o_str_append(buf, " xmax=");

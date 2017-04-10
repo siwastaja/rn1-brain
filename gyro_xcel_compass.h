@@ -35,4 +35,17 @@ int init_gyro_xcel_compass();
 #define COMPASS_NEW_DATA (4)
 int gyro_xcel_compass_fsm();
 
+extern volatile gyro_data_t gyro_data[2];
+extern volatile xcel_data_t xcel_data[2];
+extern volatile compass_data_t compass_data[2];
+
+extern volatile gyro_data_t *latest_gyro;
+extern volatile xcel_data_t *latest_xcel;
+extern volatile compass_data_t *latest_compass;
+
+extern volatile int gyro_timestep_plusses;
+extern volatile int gyro_timestep_minuses;
+extern volatile int xcel_timestep_plusses;
+extern volatile int xcel_timestep_minuses;
+
 #endif
