@@ -167,7 +167,7 @@ int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
 
-volatile int new_gyro, new_xcel;
+volatile int new_gyro, new_xcel, new_compass;
 
 void timebase_10k_handler()
 {
@@ -196,6 +196,11 @@ void timebase_10k_handler()
 	if(status & XCEL_NEW_DATA)
 	{
 		new_xcel++;
+	}
+
+	if(status & COMPASS_NEW_DATA)
+	{
+		new_compass++;
 	}
 }
 
@@ -421,7 +426,7 @@ int main()
 		buf = o_itoa16_fixed(latest_xcel->y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_xcel->z, buf);
-/*		buf = o_str_append(buf, " compass=");
+		buf = o_str_append(buf, " compass=");
 		buf = o_utoa8_fixed(latest_compass->status_reg, buf);
 		buf = o_str_append(buf, "  ");
 		buf = o_itoa16_fixed(latest_compass->x, buf);
@@ -429,7 +434,7 @@ int main()
 		buf = o_itoa16_fixed(latest_compass->y, buf);
 		buf = o_str_append(buf, ", ");
 		buf = o_itoa16_fixed(latest_compass->z, buf);
-*/
+
 
 		buf = o_str_append(buf, " gyros=");
 		buf = o_utoa16_fixed(new_gyro, buf);
@@ -447,6 +452,8 @@ int main()
 		buf = o_utoa16_fixed(xcel_timestep_minuses, buf);
 		buf = o_str_append(buf, " l=");
 		buf = o_utoa16_fixed(xcel_timestep_len, buf);
+		buf = o_str_append(buf, " comps=");
+		buf = o_utoa16_fixed(new_compass, buf);
 
 /*		buf = o_str_append(buf, " STATE=");
 		buf = o_utoa16_fixed(i2c1_state, buf);

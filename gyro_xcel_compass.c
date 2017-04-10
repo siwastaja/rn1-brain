@@ -55,8 +55,10 @@ extern void delay_ms(uint32_t i);
 
 #define I2C1_FSM_FREQ 10000
 #define I2C1_DATA_FREQ 200
+#define COMPASS_DATA_FREQ 5
 
 #define I2C1_NUM_TIMESTEPS ((I2C1_FSM_FREQ) / (I2C1_DATA_FREQ))
+#define I2C1_NUM_COMPASS_TIMESTEPS ((I2C1_FSM_FREQ) / (COMPASS_DATA_FREQ))
 
 #define I2C1_TIMESTEP_PLUS_ADJUSTMENT  (I2C1_NUM_TIMESTEPS/4)   // Data not ready --> make data reading happen later by this amount
 #define I2C1_TIMESTEP_MINUS_ADJUSTMENT (I2C1_NUM_TIMESTEPS/4)   // Data overrun --> make data reading happen earlier by this amount
@@ -76,15 +78,19 @@ volatile compass_data_t *buffer_compass;
 volatile int i2c1_ready = 0;
 
 
-volatile int gyro_timestep_len = 50; //I2C1_NUM_TIMESTEPS;
+volatile int gyro_timestep_len = I2C1_NUM_TIMESTEPS;
 volatile int gyro_timestep = 0;
 volatile int gyro_timestep_plusses;
 volatile int gyro_timestep_minuses;
 
-volatile int xcel_timestep_len = 50; // I2C1_NUM_TIMESTEPS*100;
+volatile int xcel_timestep_len = I2C1_NUM_TIMESTEPS;
 volatile int xcel_timestep = 0;
 volatile int xcel_timestep_plusses;
 volatile int xcel_timestep_minuses;
+
+volatile int compass_timestep_len = I2C1_NUM_COMPASS_TIMESTEPS;
+volatile int compass_timestep = 0;
+
 
 volatile int gyro_new_data;
 volatile int xcel_new_data;
@@ -571,13 +577,16 @@ int gyro_xcel_compass_fsm()
 	int ret = 0;
 	static int gyro_cnt = 0;
 	static int xcel_cnt = 0;
+	static int compass_cnt = 0;
 	static int gyro_pending = 0;
 	static int xcel_pending = 0;
+	static int compass_pending = 0;
 	static int plus_return_cnt = 0;
 	static int minus_return_cnt = 0;
 
 	gyro_cnt++;
 	xcel_cnt++;
+	compass_cnt++;
 
 	plus_return_cnt++;
 	minus_return_cnt++;
@@ -625,9 +634,11 @@ int gyro_xcel_compass_fsm()
 
 	if(gyro_cnt >= gyro_timestep_len) gyro_cnt = 0;
 	if(xcel_cnt >= xcel_timestep_len) xcel_cnt = 0;
+	if(compass_cnt >= compass_timestep_len) compass_cnt = 0;
 
 	if(gyro_cnt == gyro_timestep) gyro_pending = 1;
 	if(xcel_cnt == xcel_timestep) xcel_pending = 1;
+	if(compass_cnt == compass_timestep) compass_pending = 1;
 
 	if(i2c1_state == 0) // I2C1 ready
 	{
@@ -650,9 +661,17 @@ int gyro_xcel_compass_fsm()
 			start_i2c1_sequence(I2C1_XCEL);
 			xcel_pending = 0;
 		}
+		else if(compass_pending)
+		{
+			volatile compass_data_t *tmp;
+			tmp = latest_compass;
+			latest_compass = buffer_compass;
+			buffer_compass = tmp;
+			start_i2c1_sequence(I2C1_COMPASS);
+			compass_pending = 0;
+		}
 
 	}
-
 
 	if(gyro_new_data)
 	{
