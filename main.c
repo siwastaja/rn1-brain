@@ -15,8 +15,8 @@
 #include "comm.h"
 #include "sonar.h"
 
-//#define BINARY_OUTPUT
-#define TEXT_DEBUG
+#define BINARY_OUTPUT
+//#define TEXT_DEBUG
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -67,9 +67,6 @@ void error(int code)
 
 void adc_int_handler()
 {
-	LED_ON();
-	delay_ms(50);
-	LED_OFF();
 //	ADC1->ISR |= 1UL<<7;
 }
 
@@ -112,17 +109,20 @@ int speed_updated;
 
 volatile int send_cnt;
 volatile int send_len;
+volatile int tx_free = 1;
 
-#define SEND(len)  {send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7;}
-#define NONREADY() (send_cnt < send_len)
-#define READY()    (send_len == send_cnt)
-#define STOP_SENDING() {USART3->CR1 &= ~(1UL<<7); send_len = send_cnt = 0;}
+#define SEND(len)  {NVIC_DisableIRQ(USART3_IRQn); tx_free=0; send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7; NVIC_EnableIRQ(USART3_IRQn); }
+#define NONREADY() (!tx_free)
+#define READY()    (tx_free)
+#define STOP_SENDING() {NVIC_DisableIRQ(USART3_IRQn); USART3->CR1 &= ~(1UL<<7); send_len = send_cnt = 0; tx_free=1; NVIC_EnableIRQ(USART3_IRQn); }
 
 /*
 	Messages are double-buffered;
 	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
 */
 
+int common_speed;
+int angle;
 
 
 void handle_message()
@@ -141,9 +141,9 @@ void handle_message()
 		break;
 
 		case 0x80:
-		LED_OFF();
-		motcons[2].cmd.speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
-		motcons[3].cmd.speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
+//		LED_OFF();
+		common_speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
+		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
 		speed_updated = 1000;
 		break;
 		default:
@@ -179,7 +179,6 @@ void uart_rx_handler()
 
 void uart_inthandler()
 {
-//	LED_ON();
 	uint32_t status = USART3->SR;
 
 	if(status & 1UL<<5)
@@ -192,19 +191,30 @@ void uart_inthandler()
 		// RX Overrun, do something
 	}
 
-	if(status & 1UL<<7)
+	if((status & 1UL<<7))
 	{
-		if(send_cnt < send_len)
+		LED_ON();
+		if(send_cnt < send_len) // Valid case of TX interrupt
 		{
-			USART3->DR = txbuf[send_cnt];
+			int tmp = send_cnt;
 			send_cnt++;
 			if(send_cnt == send_len)
 			{
 				USART3->CR1 &= ~(1UL<<7);
+				tx_free = 1;
 			}
+			USART3->DR = txbuf[tmp];
+		}
+		else if(!(status & 1UL<<5)) // We didn't have rx, didn't need a TX interrupt either, so this is an invalid TX interrupt
+		{
+			// The following two lines themselves won't help:
+			USART3->CR1 &= ~(1UL<<7); // Make sure TX interrupt is indeed turned off!
+			//NVIC_ClearPendingIRQ(USART3_IRQn);
+			// The only way out is to send something.
+			USART3->DR = 0xff;
 		}
 	}
-//	LED_OFF();
+	LED_OFF();
 }
 
 int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
@@ -218,6 +228,8 @@ void timebase_10k_handler()
 {
 	static int cnt_10k = 0;
 	int status;
+	static int speeda = 0;
+	static int speedb = 0;
 
 	TIM6->SR = 0;
 	cnt_10k++;
@@ -254,10 +266,33 @@ void timebase_10k_handler()
 	if(speed_updated)
 	{
 		speed_updated--;
+
+		int error = latest_gyro->z/32 - angle;
+
+		speeda += error;
+		speedb -= error;
+
+		if(speeda > 200*32) speeda = 200*32;
+		else if(speeda < -200*32) speeda = -200*32;
+		if(speedb > 200*32) speedb = 200*32;
+		else if(speedb < -200*32) speedb = -200*32;
+
+		int a = common_speed + speeda/128;
+		int b = common_speed + speedb/128;
+
+		if(a > 400) a=400;
+		else if(a < -400) a=-400;
+		if(b > 400) b=400;
+		else if(b < -400) b=-400;
+
+		motcons[2].cmd.speed = a;
+		motcons[3].cmd.speed = b;
+
 	}
 	else
 	{
-		LED_ON();
+		speeda=0;
+		speedb=0;
 		motcons[2].cmd.speed = 0;
 		motcons[3].cmd.speed = 0;
 	}
@@ -396,7 +431,7 @@ int main()
 
 	FLOW_CS1();
 
-	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
+	NVIC_SetPriority(USART3_IRQn, 0b0101);
 	NVIC_EnableIRQ(USART3_IRQn);
 
 #ifdef TEXT_DEBUG
@@ -416,7 +451,7 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("motcons init ok\r\n");
 #endif
-//	init_lidar();
+	init_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("lidar init ok\r\n");
 #endif
@@ -424,6 +459,7 @@ int main()
 	__enable_irq();
 
 	delay_ms(100);
+	NVIC_SetPriority(TIM6_DAC_IRQn, 0b1010);
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
 
@@ -434,15 +470,15 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("pre-syncing lidar... ");
 #endif
-//	sync_lidar();
-#ifdef TEXT_DEBUG
-	usart_print("stablizing lidar... ");
-#endif
+	sync_lidar();
+//#ifdef TEXT_DEBUG
+//	usart_print("stablizing lidar... ");
+//#endif
 //	delay_ms(6000);
-#ifdef TEXT_DEBUG
-	usart_print("re-syncing lidar... ");
-#endif
-//	resync_lidar();
+//#ifdef TEXT_DEBUG
+//	usart_print("re-syncing lidar... ");
+//#endif
+	resync_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("done\r\n");
 #endif
@@ -455,6 +491,7 @@ int main()
 	int compass_y_max = 0;
 
 	int first_compass = 3;
+	int kakka = 0;
 	while(1)
 	{
 
@@ -465,7 +502,17 @@ int main()
 
 		delay_ms(100); // Don't produce too much data now, socat is broken.
 
+		if(kakka != -1)
+			kakka++;
 
+		if(kakka > 50)
+		{
+			resync_lidar();
+			kakka=-1;
+		}
+
+
+/*
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -517,7 +564,7 @@ int main()
 		buf = o_str_append(buf, " i2c1_fails=");
 		buf = o_utoa16_fixed(i2c1_fails, buf);
 
-
+*/
 
 /*		buf = o_str_append(buf, " optflow=");
 		buf = o_utoa8_fixed(latest_optflow.motion, buf);

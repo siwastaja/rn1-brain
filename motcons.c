@@ -7,6 +7,8 @@ extern volatile motcon_t motcons[NUM_MOTCONS];
 
 volatile int cur_motcon;
 volatile int motcons_initialized;
+#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
+#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
 void spi1_inthandler()
 {
@@ -45,6 +47,7 @@ void init_motcons()
 
 	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
+	NVIC_SetPriority(SPI1_IRQn, 0b0101);
 	NVIC_EnableIRQ(SPI1_IRQn);
 
 	motcons_initialized = 1;

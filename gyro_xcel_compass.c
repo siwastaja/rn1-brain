@@ -467,6 +467,8 @@ void i2c1_inthandler()
 		case I2C1_COMPASS: i2c1_compass_handler(); break;
 		default: break;
 	}
+	I2C1->SR1 = 0;
+	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 }
 
 
@@ -563,6 +565,7 @@ int init_gyro_xcel_compass()
 	delay_us(100);
 	I2C1->SR1 = 0; // Zero regs to prevent unwanted interrupt.
 	delay_us(1);
+	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
 	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 	NVIC_EnableIRQ(I2C1_EV_IRQn);
 
