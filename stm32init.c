@@ -9,7 +9,7 @@ void hardfault_handler();
 
 extern void error(int code);
 extern void main();
-extern void uart_inthandler();
+extern void uart_rx_handler();
 extern void adc_int_handler();
 extern void spi1_inthandler();
 extern void i2c1_inthandler();
@@ -75,7 +75,7 @@ unsigned int * the_nvic_vector[97] __attribute__ ((section(".nvic_vector"))) =
 /* 0x00D0                    */ (unsigned int *) invalid_handler,
 /* 0x00D4                    */ (unsigned int *) invalid_handler,
 /* 0x00D8                    */ (unsigned int *) invalid_handler,
-/* 0x00DC USART3             */ (unsigned int *) uart_inthandler,
+/* 0x00DC USART3             */ (unsigned int *) uart_rx_handler,
 /* 0x00E0                    */ (unsigned int *) invalid_handler,
 /* 0x00E4                    */ (unsigned int *) invalid_handler,
 /* 0x00E8                    */ (unsigned int *) invalid_handler,

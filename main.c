@@ -80,6 +80,17 @@ void usart_print(const char *buf)
 	}
 }
 
+void usart_send(const uint8_t *buf, int len)
+{
+	while(len--)
+	{
+		while((USART3->SR & (1UL<<7)) == 0) ;
+		USART3->DR = buf[0];
+		buf++;
+	}
+}
+
+
 volatile motcon_t motcons[NUM_MOTCONS];
 
 
@@ -107,15 +118,6 @@ volatile int do_handle_message;
 
 int speed_updated;
 
-volatile int send_cnt;
-volatile int send_len;
-volatile int tx_free = 1;
-
-#define SEND(len)  {NVIC_DisableIRQ(USART3_IRQn); tx_free=0; send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7; NVIC_EnableIRQ(USART3_IRQn); }
-#define NONREADY() (!tx_free)
-#define READY()    (tx_free)
-#define STOP_SENDING() {NVIC_DisableIRQ(USART3_IRQn); USART3->CR1 &= ~(1UL<<7); send_len = send_cnt = 0; tx_free=1; NVIC_EnableIRQ(USART3_IRQn); }
-
 /*
 	Messages are double-buffered;
 	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
@@ -132,7 +134,6 @@ void handle_message()
 		case 0xfe:
 		if(process_rx_buf[1] == 0x42 && process_rx_buf[2] == 0x11 && process_rx_buf[3] == 0x7a)
 		{
-			STOP_SENDING();
 			if(process_rx_buf[4] == 0x52)
 			{
 				run_flasher();
@@ -154,7 +155,9 @@ void handle_message()
 
 void uart_rx_handler()
 {
+	LED_ON();
 	// This SR-then-DR read sequence clears error flags:
+	USART3->SR;
 	uint8_t byte = USART3->DR;
 
 	if(byte == 255)
@@ -174,45 +177,6 @@ void uart_rx_handler()
 		rx_buf_loc++;
 		if(rx_buf_loc >= RX_BUFFER_LEN)
 			rx_buf_loc = 0;
-	}
-}
-
-void uart_inthandler()
-{
-	uint32_t status = USART3->SR;
-
-	if(status & 1UL<<5)
-	{
-		uart_rx_handler();
-	}
-
-	if(status & 1UL<<3)
-	{
-		// RX Overrun, do something
-	}
-
-	if((status & 1UL<<7))
-	{
-		LED_ON();
-		if(send_cnt < send_len) // Valid case of TX interrupt
-		{
-			int tmp = send_cnt;
-			send_cnt++;
-			if(send_cnt == send_len)
-			{
-				USART3->CR1 &= ~(1UL<<7);
-				tx_free = 1;
-			}
-			USART3->DR = txbuf[tmp];
-		}
-		else if(!(status & 1UL<<5)) // We didn't have rx, didn't need a TX interrupt either, so this is an invalid TX interrupt
-		{
-			// The following two lines themselves won't help:
-			USART3->CR1 &= ~(1UL<<7); // Make sure TX interrupt is indeed turned off!
-			//NVIC_ClearPendingIRQ(USART3_IRQn);
-			// The only way out is to send something.
-			USART3->DR = 0xff;
-		}
 	}
 	LED_OFF();
 }
@@ -584,7 +548,6 @@ int main()
 
 
 #ifdef BINARY_OUTPUT
-		while(NONREADY()) ;
 		msg_gyro_t msg;
 		msg.status = 1;
 		msg.int_x = I16_I14(latest_gyro->x);
@@ -592,9 +555,8 @@ int main()
 		msg.int_z = I16_I14(latest_gyro->z);
 		txbuf[0] = 128;
 		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
-		SEND(1+sizeof(msg_gyro_t));
+		usart_send(txbuf, sizeof(msg_gyro_t)+1);
 
-		while(NONREADY()) ;
 		msg_xcel_t msgx;
 		msgx.status = 1;
 		msgx.int_x = I16_I14(latest_xcel->x);
@@ -602,9 +564,8 @@ int main()
 		msgx.int_z = I16_I14(latest_xcel->z);
 		txbuf[0] = 129;
 		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
-		SEND(1+sizeof(msg_xcel_t));
+		usart_send(txbuf, sizeof(msg_xcel_t)+1);
 
-		while(NONREADY()) ;
 		msg_compass_t msgc;
 		msgc.status = 1;
 		msgc.x = I16_I14(latest_compass->x);
@@ -612,10 +573,9 @@ int main()
 		msgc.z = I16_I14(latest_compass->z);
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
-		SEND(1+sizeof(msg_compass_t));
+		usart_send(txbuf, sizeof(msg_compass_t)+1);
 
 
-		while(NONREADY()) ;
 		txbuf[0] = 0x84;
 		txbuf[1] = 1;
 		int i;
@@ -636,7 +596,8 @@ int main()
 				}
 			}
 		}
-		SEND(90*4*2+2);
+		usart_send(txbuf, 90*4*2+2);
+
 
 #endif
 
@@ -712,14 +673,13 @@ int main()
 		}
 
 #ifdef BINARY_OUTPUT
-		while(NONREADY()) ;
 		txbuf[0] = 0xa0;
 		txbuf[1] = 1;
 		txbuf[2] = degrees&0x7f;
 		txbuf[3] = (degrees&(0x7f<<7)) >> 7;
 		txbuf[4] = 0;
 		txbuf[5] = 0;
-		SEND(6);
+		usart_send(txbuf, 6);
 #endif
 
 #ifdef TEXT_DEBUG
