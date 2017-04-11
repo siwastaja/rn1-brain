@@ -7,8 +7,6 @@ extern volatile motcon_t motcons[NUM_MOTCONS];
 
 volatile int cur_motcon;
 volatile int motcons_initialized;
-#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
-#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
 void spi1_inthandler()
 {

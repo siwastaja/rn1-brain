@@ -1,3 +1,7 @@
+/*
+	flasher functions are designed to be located in a separate flash sector, which cannot be erased using these functions.
+*/
+
 #include "ext_include/stm32f2xx.h"
 
 #include "flash.h"
@@ -137,6 +141,9 @@ Reset:
 	Send 150
 	Hard reset (KILL_PWR) is done.
 	(Remember that if the battery is low (<17.5V), it will work as a shutdown instead of reset.)
+
+	Send 151:
+	Soft CPU reset is done.
 
 */
 

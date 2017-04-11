@@ -97,6 +97,10 @@ volatile motcon_t motcons[NUM_MOTCONS];
 void run_flasher()
 {
 	__disable_irq();
+	/*
+		Reconfigure UART to 115200, no interrupts. Flasher uses polling, and we want to make sure it
+		starts from a clean table.
+	*/
 	USART3->CR1 = 0; // Disable
 	delay_us(10);
 	USART3->SR = 0; // Clear flags
@@ -107,6 +111,11 @@ void run_flasher()
 	while(1);
 }
 
+/*
+	Incoming UART messages are double-buffered;
+	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
+*/
+
 #define RX_BUFFER_LEN 128
 volatile uint8_t rx_buffers[2][RX_BUFFER_LEN];
 int rx_buf_loc = 0;
@@ -116,12 +125,8 @@ volatile uint8_t* process_rx_buf;
 
 volatile int do_handle_message;
 
-int speed_updated;
+int speed_updated;  // For timeouting robot movements (for faulty communications)
 
-/*
-	Messages are double-buffered;
-	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
-*/
 
 int common_speed;
 int angle;
@@ -142,10 +147,9 @@ void handle_message()
 		break;
 
 		case 0x80:
-//		LED_OFF();
 		common_speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
 		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
-		speed_updated = 3000;
+		speed_updated = 3000; // robot is stopped if 0.3s is elapsed between the speed commands.
 		break;
 		default:
 		break;
@@ -155,12 +159,11 @@ void handle_message()
 
 void uart_rx_handler()
 {
-	LED_ON();
 	// This SR-then-DR read sequence clears error flags:
 	USART3->SR;
 	uint8_t byte = USART3->DR;
 
-	if(byte == 255)
+	if(byte == 255) // End-of-command delimiter
 	{
 		volatile uint8_t* tmp = gather_rx_buf;
 		gather_rx_buf = process_rx_buf;
@@ -170,7 +173,7 @@ void uart_rx_handler()
 	}
 	else
 	{
-		if(byte > 127)
+		if(byte > 127) // Start of command delimiter
 			rx_buf_loc = 0;
 
 		gather_rx_buf[rx_buf_loc] = byte;
@@ -178,7 +181,6 @@ void uart_rx_handler()
 		if(rx_buf_loc >= RX_BUFFER_LEN)
 			rx_buf_loc = 0;
 	}
-	LED_OFF();
 }
 
 int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
@@ -188,25 +190,25 @@ volatile int optflow_errors;
 
 volatile int new_gyro, new_xcel, new_compass;
 
+/*
+	10kHz interrupts drives practically everything.
+*/
 void timebase_10k_handler()
 {
 	static int cnt_10k = 0;
 	int status;
+	// For angular rate feedback; to be moved from here
 	static int speeda = 0;
 	static int speedb = 0;
 
-	TIM6->SR = 0;
+	TIM6->SR = 0; // Clear interrupt flag
 	cnt_10k++;
 
+	// Run code of all devices expecting 10kHz calls.
 	optflow_fsm();
-
-	// Motcon at 10 kHz
 	motcon_fsm();
-
-	sonar_fsm(); // at 10 kHz
-
+	sonar_fsm();
 	lidar_ctrl_loop();
-
 	status = gyro_xcel_compass_fsm();
 
 	if(status & GYRO_NEW_DATA)
@@ -227,6 +229,7 @@ void timebase_10k_handler()
 	if(do_handle_message)
 		handle_message();
 
+	// For angular rate feedback; to be moved from here
 	if(speed_updated)
 	{
 		speed_updated--;
@@ -273,6 +276,9 @@ extern volatile int xcel_timestep_len;
 
 int main()
 {
+	gather_rx_buf = rx_buffers[0];
+	process_rx_buf = rx_buffers[1];
+
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -290,9 +296,6 @@ int main()
 	P (for main system) = 2  -> 120 MHz
 	Q (for USB etc.)    = 5  -> 48MHz
 	*/
-
-	gather_rx_buf = rx_buffers[0];
-	process_rx_buf = rx_buffers[1];
 
 	delay_ms(1); // to ensure voltage has ramped up
 
@@ -361,20 +364,37 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
+	/*
+		Interrupts will have 4 levels of pre-emptive priority, and 4 levels of sub-priority.
+
+		Interrupt with more urgent (lower number) pre-emptive priority will interrupt another interrupt running.
+
+		If interrupts with similar or lower urgency happen during another ISR, the subpriority level will decide
+		the order they will be run after finishing the more urgent ISR first.
+	*/
 	NVIC_SetPriorityGrouping(2);
 
-	// USART3 = the main USART @ APB1 = 30 MHz
-	// 16x oversampling
-	// 115200bps -> Baudrate register = 16.25 = 16 1/4 = 16 4/16
+	/*
+		USART3 = the main USART @ APB1 = 30 MHz
+		16x oversampling
+		115200bps -> Baudrate register = 16.25 = 16 1/4 = 16 4/16
 
-	// STM32F205 DMA is a total and utter joke. There are practically no connections to anywhere.
-	// SPI2 and USART3 cannot be used at the same time. Even substituting UART4 doensn't help.
-	// So, there is no DMA for UART. So, we are just doing it interrupt-based.
+		STM32F205 DMA is a total and utter joke. There are practically no connections to anywhere.
+		SPI2 and USART3 cannot be used at the same time. Even substituting UART4 doensn't help.
+		So, there is no DMA for UART. So, we are just doing it interrupt-based.
+
+		To make it worse, interrupts cannot be reliably used for TX and RX at the same time. At least the
+		ISR will get complicated, since the TX interrupt cannot be reliably forced off for some reason.
+		Maybe to be investigated later. In the meantime, RX works with interrupts, while TX works with
+		polling. This is actually not a big deal, and can be later integrated with 10k timebase handler.
+	*/
 
 	USART3->BRR = 16UL<<4 | 4UL;
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
-	// TIM4 = Lidar motor
+	/*
+		TIM4 generates PWM control for the LIDAR brushed DC motor.
+	*/
 
 	TIM4->CR1 = 1UL<<7 /*auto preload*/ | 0b01UL<<5 /*centermode*/;
 	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
@@ -385,7 +405,7 @@ int main()
 
 	/*
 		TIM6 @ APB1 at 30MHz, but the counter runs at x2 = 60MHz
-		Create 10 kHz timebase
+		Create 10 kHz timebase interrupt
 	*/
 
 	TIM6->DIER |= 1UL; // Update interrupt
@@ -426,28 +446,32 @@ int main()
 	NVIC_SetPriority(TIM6_DAC_IRQn, 0b1010);
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
-
-
 	PSU12V_ENA();
 	CHARGER_ENA();
+
+	/*
+		Lidar requires two types of syncing:
+		sync_lidar() is called when the motor is turning at a widely acceptable range of rpm, which is
+		enough to produce _some_ data from the lidar. sync_lidar does sync the data frame to the struct boundaries,
+		but does not sync the degree field, so the image will be wrongly rotated.
+
+		But, syncing to data frames allows the lidar control loop to read the rpm field and start regulating the motor speed.
+
+		After sufficienct time (at least 5-6 seconds) of runtime, the control loop has stabilized the rpm so that the lidar
+		produces fully correct data, so resync_lidar() must be called: it does not only sync the data frame, but it also
+		syncs the whole table so that the 1 degree point is at the start of the table.
+
+		TODO: Implement the trivial check of lidar data not being synced, and resync when necessary.
+	*/
 
 #ifdef TEXT_DEBUG
 	usart_print("pre-syncing lidar... ");
 #endif
 	sync_lidar();
-//#ifdef TEXT_DEBUG
-//	usart_print("stablizing lidar... ");
-//#endif
-//	delay_ms(6000);
-//#ifdef TEXT_DEBUG
-//	usart_print("re-syncing lidar... ");
-//#endif
-	resync_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("done\r\n");
 #endif
 
-//	LED_OFF();
 
 	int compass_x_min = 0;
 	int compass_x_max = 0;
@@ -477,73 +501,9 @@ int main()
 
 
 /*
+		Code like this can be used for debugging purposes:
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
-		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_gyro->x, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_gyro->y, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_gyro->z, buf);
-		buf = o_str_append(buf, " xcel=");
-		buf = o_utoa8_fixed(latest_xcel->status_reg, buf);
-		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_xcel->x, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_xcel->y, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_xcel->z, buf);
-		buf = o_str_append(buf, " compass=");
-		buf = o_utoa8_fixed(latest_compass->status_reg, buf);
-		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_compass->x, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass->y, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass->z, buf);
-
-
-		buf = o_str_append(buf, " gyros=");
-		buf = o_utoa16_fixed(new_gyro, buf);
-		buf = o_str_append(buf, " +=");
-		buf = o_utoa16_fixed(gyro_timestep_plusses, buf);
-		buf = o_str_append(buf, " -=");
-		buf = o_utoa16_fixed(gyro_timestep_minuses, buf);
-		buf = o_str_append(buf, " l=");
-		buf = o_utoa16_fixed(gyro_timestep_len, buf);
-		buf = o_str_append(buf, " xcels=");
-		buf = o_utoa16_fixed(new_xcel, buf);
-		buf = o_str_append(buf, " +=");
-		buf = o_utoa16_fixed(xcel_timestep_plusses, buf);
-		buf = o_str_append(buf, " -=");
-		buf = o_utoa16_fixed(xcel_timestep_minuses, buf);
-		buf = o_str_append(buf, " l=");
-		buf = o_utoa16_fixed(xcel_timestep_len, buf);
-		buf = o_str_append(buf, " comps=");
-		buf = o_utoa16_fixed(new_compass, buf);
-
-		buf = o_str_append(buf, " i2c1_state=");
-		buf = o_utoa16_fixed(i2c1_state, buf);
-
-		buf = o_str_append(buf, " i2c1_fails=");
-		buf = o_utoa16_fixed(i2c1_fails, buf);
-
-*/
-
-/*		buf = o_str_append(buf, " optflow=");
-		buf = o_utoa8_fixed(latest_optflow.motion, buf);
-		buf = o_str_append(buf, " dx=");
-		buf = o_itoa8_fixed(latest_optflow.dx, buf);
-		buf = o_str_append(buf, " dy=");
-		buf = o_itoa8_fixed(latest_optflow.dy, buf);
-		buf = o_str_append(buf, " Q=");
-		buf = o_utoa8_fixed(latest_optflow.squal, buf);
-		buf = o_str_append(buf, " shutter=");
-		buf = o_utoa16_fixed(latest_optflow.shutter_msb<<8 | latest_optflow.shutter_lsb, buf);
-		buf = o_str_append(buf, " max=");
-		buf = o_utoa8_fixed(latest_optflow.max_pixel, buf);
-		buf = o_str_append(buf, " errs=");
-		buf = o_utoa16_fixed(optflow_errors, buf);
 */
 
 
@@ -604,13 +564,14 @@ int main()
 		// Do fancy calculation here :)
 
 		/*
-			Compass algorithm:
+			Compass algorithm (to be moved from here)
 
 			To compensate for robot-referenced magnetic fields and offset errors:
 			Track max, min readings on both X, Y axes while the robot is turning.
 			Scale readings so that they read zero on the middle of the range, e.g.,
 			if X axis reads between 1000 and 3000, make 2000 read as 0.
-			Then calculate the angle with atan2.
+			Then calculate the angle with arctan (atan2() handles the signs to resolve
+			the correct quadrant).
 		*/
 
 		int cx = latest_compass->x;

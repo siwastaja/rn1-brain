@@ -17,9 +17,8 @@ extern void delay_ms(uint32_t i);
 	for status bits, DMA is of little use; we use an interrupt handler implementing a state machine.
 
 	First versions of this routine checked that the actual status bits we are expecting are indeed set. Now
-	we just don't care - i2c1 is configured to only give interrupts from the relevant status bits, and if
-	they are coming out of order, we are doomed anyway, so we just implement some way of recovering and
-	trying again later.
+	we just don't care - i2c1 is configured to only give interrupts from the relevant status bits. (Addition:
+	because of a buggy i2c1 implementation, some states still require checking for the status bits.)
 
 	All I2C transactions transfer 10 bytes + acks = 90 bits total.
 	At 100kHz, this means max. 1 kHz poll rate for everything total -> use 200 Hz for gyro and xcel.
@@ -31,7 +30,6 @@ extern void delay_ms(uint32_t i);
 	i2c1 interrupt at high priority, so it needs to pre-empt others, so we don't want to have bursts of
 	high duty; we rather have constant flow of these stupid interrupts but enough time between them for
 	other modules to do something useful.
-
 
 	We save on IO and PCB routing by not using the interrupt lines from the sensors; I don't find it
 	necessary. It's not a catastrophe even if we double read a certain sample time point; or if we miss one.
@@ -45,8 +43,12 @@ extern void delay_ms(uint32_t i);
 	We don't use the FIFO features on the chips, because low latency is a lot more important than not missing a single data point,
 	so we would try to keep the FIFO at 1 level deep state anyway.
 
-
 	For all this to work, call gyro_xcel_compass_fsm() at 10 kHz.
+
+	The code is horrible spaghetti, but with the STM32's well known, almost legendarily broken i2c, this is inevitable.
+
+	Bitbanging the whole I2C will be seriously considered in the future.
+
 */
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
