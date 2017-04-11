@@ -145,7 +145,7 @@ void handle_message()
 //		LED_OFF();
 		common_speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
 		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
-		speed_updated = 1000;
+		speed_updated = 3000;
 		break;
 		default:
 		break;
@@ -231,18 +231,18 @@ void timebase_10k_handler()
 	{
 		speed_updated--;
 
-		int error = latest_gyro->z/32 - angle;
+		int error = latest_gyro->z/16 - angle;
 
 		speeda += error;
 		speedb -= error;
 
-		if(speeda > 200*32) speeda = 200*32;
-		else if(speeda < -200*32) speeda = -200*32;
-		if(speedb > 200*32) speedb = 200*32;
-		else if(speedb < -200*32) speedb = -200*32;
+		if(speeda > 200*256) speeda = 200*256;
+		else if(speeda < -200*256) speeda = -200*256;
+		if(speedb > 200*256) speedb = 200*256;
+		else if(speedb < -200*256) speedb = -200*256;
 
-		int a = common_speed + speeda/128;
-		int b = common_speed + speedb/128;
+		int a = common_speed + speeda/256;
+		int b = common_speed + speedb/256;
 
 		if(a > 400) a=400;
 		else if(a < -400) a=-400;
@@ -603,6 +603,16 @@ int main()
 
 		// Do fancy calculation here :)
 
+		/*
+			Compass algorithm:
+
+			To compensate for robot-referenced magnetic fields and offset errors:
+			Track max, min readings on both X, Y axes while the robot is turning.
+			Scale readings so that they read zero on the middle of the range, e.g.,
+			if X axis reads between 1000 and 3000, make 2000 read as 0.
+			Then calculate the angle with atan2.
+		*/
+
 		int cx = latest_compass->x;
 		int cy = latest_compass->y;
 
@@ -627,49 +637,18 @@ int main()
 
 		int degrees = 0;
 
-/*		buf = o_str_append(buf, " compass=");
-		buf = o_utoa8_fixed(latest_compass->status_reg, buf);
-		buf = o_str_append(buf, "  ");
-		buf = o_itoa16_fixed(latest_compass->x, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass->y, buf);
-		buf = o_str_append(buf, ", ");
-		buf = o_itoa16_fixed(latest_compass->z, buf);
-		buf = o_str_append(buf, "\r\nxmin=");
-		buf = o_itoa32(compass_x_min, buf);
-		buf = o_str_append(buf, " xmax=");
-		buf = o_itoa32(compass_x_max, buf);
-		buf = o_str_append(buf, " ymin=");
-		buf = o_itoa32(compass_y_min, buf);
-		buf = o_str_append(buf, " ymax=");
-		buf = o_itoa32(compass_y_max, buf);
-*/
 		int dx = compass_x_max - compass_x_min;
 		int dy = compass_y_max - compass_y_min;
-		if(dx > 800 && dy > 800)
+		if(dx > 500 && dy > 500)
 		{
 			int dx2 = compass_x_max + compass_x_min;
 			int dy2 = compass_y_max + compass_y_min;
-//			buf = o_str_append(buf, " cx=");
-//			buf = o_itoa32(cx, buf);
-//			buf = o_str_append(buf, " cy=");
-//			buf = o_itoa32(cy, buf);
-
 			cx = cx - dx2/2;
 			cy = cy - dy2/2;
-
-//			buf = o_str_append(buf, " --> cx=");
-//			buf = o_itoa32(cx, buf);
-//			buf = o_str_append(buf, " cy=");
-//			buf = o_itoa32(cy, buf);
 
 			double heading = atan2(cx, cy);
 			heading *= (360.0/(2.0*M_PI));
 			degrees = heading;
-
-//			buf = o_str_append(buf, " degs=");
-//			buf = o_itoa32(degrees, buf);
-
 		}
 
 #ifdef BINARY_OUTPUT
