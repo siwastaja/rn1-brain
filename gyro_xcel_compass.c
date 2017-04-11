@@ -121,11 +121,13 @@ void i2c1_gyro_handler()
 		break;
 
 		case 2: // Expect ADDR
-		I2C1->SR1;
-		I2C1->SR2;
-		I2C1->DR = 0x00; // Status register address
-		I2C1->CR1 |= 1UL<<8; // START
-		i2c1_state++;
+		if(I2C1->SR1 & 2) // For some reason, there is a stupid extra interrupt, so we need to check this.
+		{
+			I2C1->SR2;
+			I2C1->DR = 0x00; // Status register address
+			I2C1->CR1 |= 1UL<<8; // START
+			i2c1_state++;
+		}
 		break;
 
 		case 3: // Expect SB
@@ -242,11 +244,13 @@ void i2c1_xcel_handler()
 		break;
 
 		case 2: // Expect ADDR
-		I2C1->SR1;
-		I2C1->SR2;
-		I2C1->DR = 0x27 | 0x80; // Status register w/ autoincr
-		I2C1->CR1 |= 1UL<<8; // START
-		i2c1_state++;
+		if(I2C1->SR1 & 2) // For some reason, there is a stupid extra interrupt, so we need to check this.
+		{
+			I2C1->SR2;
+			I2C1->DR = 0x27 | 0x80; // Status register w/ autoincr
+			I2C1->CR1 |= 1UL<<8; // START
+			i2c1_state++;
+		}
 		break;
 
 		case 3: // Expect SB
@@ -361,11 +365,13 @@ void i2c1_compass_handler()
 		break;
 
 		case 2: // Expect ADDR
-		I2C1->SR1;
-		I2C1->SR2;
-		I2C1->DR = 0x27; // Status register address
-		I2C1->CR1 |= 1UL<<8; // START
-		i2c1_state++;
+		if(I2C1->SR1 & 2) // For some reason, there is a stupid extra interrupt, so we need to check this.
+		{
+			I2C1->SR2;
+			I2C1->DR = 0x27; // Status register address
+			I2C1->CR1 |= 1UL<<8; // START
+			i2c1_state++;
+		}
 		break;
 
 		case 3: // Expect SB
@@ -451,7 +457,6 @@ void i2c1_inthandler()
 		i2c1_state = 0;
 		NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 		NVIC_DisableIRQ(I2C1_EV_IRQn); // broken I2C implementation workaround
-		LED_OFF();
 		return;
 	}
 */
@@ -583,6 +588,9 @@ int gyro_xcel_compass_fsm()
 	static int compass_pending = 0;
 	static int plus_return_cnt = 0;
 	static int minus_return_cnt = 0;
+	static int prev_i2c1_state = -1;
+	static int prev_prev_i2c1_state = -2;
+	static int fix_fail = 0;
 
 	gyro_cnt++;
 	xcel_cnt++;
@@ -672,6 +680,33 @@ int gyro_xcel_compass_fsm()
 		}
 
 	}
+	else
+	{
+//		if(prev_prev_i2c1_state == prev_i2c1_state && prev_i2c1_state == i2c1_state && !fix_fail)
+//		{
+			// Stupid broken STM32 i2c implementation has crashed again, just try again.
+//			I2C1->CR1 = 1UL<<15 /*Yes, they actually admit their shit is broken, and instruct to reset it like this!!!*/ | 1UL /*keep i2c1 on*/;
+//			NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
+//			i2c1_fails++;
+//			fix_fail = 10;
+//		}
+
+	}
+
+/*	if(fix_fail)
+	{
+		fix_fail--;
+		if(fix_fail == 0)
+		{
+			I2C1->CR1 = 1UL; // Release SW reset.
+			NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
+			i2c1_state = 0;
+		}
+	}
+*/
+	prev_prev_i2c1_state = prev_i2c1_state;
+	prev_i2c1_state = i2c1_state;
+
 
 	if(gyro_new_data)
 	{

@@ -15,8 +15,8 @@
 #include "comm.h"
 #include "sonar.h"
 
-#define BINARY_OUTPUT
-//#define TEXT_DEBUG
+//#define BINARY_OUTPUT
+#define TEXT_DEBUG
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -402,7 +402,7 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("booty booty\r\n");
 #endif
-	delay_ms(100);
+	delay_ms(500);
 
 	init_gyro_xcel_compass();
 #ifdef TEXT_DEBUG
@@ -454,24 +454,18 @@ int main()
 	int compass_y_min = 0;
 	int compass_y_max = 0;
 
-	int kakka = 0;
 	int first_compass = 3;
 	while(1)
 	{
 
-		delay_ms(1);
-		kakka++;
-
-		if(kakka<20)
-			continue;
-
-		kakka = 0;
 #ifdef TEXT_DEBUG
 		char buffer[4000];
 		char* buf = buffer;
 #endif
 
-/*
+		delay_ms(100); // Don't produce too much data now, socat is broken.
+
+
 		buf = o_str_append(buf, " gyro=");
 		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
 		buf = o_str_append(buf, "  ");
@@ -517,7 +511,14 @@ int main()
 		buf = o_str_append(buf, " comps=");
 		buf = o_utoa16_fixed(new_compass, buf);
 
-*/
+		buf = o_str_append(buf, " i2c1_state=");
+		buf = o_utoa16_fixed(i2c1_state, buf);
+
+		buf = o_str_append(buf, " i2c1_fails=");
+		buf = o_utoa16_fixed(i2c1_fails, buf);
+
+
+
 /*		buf = o_str_append(buf, " optflow=");
 		buf = o_utoa8_fixed(latest_optflow.motion, buf);
 		buf = o_str_append(buf, " dx=");
@@ -545,8 +546,6 @@ int main()
 		txbuf[0] = 128;
 		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
 		SEND(1+sizeof(msg_gyro_t));
-
-		delay_ms(500);
 
 		while(NONREADY()) ;
 		msg_xcel_t msgx;
@@ -678,8 +677,8 @@ int main()
 
 #ifdef TEXT_DEBUG
 
-//		buf = o_str_append(buf, "\r\n\r\n");
-//		usart_print(buffer);
+		buf = o_str_append(buf, "\r\n\r\n");
+		usart_print(buffer);
 #endif
 
 	}
