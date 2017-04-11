@@ -34,10 +34,10 @@ f: main.bin
 	../rn1-tools/prog ~/dev/robo ./main.bin
 
 f_local: main.bin
-	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin
+	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
 
 ff: main.bin
-	scp main.bin do_flash.txt hrst@proto4:~
+	scp main.bin hrst@proto4:~
 
 stack:
 	cat *.su

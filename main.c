@@ -15,8 +15,8 @@
 #include "comm.h"
 #include "sonar.h"
 
-//#define BINARY_OUTPUT
-#define TEXT_DEBUG
+#define BINARY_OUTPUT
+//#define TEXT_DEBUG
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -108,10 +108,22 @@ volatile uint8_t* process_rx_buf;
 
 volatile int do_handle_message;
 
+int speed_updated;
+
+volatile int send_cnt;
+volatile int send_len;
+
+#define SEND(len)  {send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7;}
+#define NONREADY() (send_cnt < send_len)
+#define READY()    (send_len == send_cnt)
+#define STOP_SENDING() {USART3->CR1 &= ~(1UL<<7); send_len = send_cnt = 0;}
+
 /*
 	Messages are double-buffered;
 	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
 */
+
+
 
 void handle_message()
 {
@@ -120,9 +132,19 @@ void handle_message()
 		case 0xfe:
 		if(process_rx_buf[1] == 0x42 && process_rx_buf[2] == 0x11 && process_rx_buf[3] == 0x7a)
 		{
+			STOP_SENDING();
 			if(process_rx_buf[4] == 0x52)
+			{
 				run_flasher();
+			}
 		}
+		break;
+
+		case 0x80:
+		LED_OFF();
+		motcons[2].cmd.speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
+		motcons[3].cmd.speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
+		speed_updated = 1000;
 		break;
 		default:
 		break;
@@ -135,31 +157,25 @@ void uart_rx_handler()
 	// This SR-then-DR read sequence clears error flags:
 	uint8_t byte = USART3->DR;
 
-	if(byte > 127)
+	if(byte == 255)
 	{
 		volatile uint8_t* tmp = gather_rx_buf;
 		gather_rx_buf = process_rx_buf;
 		process_rx_buf = tmp;
+		do_handle_message = rx_buf_loc-1;
 		rx_buf_loc = 0;
-		do_handle_message = 1;
 	}
-
-	if(byte != 255)
+	else
 	{
+		if(byte > 127)
+			rx_buf_loc = 0;
+
 		gather_rx_buf[rx_buf_loc] = byte;
 		rx_buf_loc++;
 		if(rx_buf_loc >= RX_BUFFER_LEN)
 			rx_buf_loc = 0;
 	}
-
 }
-
-volatile int send_cnt;
-volatile int send_len;
-
-#define SEND(len)  {send_cnt=0; send_len=(len); USART3->CR1 |= 1UL<<7;}
-#define NONREADY() (send_cnt < send_len)
-#define READY()    (send_len == send_cnt)
 
 void uart_inthandler()
 {
@@ -230,6 +246,20 @@ void timebase_10k_handler()
 	if(status & COMPASS_NEW_DATA)
 	{
 		new_compass++;
+	}
+
+	if(do_handle_message)
+		handle_message();
+
+	if(speed_updated)
+	{
+		speed_updated--;
+	}
+	else
+	{
+		LED_ON();
+		motcons[2].cmd.speed = 0;
+		motcons[3].cmd.speed = 0;
 	}
 }
 
@@ -648,8 +678,8 @@ int main()
 
 #ifdef TEXT_DEBUG
 
-		buf = o_str_append(buf, "\r\n\r\n");
-		usart_print(buffer);
+//		buf = o_str_append(buf, "\r\n\r\n");
+//		usart_print(buffer);
 #endif
 
 	}
