@@ -45,13 +45,15 @@ void init_optflow()
 
 
 // Run this at 10kHz!
-void optflow_fsm()
+void optflow_fsm(int* dx, int* dy)
 {
 	if(!optflow_ready) return;
 
 	static int cycle = 0;
 	if(cycle == 0)
 	{
+		*dx = latest_optflow.dx;
+		*dy = latest_optflow.dy;
 		FLOW_CS0();
 	}
 	else if(cycle == 1)
