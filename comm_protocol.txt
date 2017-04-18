@@ -37,7 +37,12 @@ MESSAGES PC-->RN#1 (aka commands)
 		0x52	Run flasher
 			Flasher reconfigs the UART to 115200 8N1. Framing with MSB-denoted delimiters is not being followed anymore.
 			Separate flasher protocol is specified elsewhere.
-			Flasher cannot exit; it always ends up in hard reset.
+			Flasher cannot exit; it always ends up in reset.
+		0x53	Run motor controller flasher
+			uint8	motor controller number (1 to 4)
+			Motor controller flasher reconfigs the UART to 115200 8N1. Framing with MSB-denoted delimiters is not being followed anymore.
+			Separate flasher protocol is specified elsewhere.
+			Flasher cannot exit; it always ends up in reset.
 		
 
 MESSAGES RN#1-->PC (aka status)

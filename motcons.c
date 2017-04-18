@@ -3,13 +3,21 @@
 
 #include "motcons.h"
 
+//#define MOTCON_DEBUG
+
 extern volatile motcon_t motcons[NUM_MOTCONS];
 
 volatile int cur_motcon;
 volatile int motcons_initialized;
 
+volatile int mc_dbg_rx, mc_dbg_tx;
+
 void spi1_inthandler()
 {
+#ifdef MOTCON_DEBUG
+	MC4_CS1();
+	mc_dbg_rx = SPI1->DR;
+#else
 	// Receive done, slave can be de-selected.
 	switch(cur_motcon)
 	{
@@ -27,6 +35,7 @@ void spi1_inthandler()
 		cur_motcon = 0;
 	else
 		cur_motcon++;
+#endif
 }
 
 void init_motcons()
@@ -63,6 +72,11 @@ void motcon_fsm()
 	if(!motcons_initialized)
 		return;
 
+#ifdef MOTCON_DEBUG
+	MC4_CS0();
+	SPI1->DR = mc_dbg_tx;
+//	mc_dbg_tx = 0;
+#else
 	switch(cur_motcon)
 	{
 		case 0: {MC1_CS0();} break;
@@ -77,4 +91,5 @@ void motcon_fsm()
 	else
 		SPI1->DR = 12UL<<10 | ((motcons[cur_motcon].cmd.speed*-1) & 0x3FF);
 
+#endif
 }

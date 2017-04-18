@@ -14,7 +14,9 @@
 #include "flash.h"
 #include "comm.h"
 #include "sonar.h"
+#include "feedbacks.h"
 
+//#define MOTCON_DEBUG
 #define BINARY_OUTPUT
 //#define TEXT_DEBUG
 
@@ -26,6 +28,10 @@
 #define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
+
+#ifdef MOTCON_DEBUG
+extern volatile int mc_dbg_tx, mc_dbg_rx;
+#endif
 
 uint8_t txbuf[1024];
 
@@ -111,6 +117,162 @@ void run_flasher()
 	while(1);
 }
 
+void mc_flasher(int mcnum)
+{
+	__disable_irq();
+	LED_OFF();
+	/*
+		Reconfigure UART to 115200, no interrupts. Flasher uses polling, and we want to make sure it
+		starts from a clean table.
+	*/
+	USART3->CR1 = 0; // Disable
+	delay_us(10);
+	USART3->SR = 0; // Clear flags
+	USART3->BRR = 16UL<<4 | 4UL; // 115200
+	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	delay_us(10);
+
+	/*
+		Reconfigure SPI1 for polling, no interrupts.
+	*/
+
+	delay_ms(2000);
+
+	MC4_CS1();
+	MC3_CS1();
+	MC2_CS1();
+	MC1_CS1();
+
+	// SPI1 @ APB2 = 60 MHz
+	SPI1->CR1 = 0; // Disable SPI
+	delay_us(10);
+	SPI1->CR1 = 1UL<<11 /*16-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
+		0b010UL<<3 /*div 8 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
+	SPI1->CR2 = 0;
+
+	SPI1->CR1 |= 1UL<<6; // Enable SPI
+
+	switch(mcnum)
+	{
+		case 1: MC1_CS0(); break;
+		case 2: MC2_CS0(); break;
+		case 3: MC3_CS0(); break;
+		case 4: MC4_CS0(); break;
+		default: LED_ON(); while(1);
+	}
+
+	while(!(SPI1->SR & (1UL<<1))) ;
+	SPI1->DR = 60<<10 | 234;
+	while(!(SPI1->SR & (1UL<<1))) ;
+	SPI1->DR = 55<<10 | 345;
+
+	while(!(SPI1->SR & (1UL<<1))) ;
+	SPI1->DR = (100<<8) | 0;
+	while(1);
+	while(1)
+	{
+		int i;
+		int size = 0;
+		while(!(USART3->SR & (1UL<<5))) ;
+		switch(USART3->DR)
+		{
+			case 100:
+			while(!(USART3->SR & (1UL<<5))) ;
+			int num_pages = USART3->DR;
+			if(num_pages > 30 || num_pages < 1)
+			{
+				LED_ON(); while(1);
+			}
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = (100<<8) | num_pages;
+
+			while(1)
+			{
+				while(!(SPI1->SR & (1UL<<0))) ;
+				if(SPI1->DR == 0xaaaa) // Erase done.
+					break;
+				SPI1->DR = 0; // generate dummy data during erase so we can detect the end-of-erase condition
+			}
+			USART3->DR = 0; // Return success code 0.
+			break;
+
+
+			case 101:
+			while(!(USART3->SR & (1UL<<5))) ;
+			size = USART3->DR<<8;
+			while(!(USART3->SR & (1UL<<5))) ;
+			size |= USART3->DR;
+
+			if(size < 50 || size>30*1024 || size&1)
+			{
+				LED_ON(); while(1);
+			}
+			size>>=1;
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = (101<<8);
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = size;
+			for(i=0; i<size; i++)
+			{
+				int word = 0;
+				while(!(USART3->SR & (1UL<<5))) ;
+				word = USART3->DR<<8;
+				while(!(USART3->SR & (1UL<<5))) ;
+				word |= USART3->DR;
+				while(!(SPI1->SR & (1UL<<1))) ;
+				SPI1->DR = word;
+			}
+			USART3->DR = 0; // Return success code 0.
+			break;
+
+
+			case 102:
+			while(!(USART3->SR & (1UL<<5))) ;
+			size = USART3->DR<<8;
+			while(!(USART3->SR & (1UL<<5))) ;
+			size |= USART3->DR;
+
+			if(size < 50 || size>30*1024 || size&1)
+			{
+				LED_ON(); while(1);
+			}
+			size>>=1;
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = (102<<8);
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = size;
+			for(i=0; i<(size>>1); i++)
+			{
+				int word = 0;
+				while(!(SPI1->SR & (1UL<<1))) ;
+				SPI1->DR = 0; // Dummy data to generate clocking
+				while(!(SPI1->SR & (1UL<<0))) ;
+				word = SPI1->DR;
+
+				while(!(USART3->SR & (1UL<<7))) ;
+				USART3->DR = (word&0xff00)>>8;
+				while(!(USART3->SR & (1UL<<7))) ;
+				USART3->DR = word&0xff;
+			}
+			break;
+
+			case 150:
+			case 151:
+			// Reset motcon and the main cpu.
+			while(!(SPI1->SR & (1UL<<1))) ;
+			SPI1->DR = 150<<8;
+			delay_ms(1);
+			NVIC_SystemReset();
+			while(1);
+
+			default:
+			break;
+
+		}
+	}
+}
+
+
 /*
 	Incoming UART messages are double-buffered;
 	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
@@ -132,6 +294,23 @@ int common_speed;
 int angle;
 
 
+void handle_maintenance_msg()
+{
+	switch(process_rx_buf[4])
+	{
+		case 0x52:
+		run_flasher();
+		break;
+
+		case 0x53:
+		mc_flasher(process_rx_buf[5]);
+		break;
+
+		default: break;
+	}
+
+}
+
 void handle_message()
 {
 	switch(process_rx_buf[0])
@@ -139,17 +318,14 @@ void handle_message()
 		case 0xfe:
 		if(process_rx_buf[1] == 0x42 && process_rx_buf[2] == 0x11 && process_rx_buf[3] == 0x7a)
 		{
-			if(process_rx_buf[4] == 0x52)
-			{
-				run_flasher();
-			}
+			handle_maintenance_msg();
 		}
 		break;
 
 		case 0x80:
 		common_speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
 		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
-		speed_updated = 3000; // robot is stopped if 0.3s is elapsed between the speed commands.
+		speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
 		break;
 		default:
 		break;
@@ -163,6 +339,9 @@ void uart_rx_handler()
 	USART3->SR;
 	uint8_t byte = USART3->DR;
 
+#ifdef MOTCON_DEBUG
+	mc_dbg_tx = byte;
+#else
 	if(byte == 255) // End-of-command delimiter
 	{
 		volatile uint8_t* tmp = gather_rx_buf;
@@ -181,6 +360,7 @@ void uart_rx_handler()
 		if(rx_buf_loc >= RX_BUFFER_LEN)
 			rx_buf_loc = 0;
 	}
+#endif
 }
 
 int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
@@ -189,23 +369,29 @@ volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
 
 volatile int new_gyro, new_xcel, new_compass;
-
 /*
 	10kHz interrupts drives practically everything.
 */
+
+volatile int int_x, int_y;
+
 void timebase_10k_handler()
 {
 	static int cnt_10k = 0;
 	int status;
-	// For angular rate feedback; to be moved from here
-	static int speeda = 0;
-	static int speedb = 0;
 
 	TIM6->SR = 0; // Clear interrupt flag
 	cnt_10k++;
 
 	// Run code of all devices expecting 10kHz calls.
-	optflow_fsm();
+	int dx = 0;
+	int dy = 0;
+	optflow_fsm(&dx, &dy);
+
+	int_x = dx;
+	int_y = dy;
+
+
 	motcon_fsm();
 	sonar_fsm();
 	lidar_ctrl_loop();
@@ -229,40 +415,9 @@ void timebase_10k_handler()
 	if(do_handle_message)
 		handle_message();
 
-	// For angular rate feedback; to be moved from here
-	if(speed_updated)
-	{
-		speed_updated--;
+	run_feedbacks(status);
 
-		int error = latest_gyro->z/16 - angle;
 
-		speeda += error;
-		speedb -= error;
-
-		if(speeda > 200*256) speeda = 200*256;
-		else if(speeda < -200*256) speeda = -200*256;
-		if(speedb > 200*256) speedb = 200*256;
-		else if(speedb < -200*256) speedb = -200*256;
-
-		int a = common_speed + speeda/256;
-		int b = common_speed + speedb/256;
-
-		if(a > 400) a=400;
-		else if(a < -400) a=-400;
-		if(b > 400) b=400;
-		else if(b < -400) b=-400;
-
-		motcons[2].cmd.speed = a;
-		motcons[3].cmd.speed = b;
-
-	}
-	else
-	{
-		speeda=0;
-		speedb=0;
-		motcons[2].cmd.speed = 0;
-		motcons[3].cmd.speed = 0;
-	}
 }
 
 extern volatile lidar_datum_t lidar_full_rev[90];
@@ -421,7 +576,7 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("booty booty\r\n");
 #endif
-	delay_ms(500);
+	delay_ms(100);
 
 	init_gyro_xcel_compass();
 #ifdef TEXT_DEBUG
@@ -435,7 +590,7 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("motcons init ok\r\n");
 #endif
-	init_lidar();
+//	init_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("lidar init ok\r\n");
 #endif
@@ -465,11 +620,11 @@ int main()
 	*/
 
 #ifdef TEXT_DEBUG
-	usart_print("pre-syncing lidar... ");
+//	usart_print("pre-syncing lidar... ");
 #endif
-	sync_lidar();
+//	sync_lidar();
 #ifdef TEXT_DEBUG
-	usart_print("done\r\n");
+//	usart_print("done\r\n");
 #endif
 
 
@@ -489,7 +644,7 @@ int main()
 #endif
 
 		delay_ms(100); // Don't produce too much data now, socat is broken.
-
+/*
 		if(kakka != -1)
 			kakka++;
 
@@ -498,7 +653,7 @@ int main()
 			resync_lidar();
 			kakka=-1;
 		}
-
+*/
 
 /*
 		Code like this can be used for debugging purposes:
@@ -506,6 +661,32 @@ int main()
 		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
 */
 
+#ifdef MOTCON_DEBUG
+		delay_ms(50);
+		int val = mc_dbg_rx;
+		buf = o_utoa16_fixed(val, buf);
+		buf = o_str_append(buf, "   ");
+		buf = o_itoa16_fixed(val, buf);
+
+		buf = o_str_append(buf, "   ");
+		buf = o_utoa8_fixed((val&0xff00)>>8, buf);
+		buf = o_str_append(buf, "   ");
+		buf = o_utoa8_fixed((uint8_t)val&0xff, buf);
+
+		buf = o_str_append(buf, "   ");
+		buf = o_itoa8_fixed((val&0xff00)>>8, buf);
+		buf = o_str_append(buf, "   ");
+		buf = o_itoa8_fixed((int8_t)val&0xff, buf);
+
+		int o;
+		buf = o_str_append(buf, "   ");
+		for(o=15; o>=0; o--)
+		{
+			buf = o_str_append(buf, (val&(1<<o))?"1":"0");
+			if(o==4 || o==8 || o==12)
+				buf = o_str_append(buf, " ");
+		}
+#endif
 
 #ifdef BINARY_OUTPUT
 		msg_gyro_t msg;
@@ -620,11 +801,21 @@ int main()
 		txbuf[4] = 0;
 		txbuf[5] = 0;
 		usart_send(txbuf, 6);
+
+
+		txbuf[0] = 0xa1;
+		txbuf[1] = 1;
+		txbuf[2] = (I16_I14(int_x)&0xff00)>>8;
+		txbuf[3] = I16_I14(int_x)&0xff;
+		txbuf[4] = (I16_I14(int_y)&0xff00)>>8;
+		txbuf[5] = I16_I14(int_y)&0xff;
+		usart_send(txbuf, 6);
+
 #endif
 
 #ifdef TEXT_DEBUG
 
-		buf = o_str_append(buf, "\r\n\r\n");
+		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
 #endif
 
