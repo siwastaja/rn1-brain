@@ -918,6 +918,14 @@ int main()
 		txbuf[5] = I16_I14(int_y)&0xff;
 		usart_send(txbuf, 6);
 
+		uint16_t tmp = motcons[3].status.last_msg;
+		if(tmp < 0 || tmp > 10) tmp=42;
+
+		txbuf[0] = 0xd1;
+		txbuf[1] = tmp;
+		usart_send(txbuf, 2);
+
+
 #endif
 
 #ifdef TEXT_DEBUG
