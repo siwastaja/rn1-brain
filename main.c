@@ -117,9 +117,73 @@ void run_flasher()
 	while(1);
 }
 
+int mc_flasher_num;
+
+void mc_flasher_cs1()
+{
+	switch(mc_flasher_num)
+	{
+		case 1: MC1_CS1(); break;
+		case 2: MC2_CS1(); break;
+		case 3: MC3_CS1(); break;
+		case 4: MC4_CS1(); break;
+		default: LED_ON(); while(1);
+	}
+}
+
+void mc_flasher_cs0()
+{
+	switch(mc_flasher_num)
+	{
+		case 1: MC1_CS0(); break;
+		case 2: MC2_CS0(); break;
+		case 3: MC3_CS0(); break;
+		case 4: MC4_CS0(); break;
+		default: LED_ON(); while(1);
+	}
+}
+
+// Blocks until free space in the SPI TX FIFO
+void spi1_poll_tx(uint16_t d)
+{
+	while(!(SPI1->SR & (1UL<<1))) ;
+	SPI1->DR = d;
+}
+
+// Blocks until data available in SPI RX FIFO - so indefinitely unless you have issued a TX just before.
+uint16_t spi1_poll_rx()
+{
+	while(!(SPI1->SR & (1UL<<0))) ;
+	return SPI1->DR;
+}
+
+// Empties the rx fifo
+void spi1_empty_rx()
+{
+	while(SPI1->SR&(0b11<<9)) SPI1->DR;
+}
+
+void usart3_poll_tx(uint8_t d) // blocks until current byte tx finished
+{
+	while(!(USART3->SR & (1UL<<7))) ;
+	USART3->DR = d;
+}
+
+uint8_t usart3_poll_rx() // blocks until byte received
+{
+	while(!(USART3->SR & (1UL<<5))) ;
+	return USART3->DR;
+}
+
 void mc_flasher(int mcnum)
 {
 	__disable_irq();
+	if(mcnum < 1 || mcnum > 4)
+	{
+		LED_ON(); while(1);
+	}
+
+	mc_flasher_num = mcnum;
 	LED_OFF();
 	/*
 		Reconfigure UART to 115200, no interrupts. Flasher uses polling, and we want to make sure it
@@ -136,132 +200,135 @@ void mc_flasher(int mcnum)
 		Reconfigure SPI1 for polling, no interrupts.
 	*/
 
-	delay_ms(2000);
-
+	while(SPI1->SR&(0b11<<11)); // Wait for TX fifo empty
+	while(SPI1->SR&(1<<7)) ; // Wait until not busy.
 	MC4_CS1();
 	MC3_CS1();
 	MC2_CS1();
 	MC1_CS1();
 
+	delay_us(10);
+	
 	// SPI1 @ APB2 = 60 MHz
 	SPI1->CR1 = 0; // Disable SPI
-	delay_us(10);
+	delay_us(1);
+	spi1_empty_rx();
+
 	SPI1->CR1 = 1UL<<11 /*16-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
 		0b010UL<<3 /*div 8 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
 	SPI1->CR2 = 0;
 
 	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
-	switch(mcnum)
-	{
-		case 1: MC1_CS0(); break;
-		case 2: MC2_CS0(); break;
-		case 3: MC3_CS0(); break;
-		case 4: MC4_CS0(); break;
-		default: LED_ON(); while(1);
-	}
+	mc_flasher_cs0();
+	delay_us(
 
-	while(!(SPI1->SR & (1UL<<1))) ;
-	SPI1->DR = 60<<10 | 234;
-	while(!(SPI1->SR & (1UL<<1))) ;
-	SPI1->DR = 55<<10 | 345;
+	// Special magic sequence to put the motor controller into the flasher:
+	spi1_poll_tx(60<<10 | 234);
+	spi1_poll_tx(55<<10 | 345);
+	mc_flasher_cs1();
 
-	while(!(SPI1->SR & (1UL<<1))) ;
-	SPI1->DR = (100<<8) | 0;
-	while(1);
+	// Now, the motor controller is reconfiguring its SPI, and we need to make sure we keep the lines idle
+	// as per the reference manual requirements during the initialization.
+
+	delay_ms(20);
+
+	spi1_empty_rx();
+
 	while(1)
 	{
 		int i;
 		int size = 0;
-		while(!(USART3->SR & (1UL<<5))) ;
-		switch(USART3->DR)
+		uint8_t cmd = usart3_poll_rx();
+		switch(cmd)
 		{
-			case 100:
-			while(!(USART3->SR & (1UL<<5))) ;
-			int num_pages = USART3->DR;
+			case 100: // Erase
+			int num_pages = usart3_poll_rx();
 			if(num_pages > 30 || num_pages < 1)
 			{
 				LED_ON(); while(1);
 			}
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = (100<<8) | num_pages;
+			spi1_empty_rx();
+			mc_flasher_cs0();
+			spi1_poll_tx((100<<8) | num_pages);
 
-			while(1)
-			{
-				while(!(SPI1->SR & (1UL<<0))) ;
-				if(SPI1->DR == 0xaaaa) // Erase done.
-					break;
-				SPI1->DR = 0; // generate dummy data during erase so we can detect the end-of-erase condition
-			}
-			USART3->DR = 0; // Return success code 0.
+			while(spi1_poll_rx() != 0xaaaa)
+				spi1_poll_tx(0x1111); // Generate dummy data so that we know when the erase is done.
+
+			mc_flasher_cs1();
+			usart3_poll_tx(0); // success code
 			break;
 
 
-			case 101:
-			while(!(USART3->SR & (1UL<<5))) ;
-			size = USART3->DR<<8;
-			while(!(USART3->SR & (1UL<<5))) ;
-			size |= USART3->DR;
+			case 101: // Write
+			size = usart3_poll_rx()<<8;
+			size |= usart3_poll_rx();
 
 			if(size < 50 || size>30*1024 || size&1)
 			{
 				LED_ON(); while(1);
 			}
 			size>>=1;
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = (101<<8);
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = size;
+
+			spi1_empty_rx();
+			mc_flasher_cs0();
+			spi1_poll_tx(101<<8);
+			spi1_poll_tx(size);
+			spi1_empty_rx();
+
 			for(i=0; i<size; i++)
 			{
-				int word = 0;
-				while(!(USART3->SR & (1UL<<5))) ;
-				word = USART3->DR<<8;
-				while(!(USART3->SR & (1UL<<5))) ;
-				word |= USART3->DR;
-				while(!(SPI1->SR & (1UL<<1))) ;
-				SPI1->DR = word;
+				spi1_empty_rx();
+				int word = usart3_poll_rx()<<8;
+				word    |= usart3_poll_rx();
+				spi_poll_tx(word);
 			}
-			USART3->DR = 0; // Return success code 0.
+
+			mc_flasher_cs1();
+			usart3_poll_tx(0); // success code
 			break;
 
 
-			case 102:
-			while(!(USART3->SR & (1UL<<5))) ;
-			size = USART3->DR<<8;
-			while(!(USART3->SR & (1UL<<5))) ;
-			size |= USART3->DR;
+			case 102: // Read
+			size = usart3_poll_rx()<<8;
+			size |= usart3_poll_rx();
 
 			if(size < 50 || size>30*1024 || size&1)
 			{
 				LED_ON(); while(1);
 			}
 			size>>=1;
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = (102<<8);
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = size;
-			for(i=0; i<(size>>1); i++)
-			{
-				int word = 0;
-				while(!(SPI1->SR & (1UL<<1))) ;
-				SPI1->DR = 0; // Dummy data to generate clocking
-				while(!(SPI1->SR & (1UL<<0))) ;
-				word = SPI1->DR;
 
-				while(!(USART3->SR & (1UL<<7))) ;
-				USART3->DR = (word&0xff00)>>8;
-				while(!(USART3->SR & (1UL<<7))) ;
-				USART3->DR = word&0xff;
+			spi1_empty_rx();
+			mc_flasher_cs0();
+			spi1_poll_tx(102<<8);
+			spi1_poll_tx(size);
+			delay_us(100); // Give the slave some time to parse the cmd and prepare the first data.
+			spi1_empty_rx();
+
+			i=0;
+			while(1)
+			{
+				int word = spi1_poll_rx();
+				usart3_poll_tx((word&0xff00)>>8);
+				usart3_poll_tx(word&0xff);
+				if(++i >= size) break;
+				spi1_poll_tx(0x1111); // Generate dummies.
 			}
+
+			mc_flasher_cs1();
+			usart3_poll_tx(0); // success code
+
+
 			break;
 
 			case 150:
 			case 151:
 			// Reset motcon and the main cpu.
-			while(!(SPI1->SR & (1UL<<1))) ;
-			SPI1->DR = 150<<8;
+			mc_flasher_cs0();
+			spi1_poll_tx(150<<8);
 			delay_ms(1);
+			mc_flasher_cs1();
 			NVIC_SystemReset();
 			while(1);
 
