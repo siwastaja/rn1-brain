@@ -928,11 +928,10 @@ int main()
 		usart_send(txbuf, 6);
 
 		uint16_t tmp = motcons[3].status.last_msg;
-		if(tmp < 0 || tmp > 10) tmp=42;
-
 		txbuf[0] = 0xd1;
-		txbuf[1] = tmp;
-		usart_send(txbuf, 2);
+		txbuf[1] = (tmp&0b1111111000000000)>>9;
+		txbuf[2] = (tmp&0b0000000111111100)>>2;
+		usart_send(txbuf, 3);
 
 
 #endif
