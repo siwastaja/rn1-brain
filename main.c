@@ -150,6 +150,24 @@ void spi1_poll_tx(uint16_t d)
 	SPI1->DR = d;
 }
 
+// Blocks until SPI TX FIFO empty and not busy.
+
+void spi1_poll_tx_bsy(uint16_t d)
+{
+	while(!(SPI1->SR & (1UL<<1))) ;
+	SPI1->DR = d;
+	while(SPI1->SR&(0b11<<11)); // Wait for TX fifo empty
+	while(SPI1->SR&(1<<7)) ; // Wait until not busy.
+	delay_us(1);
+}
+
+void spi1_poll_bsy()
+{
+	while(SPI1->SR&(0b11<<11)); // Wait for TX fifo empty
+	while(SPI1->SR&(1<<7)) ; // Wait until not busy.
+	delay_us(1);
+}
+
 // Blocks until data available in SPI RX FIFO - so indefinitely unless you have issued a TX just before.
 uint16_t spi1_poll_rx()
 {
@@ -175,12 +193,14 @@ uint8_t usart3_poll_rx() // blocks until byte received
 	return USART3->DR;
 }
 
+#define ETERNAL_BLINK() {while(1) {LED_ON(); delay_ms(50); LED_OFF(); delay_ms(50);}}
+
 void mc_flasher(int mcnum)
 {
 	__disable_irq();
 	if(mcnum < 1 || mcnum > 4)
 	{
-		LED_ON(); while(1);
+		ETERNAL_BLINK();
 	}
 
 	mc_flasher_num = mcnum;
@@ -221,11 +241,11 @@ void mc_flasher(int mcnum)
 	SPI1->CR1 |= 1UL<<6; // Enable SPI
 
 	mc_flasher_cs0();
-	delay_us(
+	delay_us(1);
 
 	// Special magic sequence to put the motor controller into the flasher:
 	spi1_poll_tx(60<<10 | 234);
-	spi1_poll_tx(55<<10 | 345);
+	spi1_poll_tx_bsy(55<<10 | 345);
 	mc_flasher_cs1();
 
 	// Now, the motor controller is reconfiguring its SPI, and we need to make sure we keep the lines idle
@@ -243,10 +263,11 @@ void mc_flasher(int mcnum)
 		switch(cmd)
 		{
 			case 100: // Erase
+			{
 			int num_pages = usart3_poll_rx();
 			if(num_pages > 30 || num_pages < 1)
 			{
-				LED_ON(); while(1);
+				ETERNAL_BLINK();
 			}
 			spi1_empty_rx();
 			mc_flasher_cs0();
@@ -255,8 +276,10 @@ void mc_flasher(int mcnum)
 			while(spi1_poll_rx() != 0xaaaa)
 				spi1_poll_tx(0x1111); // Generate dummy data so that we know when the erase is done.
 
+			spi1_poll_bsy();
 			mc_flasher_cs1();
 			usart3_poll_tx(0); // success code
+			}
 			break;
 
 
@@ -266,7 +289,7 @@ void mc_flasher(int mcnum)
 
 			if(size < 50 || size>30*1024 || size&1)
 			{
-				LED_ON(); while(1);
+				ETERNAL_BLINK();
 			}
 			size>>=1;
 
@@ -279,23 +302,25 @@ void mc_flasher(int mcnum)
 			for(i=0; i<size; i++)
 			{
 				spi1_empty_rx();
-				int word = usart3_poll_rx()<<8;
-				word    |= usart3_poll_rx();
-				spi_poll_tx(word);
+				int word = usart3_poll_rx();
+				word    |= usart3_poll_rx()<<8;
+				spi1_poll_tx(word);
 			}
 
+			spi1_poll_bsy();
 			mc_flasher_cs1();
 			usart3_poll_tx(0); // success code
 			break;
 
 
 			case 102: // Read
+			{
 			size = usart3_poll_rx()<<8;
 			size |= usart3_poll_rx();
 
 			if(size < 50 || size>30*1024 || size&1)
 			{
-				LED_ON(); while(1);
+				ETERNAL_BLINK();
 			}
 			size>>=1;
 
@@ -305,21 +330,35 @@ void mc_flasher(int mcnum)
 			spi1_poll_tx(size);
 			delay_us(100); // Give the slave some time to parse the cmd and prepare the first data.
 			spi1_empty_rx();
-
+			int mask = 1;
 			i=0;
 			while(1)
 			{
 				int word = spi1_poll_rx();
-				usart3_poll_tx((word&0xff00)>>8);
-				usart3_poll_tx(word&0xff);
-				if(++i >= size) break;
+				
+				if(!mask)
+				{
+					usart3_poll_tx(word&0xff);
+					usart3_poll_tx((word&0xff00)>>8);
+				}
+				else
+				{
+					delay_us(200);
+					i=0;
+				}
+
+				if(++i > size) break;
 				spi1_poll_tx(0x1111); // Generate dummies.
+				if(word == 0xcccc)
+				{
+					mask = 0;
+				}
 			}
 
+			spi1_poll_bsy();
 			mc_flasher_cs1();
-			usart3_poll_tx(0); // success code
 
-
+			}
 			break;
 
 			case 150:
@@ -328,6 +367,7 @@ void mc_flasher(int mcnum)
 			mc_flasher_cs0();
 			spi1_poll_tx(150<<8);
 			delay_ms(1);
+			spi1_poll_bsy();
 			mc_flasher_cs1();
 			NVIC_SystemReset();
 			while(1);
