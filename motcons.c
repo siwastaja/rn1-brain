@@ -61,6 +61,12 @@ void init_motcons()
 }
 
 
+void motcon_send_custom(int idx, uint16_t msg)
+{
+	motcons[idx].send_custom = 1;
+	motcons[idx].custom_msg = msg;
+}
+
 /*
 	Every time motcon_fsm is called, the next controller is accessed.
 	Maximum access frequency per controller is approx. 300 kHz, so,
@@ -86,7 +92,12 @@ void motcon_fsm()
 		default: break;
 	}
 
-	if(motcons[cur_motcon].cmd.speed >= 0)
+	if(motcons[cur_motcon].send_custom)
+	{
+		motcons[cur_motcon].send_custom = 0;
+		SPI1->DR = motcons[cur_motcon].custom_msg;
+	}
+	else if(motcons[cur_motcon].cmd.speed >= 0)
 		SPI1->DR = 11UL<<10 | (motcons[cur_motcon].cmd.speed & 0x3FF);
 	else
 		SPI1->DR = 12UL<<10 | ((motcons[cur_motcon].cmd.speed*-1) & 0x3FF);

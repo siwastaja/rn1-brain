@@ -394,6 +394,15 @@ void handle_message()
 		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
 		speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
 		break;
+
+		case 0xd1:
+		motcon_send_custom(3, 13<<10);
+		break;
+
+		case 0xd2:
+		motcon_send_custom(3, 14<<10);
+		break;
+
 		default:
 		break;
 	}

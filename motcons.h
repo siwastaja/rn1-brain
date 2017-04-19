@@ -31,11 +31,13 @@ typedef struct
 {
 	motcon_status_t status;
 	motcon_cmd_t cmd;
+	int send_custom;
+	uint16_t custom_msg;
 } motcon_t;
 
 
 void init_motcons();
 void motcon_fsm();
-
+void motcon_send_custom(int idx, uint16_t msg);
 
 #endif
