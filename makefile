@@ -37,7 +37,7 @@ f_local: main.bin
 	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
 
 ff: main.bin
-	scp main.bin hrst@proto4:~
+	scp main.bin hrst@proto4:~/rn1-tools/
 
 stack:
 	cat *.su

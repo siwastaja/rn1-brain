@@ -24,9 +24,20 @@ Rationale:
 
 MESSAGES PC-->RN#1 (aka commands)
 
-0x80 MSG_MOVE
+0x80 MSG_MOVE_MANUAL
 	sint7	speed	0 = stop, - = backwards
 	sint7	arc	0 = go directly, - = left
+
+0x81 MSG_MOVE_RELATIVE_TWOSTEP
+	Robot turns first, then goes straight.
+	sint14	angle	+/- 1/16th degrees
+	sint14	forward + forward, - backward, in mm.
+
+0x82 MSG_MOVE_RELATIVE_ARC
+	Robot makes an arc by simultaneous turning and forward/backward motion.
+	sint14	angle	+/- 1/16th degrees
+	sint14	forward + forward, - backward, in mm.
+
 
 0xFE MSG_MAINTENANCE
 	3xuint7	0x42, 0x11 and 0x7A magic key numbers
@@ -74,11 +85,13 @@ MESSAGES RN#1-->PC (aka status)
 0x84 MSG_LIDAR		LIDAR image, latest full turn
 	Note: This is a large data frame, 1Mbps communication is recommend to keep latency of other messages down.
 	uint7	status
+		bit0	lidar initialized (should be working)
+		bit1	lidar speed within spec (feedback loop works as it should)
 	360*uint14	Distance in mm; 0 = no datapoint (reflectance issue, for example)
 	
 0x85 MSG_SONAR		SONAR data (latest distances, max 7 sonars)
 	uint7	status  List of enabled sonars (0b0001111 for sonars 0,1,2,3 for example)
-	7*uint14 distances	Distances in cm for sonars 0,1,2,3,4,5,6;  0 = no datapoint (no echo received)
+	7*uint14 distances	Distances in mm for sonars 0,1,2,3,4,5,6;  0 = no datapoint (no echo received)
 
 
 0xa0 MSG_FACING		Actual direction and speed (based on sensors)

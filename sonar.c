@@ -2,13 +2,13 @@
 
 #include "sonar.h"
 
-extern int latest_sonars[NUM_SONARS]; // in cm
+extern int latest_sonars[MAX_NUM_SONARS]; // in cm
 
 void sonar_fsm()
 {
 	int i;
 	static int cnt_sonar;
-	static int sonar_times[NUM_SONARS];
+	static int sonar_times[MAX_NUM_SONARS];
 	cnt_sonar++;
 	if(cnt_sonar == 1000) // Sonar with 100ms intervals
 	{

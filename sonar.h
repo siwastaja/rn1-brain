@@ -8,8 +8,8 @@
 #define SONAR3_ECHO() (GPIOC->IDR & (1UL<<12))
 #define SONAR4_ECHO() (GPIOD->IDR & (1UL<<1))
 
-
-#define NUM_SONARS 4
+#define MAX_NUM_SONARS 4
+#define NUM_SONARS 3
 
 
 void sonar_fsm();

@@ -33,6 +33,9 @@
 extern volatile int mc_dbg_tx, mc_dbg_rx;
 #endif
 
+
+volatile int dbg1, dbg2, dbg3, dbg4;
+
 uint8_t txbuf[1024];
 
 void delay_us(uint32_t i)
@@ -394,12 +397,6 @@ volatile uint8_t* process_rx_buf;
 
 volatile int do_handle_message;
 
-int speed_updated;  // For timeouting robot movements (for faulty communications)
-
-
-int common_speed;
-int angle;
-
 
 void handle_maintenance_msg()
 {
@@ -430,16 +427,21 @@ void handle_message()
 		break;
 
 		case 0x80:
-		common_speed = ((int16_t)(int8_t)(process_rx_buf[1]<<1))*4;
-		angle = ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4;
-		speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
+		move_arc_manual(((int16_t)(int8_t)(process_rx_buf[1]<<1))*4, ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4);
 		break;
 
+		case 0x81:
+		move_rel_twostep(I7I7_I16(process_rx_buf[1],process_rx_buf[2]), I7I7_I16(process_rx_buf[3],process_rx_buf[4]));
+		break;
+
+		// Motor controller debug/dev messages (decrease/increase phase angle finetune)
 		case 0xd1:
+		motcon_send_custom(2, 13<<10);
 		motcon_send_custom(3, 13<<10);
 		break;
 
 		case 0xd2:
+		motcon_send_custom(2, 14<<10);
 		motcon_send_custom(3, 14<<10);
 		break;
 
@@ -479,7 +481,7 @@ void uart_rx_handler()
 #endif
 }
 
-int latest_sonars[NUM_SONARS]; // in cm, 0 = no echo
+int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
@@ -545,6 +547,9 @@ extern volatile int i2c1_fails;
 extern volatile int gyro_timestep_len;
 extern volatile int xcel_timestep_len;
 
+extern int lidar_speed_in_spec;
+extern int lidar_initialized;
+extern int cur_angle;
 int main()
 {
 	gather_rx_buf = rx_buffers[0];
@@ -620,7 +625,7 @@ int main()
 	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOD->MODER   = 0b10000000000000000000010101000000;
+	GPIOD->MODER   = 0b01000000000000000000010101000000;
 	GPIOD->OSPEEDR = 0b00000000000000000000000001000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -664,17 +669,6 @@ int main()
 	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<5 /*RX interrupt*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
 	/*
-		TIM4 generates PWM control for the LIDAR brushed DC motor.
-	*/
-
-	TIM4->CR1 = 1UL<<7 /*auto preload*/ | 0b01UL<<5 /*centermode*/;
-	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
-	TIM4->CCER = 1UL<<12 /*CH4 out ena*/;
-	TIM4->ARR = 1024;
-	TIM4->CCR4 = 350;
-	TIM4->CR1 |= 1UL; // Enable.
-
-	/*
 		TIM6 @ APB1 at 30MHz, but the counter runs at x2 = 60MHz
 		Create 10 kHz timebase interrupt
 	*/
@@ -706,7 +700,7 @@ int main()
 #ifdef TEXT_DEBUG
 	usart_print("motcons init ok\r\n");
 #endif
-//	init_lidar();
+	init_lidar();
 #ifdef TEXT_DEBUG
 	usart_print("lidar init ok\r\n");
 #endif
@@ -736,11 +730,11 @@ int main()
 	*/
 
 #ifdef TEXT_DEBUG
-//	usart_print("pre-syncing lidar... ");
+	usart_print("pre-syncing lidar... ");
 #endif
-//	sync_lidar();
+	sync_lidar();
 #ifdef TEXT_DEBUG
-//	usart_print("done\r\n");
+	usart_print("done\r\n");
 #endif
 
 
@@ -750,26 +744,24 @@ int main()
 	int compass_y_max = 0;
 
 	int first_compass = 3;
-	int kakka = 0;
+	int cnt = 0;
+	int lidar_resynced = 0;
 	while(1)
 	{
 
+		cnt++;
 #ifdef TEXT_DEBUG
 		char buffer[4000];
 		char* buf = buffer;
 #endif
 
-		delay_ms(100); // Don't produce too much data now, socat is broken.
-/*
-		if(kakka != -1)
-			kakka++;
+		delay_ms(100); // Don't produce too much data now, for network reasons.
 
-		if(kakka > 50)
+		if(lidar_initialized && lidar_speed_in_spec && !lidar_resynced)
 		{
 			resync_lidar();
-			kakka=-1;
+			lidar_resynced = 1;
 		}
-*/
 
 /*
 		Code like this can be used for debugging purposes:
@@ -833,28 +825,30 @@ int main()
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
 
 
-		txbuf[0] = 0x84;
-		txbuf[1] = 1;
-		int i;
-		for(i = 0; i < 90; i++)
+		if(!(cnt&3))
 		{
-			int o;
-			for(o = 0; o < 4; o++)
+			txbuf[0] = 0x84;
+			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
+			int i;
+			for(i = 0; i < 90; i++)
 			{
-				if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+				int o;
+				for(o = 0; o < 4; o++)
 				{
-					txbuf[2+8*i+2*o] = 0;
-					txbuf[2+8*i+2*o+1] = 0;
-				}
-				else
-				{
-					txbuf[2+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
-					txbuf[2+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
+					if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+					{
+						txbuf[2+8*i+2*o] = 0;
+						txbuf[2+8*i+2*o+1] = 0;
+					}
+					else
+					{
+						txbuf[2+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
+						txbuf[2+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
+					}
 				}
 			}
+			usart_send(txbuf, 90*4*2+2);
 		}
-		usart_send(txbuf, 90*4*2+2);
-
 
 #endif
 
@@ -909,6 +903,8 @@ int main()
 			degrees = heading;
 		}
 
+		degrees = cur_angle>>4;
+
 #ifdef BINARY_OUTPUT
 		txbuf[0] = 0xa0;
 		txbuf[1] = 1;
@@ -927,12 +923,52 @@ int main()
 		txbuf[5] = I16_I14(int_y)&0xff;
 		usart_send(txbuf, 6);
 
+		txbuf[0] = 0x85;
+		txbuf[1] = 0b111;
+		int ts = latest_sonars[0]*10;
+		txbuf[2] = ts&0x7f;
+		txbuf[3] = (ts&(0x7f<<7)) >> 7;
+		ts = latest_sonars[1]*10;
+		txbuf[4] = ts&0x7f;
+		txbuf[5] = (ts&(0x7f<<7)) >> 7;
+		ts = latest_sonars[2]*10;
+		txbuf[6] = ts&0x7f;
+		txbuf[7] = (ts&(0x7f<<7)) >> 7;
+		usart_send(txbuf, 8);
+
+
 		uint16_t tmp = motcons[3].status.last_msg;
 		txbuf[0] = 0xd1;
 		txbuf[1] = (tmp&0b1111111000000000)>>9;
 		txbuf[2] = (tmp&0b0000000111111100)>>2;
 		usart_send(txbuf, 3);
 
+		int dbg1_t = dbg1;
+		int dbg2_t = dbg2;
+		int dbg3_t = dbg3;
+		int dbg4_t = dbg4;
+		txbuf[0] = 0xd2;
+		txbuf[1] = I32_I7_4(dbg1_t);
+		txbuf[2] = I32_I7_3(dbg1_t);
+		txbuf[3] = I32_I7_2(dbg1_t);
+		txbuf[4] = I32_I7_1(dbg1_t);
+		txbuf[5] = I32_I7_0(dbg1_t);
+		txbuf[6] = I32_I7_4(dbg2_t);
+		txbuf[7] = I32_I7_3(dbg2_t);
+		txbuf[8] = I32_I7_2(dbg2_t);
+		txbuf[9] = I32_I7_1(dbg2_t);
+		txbuf[10] = I32_I7_0(dbg2_t);
+		txbuf[11] = I32_I7_4(dbg3_t);
+		txbuf[12] = I32_I7_3(dbg3_t);
+		txbuf[13] = I32_I7_2(dbg3_t);
+		txbuf[14] = I32_I7_1(dbg3_t);
+		txbuf[15] = I32_I7_0(dbg3_t);
+		txbuf[16] = I32_I7_4(dbg4_t);
+		txbuf[17] = I32_I7_3(dbg4_t);
+		txbuf[18] = I32_I7_2(dbg4_t);
+		txbuf[19] = I32_I7_1(dbg4_t);
+		txbuf[20] = I32_I7_0(dbg4_t);
+		usart_send(txbuf, 21);
 
 #endif
 

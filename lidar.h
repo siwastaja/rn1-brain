@@ -5,6 +5,9 @@
 
 
 #define DEFAULT_LIDAR_RPM 300
+// For determining whether the lidar is turning within the specs, so that the data flow can be synchronized:
+#define MAX_LIDAR_RPM 330
+#define MIN_LIDAR_RPM 270
 
 extern volatile int lidar_rpm_setpoint_x64;
 
@@ -33,6 +36,7 @@ void resync_lidar();
 void init_lidar();
 uint16_t lidar_calc_checksum(volatile lidar_datum_t* l);
 void lidar_ctrl_loop();
+void deinit_lidar();
 
 
 #endif
