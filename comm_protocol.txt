@@ -96,6 +96,7 @@ MESSAGES RN#1-->PC (aka status)
 
 0xa0 MSG_FACING		Actual direction and speed (based on sensors)
 	uint7	status
-	uint14	heading	In degrees, now. 0 = north
+	uint14	heading	direct units (full range = 360 deg)
 	int14	speed	in mm/s
+	uint14  heading according to compass
 

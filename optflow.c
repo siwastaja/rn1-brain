@@ -3,13 +3,19 @@
 
 #include "optflow.h"
 
+
 extern volatile optflow_data_t latest_optflow;
 extern volatile int optflow_errors;
+
+extern void delay_ms(uint32_t i);
+extern void delay_us(uint32_t i);
+
 
 int optflow_ready;
 int optflow_dummy_data;
 void init_optflow()
 {
+	OPTFLOW_RST_HI();
 	// SPI2 @ APB1 = 30 MHz
 	// ADNS3080 optical flow sensor
 	// Frame rate 2000..6469 fps
@@ -40,6 +46,11 @@ void init_optflow()
 
 	SPI2->CR1 |= 1UL<<6; // Enable SPI
 
+	delay_ms(1);
+
+	OPTFLOW_RST_LO();
+
+	delay_ms(1);
 	optflow_ready = 1;
 }
 

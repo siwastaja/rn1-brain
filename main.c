@@ -415,6 +415,8 @@ void handle_maintenance_msg()
 
 }
 
+volatile int do_re_compass = 0;
+
 void handle_message()
 {
 	switch(process_rx_buf[0])
@@ -431,7 +433,15 @@ void handle_message()
 		break;
 
 		case 0x81:
-		move_rel_twostep(I7I7_I16(process_rx_buf[1],process_rx_buf[2]), I7I7_I16(process_rx_buf[3],process_rx_buf[4]));
+		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
+		break;
+
+		case 0x91:
+		do_re_compass = 1;
+		break;
+
+		case 0x92:
+		sync_to_compass();
 		break;
 
 		// Motor controller debug/dev messages (decrease/increase phase angle finetune)
@@ -444,6 +454,7 @@ void handle_message()
 		motcon_send_custom(2, 14<<10);
 		motcon_send_custom(3, 14<<10);
 		break;
+
 
 		default:
 		break;
@@ -506,8 +517,8 @@ void timebase_10k_handler()
 	int dy = 0;
 	optflow_fsm(&dx, &dy);
 
-	int_x = dx;
-	int_y = dy;
+	int_x += dx;
+	int_y += dy;
 
 
 	motcon_fsm();
@@ -533,6 +544,8 @@ void timebase_10k_handler()
 	if(do_handle_message)
 		handle_message();
 
+	compass_fsm(do_re_compass);
+	do_re_compass = 0;
 	run_feedbacks(status);
 
 
@@ -550,6 +563,18 @@ extern volatile int xcel_timestep_len;
 extern int lidar_speed_in_spec;
 extern int lidar_initialized;
 extern int cur_angle;
+extern int cur_compass_angle;
+
+#define ADC_ITEMS 1
+#define ADC_SAMPLES 2
+
+typedef struct  __attribute__ ((__packed__))
+{
+	uint16_t bat_v;
+} adc_data_t;
+
+volatile adc_data_t adc_data[ADC_SAMPLES];
+
 int main()
 {
 	gather_rx_buf = rx_buffers[0];
@@ -591,7 +616,7 @@ int main()
 
 	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA2*/ | 1UL<<21 /*DMA1*/;
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
-	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/;
+	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/ | 1UL<<8 /*ADC1*/;
 
 	delay_us(10);
 
@@ -621,12 +646,12 @@ int main()
 	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOC->MODER   = 0b00000100101000000000010100000000;
+	GPIOC->MODER   = 0b00000100101000000000010100110000;
 	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOD->MODER   = 0b01000000000000000000010101000000;
-	GPIOD->OSPEEDR = 0b00000000000000000000000001000000;
+	GPIOD->MODER   = 0b01000000000000000000010101000100;
+	GPIOD->OSPEEDR = 0b00000000000000000000000001000100;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOE->MODER   = 0b01000000000000000001000000000000;
@@ -705,6 +730,31 @@ int main()
 	usart_print("lidar init ok\r\n");
 #endif
 
+	adc_data[0].bat_v = 100;
+	adc_data[1].bat_v = 200;
+
+	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
+	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
+	ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 1UL<<1 /*continuous*/;
+	ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/;
+	ADC1->SQR1 = (1  -1)<<20 /* sequence length */;
+	ADC1->SQR3 = 12<<0; // Ch12 first in sequence
+
+	ADC1->CR2 |= 1; // Enable ADC
+
+	DMA2_Stream0->PAR = (uint32_t)&(ADC1->DR);
+	DMA2_Stream0->M0AR = (uint32_t)(adc_data);
+	DMA2_Stream0->NDTR = ADC_ITEMS*ADC_SAMPLES;
+	DMA2_Stream0->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b01UL<<13 /*16-bit mem*/ | 0b01UL<<11 /*16-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
+
+	DMA2->LIFCR = 0b111101UL<<0;
+	DMA2_Stream0->CR |= 1UL; // Enable ADC DMA
+
+	delay_ms(1);
+
+	ADC1->CR2 |= 1UL<<30; // Start converting.
+
 	__enable_irq();
 
 	delay_ms(100);
@@ -738,12 +788,7 @@ int main()
 #endif
 
 
-	int compass_x_min = 0;
-	int compass_x_max = 0;
-	int compass_y_min = 0;
-	int compass_y_max = 0;
 
-	int first_compass = 3;
 	int cnt = 0;
 	int lidar_resynced = 0;
 	while(1)
@@ -865,63 +910,44 @@ int main()
 			the correct quadrant).
 		*/
 
-		int cx = latest_compass->x;
-		int cy = latest_compass->y;
+//		degrees = cur_angle>>(4+16);
 
-		if(first_compass > -1)
-			first_compass--;
-
-		if(first_compass == 0)
-		{
-			compass_x_min = compass_x_max = cx;
-			compass_y_min = compass_y_max = cy;
-		}
-
-		if(cx < compass_x_min)
-			compass_x_min = cx;
-		if(cy < compass_y_min)
-			compass_y_min = cy;
-
-		if(cx > compass_x_max)
-			compass_x_max = cx;
-		if(cy > compass_y_max)
-			compass_y_max = cy;
-
-		int degrees = 0;
-
-		int dx = compass_x_max - compass_x_min;
-		int dy = compass_y_max - compass_y_min;
-		if(dx > 500 && dy > 500)
-		{
-			int dx2 = compass_x_max + compass_x_min;
-			int dy2 = compass_y_max + compass_y_min;
-			cx = cx - dx2/2;
-			cy = cy - dy2/2;
-
-			double heading = atan2(cx, cy);
-			heading *= (360.0/(2.0*M_PI));
-			degrees = heading;
-		}
-
-		degrees = cur_angle>>4;
+		int16_t cur_ang_t = cur_angle>>16;
+		int16_t cur_c_ang_t = cur_compass_angle>>16;
 
 #ifdef BINARY_OUTPUT
 		txbuf[0] = 0xa0;
 		txbuf[1] = 1;
-		txbuf[2] = degrees&0x7f;
-		txbuf[3] = (degrees&(0x7f<<7)) >> 7;
+		txbuf[2] = I16_MS(cur_ang_t);
+		txbuf[3] = I16_LS(cur_ang_t);
 		txbuf[4] = 0;
 		txbuf[5] = 0;
-		usart_send(txbuf, 6);
-
+		txbuf[6] = I16_MS(cur_c_ang_t);
+		txbuf[7] = I16_LS(cur_c_ang_t);
+		usart_send(txbuf, 8);
 
 		txbuf[0] = 0xa1;
 		txbuf[1] = 1;
-		txbuf[2] = (I16_I14(int_x)&0xff00)>>8;
-		txbuf[3] = I16_I14(int_x)&0xff;
-		txbuf[4] = (I16_I14(int_y)&0xff00)>>8;
-		txbuf[5] = I16_I14(int_y)&0xff;
-		usart_send(txbuf, 6);
+		txbuf[2] = I16_MS(int_x);
+		txbuf[3] = I16_LS(int_x);
+		txbuf[4] = I16_MS(int_y);
+		txbuf[5] = I16_LS(int_y);
+		txbuf[6] = latest_optflow.squal>>1;
+		txbuf[7] = latest_optflow.dx&0x7f;
+		txbuf[8] = latest_optflow.dy&0x7f;
+		txbuf[9] = latest_optflow.max_pixel>>1;
+		txbuf[10] = latest_optflow.dummy>>1;
+		txbuf[11] = latest_optflow.motion>>1;
+
+		usart_send(txbuf, 12);
+
+		int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
+		txbuf[0] = 0xa2;
+		txbuf[1] = 1;
+		txbuf[2] = I16_MS(bat_v);
+		txbuf[3] = I16_LS(bat_v);
+		usart_send(txbuf, 4);
+
 
 		txbuf[0] = 0x85;
 		txbuf[1] = 0b111;

@@ -50,13 +50,15 @@ void sonar_fsm()
 			latest_sonars[2] = ((100*(cnt_sonar-sonar_times[2]))+29/*rounding*/)/58;
 			sonar_times[2] = -1;
 		}
+/*
 		if(sonar_times[3] == 0 && SONAR4_ECHO())
 			sonar_times[3] = cnt_sonar;
 		else if(sonar_times[3] > 0 && !SONAR4_ECHO())
 		{
-			latest_sonars[3] = ((100*(cnt_sonar-sonar_times[3]))+29/*rounding*/)/58;
+			latest_sonars[3] = ((100*(cnt_sonar-sonar_times[3]))+29)/58;
 			sonar_times[3] = -1;
 		}
+*/
 	}
 
 

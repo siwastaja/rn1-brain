@@ -6,6 +6,8 @@
 #define I14_I16(in) (int16_t)((((in)&0x7f00)<<1 | ((in)&0x7f)<<2))
 #define I16_MS(in)  (((int16_t)(in)&0xfe00)>>9)
 #define I16_LS(in)  (((int16_t)(in)&0x1fc)>>2)
+#define I7I7_I16_lossy(ms, ls) ((int16_t)( ((ms)<<9) | ((ls)<<2) ))
+
 
 // Nonlossy, result ranges from -8192 to 8191
 #define I7I7_I16(ms, ls) ((int16_t)( ((ms)<<9) | ((ls)<<2) )>>2)

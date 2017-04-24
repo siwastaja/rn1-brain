@@ -5,6 +5,8 @@
 
 #define FLOW_CS1() {GPIOB->BSRR = 1UL<<12;}
 #define FLOW_CS0() {GPIOB->BSRR = 1UL<<(12+16);}
+#define OPTFLOW_RST_HI()  {GPIOD->BSRR = 1UL<<1;}
+#define OPTFLOW_RST_LO() {GPIOD->BSRR = 1UL<<(1+16);}
 
 #define OPTFLOW_POLL_RATE 100 // unit: 100us, must be at least 5 (=500us)
 
