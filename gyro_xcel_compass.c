@@ -547,6 +547,17 @@ int init_gyro_xcel_compass()
 	i2c1_config_byte(0x3A, 0x20,
 		0b100<<4 /*200Hz*/ | 1<<3 /*Must be set for proper operation*/ | 0b111 /*Z,Y,X ena*/);
 
+	// configuring anything seems to break the xcel sensor. 200Hz setting luckily works.
+
+//	i2c1_config_byte(0x3A, 0x21,
+//		0b10<<5 /*This field ridiculously configures both LPF and HPF, when HighRes is set: LPF=200/9 Hz. HPF undefined, go figure.*/ |
+//		0<<2 /* HPF off */);
+
+//	i2c1_config_byte(0x3A, 0x23,
+//		0b11<<6 /*50Hz BW AA*/ | 0b00<<4 /*+- 2g full scale*/ | 1<<3 /*Enable BW selection (lol)*/);
+
+
+
 	// Init Compass
 
 	i2c1_config_byte(0x3C, 0x20,

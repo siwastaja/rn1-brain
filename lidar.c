@@ -102,7 +102,7 @@ uint16_t lidar_calc_checksum(volatile lidar_datum_t* l)
 	return checksum;
 }
 
-int lidar_speed_in_spec = 0;
+volatile int lidar_speed_in_spec = 0;
 
 // run this at 10 kHz
 void lidar_ctrl_loop()
@@ -119,7 +119,8 @@ void lidar_ctrl_loop()
 		return;
 	}
 
-	if(cycle<100)
+
+	if(cycle<100) // actual code runs at 100Hz
 	{
 		cycle++;
 		return;
@@ -142,7 +143,7 @@ void lidar_ctrl_loop()
 	else
 		in_spec_cnt++;
 
-	if(in_spec_cnt > 10000)
+	if(in_spec_cnt > 100) // require 1 sec of stability
 		lidar_speed_in_spec = 1;
 
 	pwm_shadow_x256 -= error/16;

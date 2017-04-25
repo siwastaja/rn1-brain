@@ -16,20 +16,30 @@ extern volatile motcon_t motcons[NUM_MOTCONS];
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
 
-int gyro_timing_issues;
+int64_t xcel_long_integrals[3];
+int64_t xcel_short_integrals[3];
 
-int cur_angle = 0; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
-int cur_compass_angle = 0;
-int aim_angle = 0; // same
+int xcel_dc_corrs[3];
+
+
+int gyro_timing_issues;
+int xcel_timing_issues;
+
+volatile int cur_angle = 0; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
+volatile int cur_compass_angle = 0;
+volatile int aim_angle = 0; // same
+volatile int aim_speed = 0;
 
 int ang_accel = 50; //100;
 int ang_top_speed = 500000; //500000;
-int ang_p = 700; //1000;
+int ang_p = 600; //1000 --> 700 --> 600
 
-int speed_updated;  // For timeouting robot movements (for faulty communications)
-int manual_control;
-int common_speed;
-int manual_ang_speed;
+volatile int speed_updated;  // For timeouting robot movements (for faulty communications)
+volatile int manual_control;
+volatile int common_speed;
+volatile int manual_ang_speed;
+
+volatile int robot_nonmoving = 1;
 
 void zero_gyro_short_integrals()
 {
@@ -38,12 +48,37 @@ void zero_gyro_short_integrals()
 	gyro_short_integrals[2] = 0;
 }
 
+void zero_xcel_short_integrals()
+{
+	xcel_short_integrals[0] = 0;
+	xcel_short_integrals[1] = 0;
+	xcel_short_integrals[2] = 0;
+}
+
+void zero_xcel_long_integrals()
+{
+	xcel_long_integrals[0] = 0;
+	xcel_long_integrals[1] = 0;
+	xcel_long_integrals[2] = 0;
+}
+
+volatile int aim_fwd = 0;
+
 void move_rel_twostep(int angle, int fwd)
 {
 	aim_angle += angle<<16;
-	ang_top_speed = 500000;
+	if(fwd > 0)
+		aim_speed = 300;
+	else if(fwd < 0)
+		aim_speed = -300;
+	else
+		aim_speed = 0;
+	aim_fwd = fwd*10; // in ms
+	if(aim_fwd < 0) aim_fwd *= -1;
+	ang_top_speed = 300000;
 	manual_control = 0;
 	speed_updated = 100000;
+	robot_nonmoving = 0;
 }
 
 void compass_fsm(int cmd)
@@ -154,7 +189,7 @@ void compass_fsm(int cmd)
 
 		double heading = atan2(cx, cy);
 		heading /= (2.0*M_PI);
-		heading *= 65536.0*65536.0;
+		heading *= -65536.0*65536.0;
 		cur_compass_angle = (int)heading;// + 2147483648 /*180 deg*/;
 	}
 
@@ -169,7 +204,17 @@ void sync_to_compass()
 
 void move_arc_manual(int comm, int ang)
 {
-	common_speed = comm;
+	if(comm == 0 && ang == 0)
+	{
+		zero_xcel_long_integrals();
+		robot_nonmoving = 1;
+
+	}
+	else
+		robot_nonmoving = 0;
+
+
+	common_speed = comm<<1;
 	manual_ang_speed = ang;
 	speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
 	manual_control = 1;
@@ -181,26 +226,28 @@ void run_feedbacks(int sens_status)
 	int i;
 	static int cnt = 0;
 	static int prev_gyro_cnt = 0;
+	static int prev_xcel_cnt = 0;
+	static int robot_nonmoving_cnt = 0;
 	static int speeda = 0;
 	static int speedb = 0;
 
-	static int idle = 1;
+	static int ang_idle = 1;
 
 	static int ang_speed = 0;
 	static int ang_speed_limit = 0;
 
 	cnt++;
 
-	dbg1 = aim_angle;
-	dbg2 = cur_angle;
+//	dbg1 = aim_angle;
+//	dbg2 = cur_angle;
 
 	int ang_err = cur_angle - aim_angle;
 	dbg3 = ang_err;
-	if(!manual_control && (ang_err < -1*65536 || ang_err > 1*65536))
+	if(!manual_control && (ang_err < -2*65536 || ang_err > 2*65536))
 	{
-		if(idle)
+		if(ang_idle)
 		{
-			idle = 0;
+			ang_idle = 0;
 			ang_speed_limit = 0;
 			zero_gyro_short_integrals();
 		}
@@ -216,13 +263,29 @@ void run_feedbacks(int sens_status)
 		if(new_ang_speed > 0 && new_ang_speed > ang_speed_limit) new_ang_speed = ang_speed_limit;
 
 		ang_speed = new_ang_speed;
-		common_speed = 0;
-
 	}
 	else
 	{
-		idle=1;
+		ang_idle=1;
 		ang_speed = 0;
+	}
+
+	if(!manual_control)
+	{
+		if(aim_fwd > 0)
+		{
+			if(common_speed < aim_speed) common_speed++;
+			if(common_speed > aim_speed) common_speed--;
+
+			aim_fwd--;
+			if(aim_fwd == aim_speed || aim_fwd == -1*aim_speed)
+				aim_speed = 0;
+			
+		}
+		else
+		{
+			common_speed = 0;
+		}
 	}
 
 //	dbg4 = gyro_timing_issues;
@@ -253,7 +316,53 @@ void run_feedbacks(int sens_status)
 		// Correct ratio = (3.125*10^-6)/(360/(2^32)) = 37.28270222222358615960
 		// Approximated ratio = 76355/2048 = 37.28271484375
 		// Error = -0.00003385%
-		cur_angle += ((int64_t)latest[2]*(int64_t)76355)>>11;
+		if(latest[2] < 50*20 || latest[2] > 50*20)
+			cur_angle += ((int64_t)latest[2]*(int64_t)76355)>>11;
+	}
+
+	if(sens_status & XCEL_NEW_DATA)
+	{
+		int latest[3] = {latest_xcel->x, latest_xcel->y, latest_xcel->z};
+
+		if(robot_nonmoving)
+		{
+			if(robot_nonmoving_cnt < 50)
+			{
+				robot_nonmoving_cnt++;
+			}
+			else
+			{
+				xcel_dc_corrs[0] = ((latest[0]<<8) + 63*xcel_dc_corrs[0])>>6;
+				xcel_dc_corrs[1] = ((latest[1]<<8) + 63*xcel_dc_corrs[1])>>6;
+				xcel_dc_corrs[2] = ((latest[2]<<8) + 63*xcel_dc_corrs[2])>>6;
+			}
+		}
+		else
+			robot_nonmoving_cnt = 0;
+
+		int xcel_dt = cnt - prev_xcel_cnt;
+		prev_xcel_cnt = cnt;
+		// Xcel should give data at 200Hz, which is 50 steps at 10kHz
+		if(xcel_dt < 30 || xcel_dt > 200)
+		{
+			// If the timing is clearly out of range, assume 200Hz data rate and log the error.
+			xcel_dt = 50;
+			xcel_timing_issues++;
+		}
+
+		for(i=0; i<3; i++)
+		{
+			latest[i] -= xcel_dc_corrs[i]>>8;
+			latest[i] *= xcel_dt;
+			if(latest[i] < -3000 || latest[i] > 3000)
+				xcel_long_integrals[i] += (int64_t)latest[i];
+			xcel_short_integrals[i] += (int64_t)latest[i];
+		}
+
+		dbg1 = xcel_dc_corrs[0]>>8;
+		dbg2 = xcel_dc_corrs[1]>>8;
+
+		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 	}
 
 	int error;
@@ -279,8 +388,8 @@ void run_feedbacks(int sens_status)
 	if(speedb > MAX_DIFFERENTIAL_SPEED*256) speedb = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speedb < -MAX_DIFFERENTIAL_SPEED*256) speedb = -MAX_DIFFERENTIAL_SPEED*256;
 
-	int a = common_speed + speeda/512;
-	int b = common_speed + speedb/512;
+	int a = (common_speed>>1) + (speeda>>9);
+	int b = (common_speed>>1) + (speedb>>9);
 
 	a>>=1;
 	b>>=1;
@@ -300,6 +409,7 @@ void run_feedbacks(int sens_status)
 	else
 	{
 		LED_ON();
+		robot_nonmoving = 1;
 		motcons[2].cmd.speed = 0;
 		motcons[3].cmd.speed = 0;
 		speeda=0;

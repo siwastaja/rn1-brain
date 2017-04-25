@@ -553,6 +553,38 @@ void timebase_10k_handler()
 
 extern volatile lidar_datum_t lidar_full_rev[90];
 
+
+uint8_t lidar_ignore[360];
+
+#define LIDAR_IGNORE_LEN 600 // mm
+
+void generate_lidar_ignore()
+{
+	int i;
+	for(i = 0; i < 360; i++) lidar_ignore[i] = 0;
+
+	for(i = 0; i < 90; i++)
+	{
+		int o;
+		for(o = 0; o < 4; o++)
+		{
+			if(!(lidar_full_rev[i].d[o].flags_distance&(1<<15)))
+			{
+				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < LIDAR_IGNORE_LEN)
+				{
+					int cur = i*4+o;
+					int next = cur+1; if(next > 359) next = 0;
+					int prev = cur-1; if(prev < 0) prev = 359;
+					lidar_ignore[prev] = 1;
+					lidar_ignore[cur] = 1;
+					lidar_ignore[next] = 1;
+				}
+			}
+		}
+	}
+}
+
+
 extern volatile int i2c1_state;
 extern volatile int last_sr1;
 extern volatile int i2c1_fails;
@@ -560,10 +592,12 @@ extern volatile int i2c1_fails;
 extern volatile int gyro_timestep_len;
 extern volatile int xcel_timestep_len;
 
-extern int lidar_speed_in_spec;
+extern volatile int lidar_speed_in_spec;
 extern int lidar_initialized;
 extern int cur_angle;
 extern int cur_compass_angle;
+
+extern int64_t xcel_long_integrals[3];
 
 #define ADC_ITEMS 1
 #define ADC_SAMPLES 2
@@ -791,6 +825,7 @@ int main()
 
 	int cnt = 0;
 	int lidar_resynced = 0;
+	int do_generate_lidar_ignore = 0;
 	while(1)
 	{
 
@@ -806,7 +841,17 @@ int main()
 		{
 			resync_lidar();
 			lidar_resynced = 1;
+			do_generate_lidar_ignore = 10;
 		}
+
+
+		if(do_generate_lidar_ignore)
+		{
+			do_generate_lidar_ignore--;
+			if(do_generate_lidar_ignore == 0)
+				generate_lidar_ignore();
+		}
+
 
 /*
 		Code like this can be used for debugging purposes:
@@ -880,7 +925,7 @@ int main()
 				int o;
 				for(o = 0; o < 4; o++)
 				{
-					if(lidar_full_rev[i].d[o].flags_distance&(1<<15))
+					if((lidar_full_rev[i].d[o].flags_distance&(1<<15)) || lidar_ignore[i*4+o])
 					{
 						txbuf[2+8*i+2*o] = 0;
 						txbuf[2+8*i+2*o+1] = 0;
@@ -969,10 +1014,16 @@ int main()
 		txbuf[2] = (tmp&0b0000000111111100)>>2;
 		usart_send(txbuf, 3);
 
+		// calc from xcel integral
+		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
+		// to mm/sec: / 16.72 = *245 / 4094.183
+		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
+		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
+
 		int dbg1_t = dbg1;
 		int dbg2_t = dbg2;
-		int dbg3_t = dbg3;
-		int dbg4_t = dbg4;
+		int dbg3_t = speedx;
+		int dbg4_t = speedy;
 		txbuf[0] = 0xd2;
 		txbuf[1] = I32_I7_4(dbg1_t);
 		txbuf[2] = I32_I7_3(dbg1_t);
