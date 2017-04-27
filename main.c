@@ -16,9 +16,7 @@
 #include "sonar.h"
 #include "feedbacks.h"
 
-//#define MOTCON_DEBUG
 #define BINARY_OUTPUT
-//#define TEXT_DEBUG
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -28,13 +26,10 @@
 #define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
 #define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
 #define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
+#define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
+#define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
 
-#ifdef MOTCON_DEBUG
-extern volatile int mc_dbg_tx, mc_dbg_rx;
-#endif
-
-
-volatile int dbg1, dbg2, dbg3, dbg4;
+volatile int dbg[10];
 
 uint8_t txbuf[1024];
 
@@ -98,9 +93,6 @@ void usart_send(const uint8_t *buf, int len)
 		buf++;
 	}
 }
-
-
-volatile motcon_t motcons[NUM_MOTCONS];
 
 
 void run_flasher()
@@ -231,6 +223,10 @@ void mc_flasher(int mcnum)
 	MC1_CS1();
 
 	delay_us(10);
+
+	// disable DMA
+	DMA2->LIFCR = 0b111101UL<<0;  DMA2_Stream0->CR = 0;
+	DMA2->LIFCR = 0b111101UL<<22; DMA2_Stream3->CR = 0;
 	
 	// SPI1 @ APB2 = 60 MHz
 	SPI1->CR1 = 0; // Disable SPI
@@ -247,8 +243,15 @@ void mc_flasher(int mcnum)
 	delay_us(1);
 
 	// Special magic sequence to put the motor controller into the flasher:
-	spi1_poll_tx(60<<10 | 234);
-	spi1_poll_tx_bsy(55<<10 | 345);
+	spi1_poll_tx(0xfaaa);
+	spi1_poll_tx(0x1234);
+	spi1_poll_tx(0xabcd);
+	spi1_poll_tx(0x420b);
+	spi1_poll_tx(0xacdc);
+	spi1_poll_tx(0xabba);
+	spi1_poll_tx(0x1337);
+	spi1_poll_tx_bsy(0xacab);
+
 	mc_flasher_cs1();
 
 	// Now, the motor controller is reconfiguring its SPI, and we need to make sure we keep the lines idle
@@ -417,6 +420,8 @@ void handle_maintenance_msg()
 
 volatile int do_re_compass = 0;
 
+volatile int motcon_pi = 10;
+
 void handle_message()
 {
 	switch(process_rx_buf[0])
@@ -429,7 +434,7 @@ void handle_message()
 		break;
 
 		case 0x80:
-		move_arc_manual(((int16_t)(int8_t)(process_rx_buf[1]<<1))*4, ((int16_t)(int8_t)(process_rx_buf[2]<<1))*4);
+		move_arc_manual(((int16_t)(int8_t)(process_rx_buf[1]<<1)), ((int16_t)(int8_t)(process_rx_buf[2]<<1)));
 		break;
 
 		case 0x81:
@@ -446,13 +451,13 @@ void handle_message()
 
 		// Motor controller debug/dev messages (decrease/increase phase angle finetune)
 		case 0xd1:
-		motcon_send_custom(2, 13<<10);
-		motcon_send_custom(3, 13<<10);
+		if(motcon_pi > 2)
+			motcon_pi--;
 		break;
 
 		case 0xd2:
-		motcon_send_custom(2, 14<<10);
-		motcon_send_custom(3, 14<<10);
+		if(motcon_pi < 250)
+			motcon_pi++;
 		break;
 
 
@@ -465,12 +470,15 @@ void handle_message()
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
-	USART3->SR;
+	/*uint32_t flags = */USART3->SR;
 	uint8_t byte = USART3->DR;
 
-#ifdef MOTCON_DEBUG
-	mc_dbg_tx = byte;
-#else
+// TODO:
+//	if(flags & 0b1011)
+//	{
+//		// At error, drop the packet.
+//	}
+
 	if(byte == 255) // End-of-command delimiter
 	{
 		volatile uint8_t* tmp = gather_rx_buf;
@@ -489,7 +497,6 @@ void uart_rx_handler()
 		if(rx_buf_loc >= RX_BUFFER_LEN)
 			rx_buf_loc = 0;
 	}
-#endif
 }
 
 int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
@@ -611,6 +618,7 @@ volatile adc_data_t adc_data[ADC_SAMPLES];
 
 int main()
 {
+	int i;
 	gather_rx_buf = rx_buffers[0];
 	process_rx_buf = rx_buffers[1];
 
@@ -699,6 +707,14 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
+
+	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
+	MC4_CS1();
+	MC3_CS1();
+	MC2_CS1();
+	MC1_CS1();
+
+
 	/*
 		Interrupts will have 4 levels of pre-emptive priority, and 4 levels of sub-priority.
 
@@ -739,33 +755,15 @@ int main()
 
 	FLOW_CS1();
 
-	NVIC_SetPriority(USART3_IRQn, 0b0101);
+	NVIC_SetPriority(USART3_IRQn, 0b0000); // highest prio really needed.
 	NVIC_EnableIRQ(USART3_IRQn);
 
-#ifdef TEXT_DEBUG
-	usart_print("booty booty\r\n");
-#endif
 	delay_ms(100);
 
 	init_gyro_xcel_compass();
-#ifdef TEXT_DEBUG
-	usart_print("gyro,xcel,compass init ok\r\n");
-#endif
 	init_optflow();
-#ifdef TEXT_DEBUG
-	usart_print("optflow init ok\r\n");
-#endif
 	init_motcons();
-#ifdef TEXT_DEBUG
-	usart_print("motcons init ok\r\n");
-#endif
 	init_lidar();
-#ifdef TEXT_DEBUG
-	usart_print("lidar init ok\r\n");
-#endif
-
-	adc_data[0].bat_v = 100;
-	adc_data[1].bat_v = 200;
 
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
@@ -776,14 +774,14 @@ int main()
 
 	ADC1->CR2 |= 1; // Enable ADC
 
-	DMA2_Stream0->PAR = (uint32_t)&(ADC1->DR);
-	DMA2_Stream0->M0AR = (uint32_t)(adc_data);
-	DMA2_Stream0->NDTR = ADC_ITEMS*ADC_SAMPLES;
-	DMA2_Stream0->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b01UL<<13 /*16-bit mem*/ | 0b01UL<<11 /*16-bit periph*/ |
+	DMA2_Stream4->PAR = (uint32_t)&(ADC1->DR);
+	DMA2_Stream4->M0AR = (uint32_t)(adc_data);
+	DMA2_Stream4->NDTR = ADC_ITEMS*ADC_SAMPLES;
+	DMA2_Stream4->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b01UL<<13 /*16-bit mem*/ | 0b01UL<<11 /*16-bit periph*/ |
 	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
 
 	DMA2->LIFCR = 0b111101UL<<0;
-	DMA2_Stream0->CR |= 1UL; // Enable ADC DMA
+	DMA2_Stream4->CR |= 1UL; // Enable ADC DMA
 
 	delay_ms(1);
 
@@ -802,26 +800,19 @@ int main()
 		Lidar requires two types of syncing:
 		sync_lidar() is called when the motor is turning at a widely acceptable range of rpm, which is
 		enough to produce _some_ data from the lidar. sync_lidar does sync the data frame to the struct boundaries,
-		but does not sync the degree field, so the image will be wrongly rotated.
+		but may not sync to the degree field, so the image may be wrongly rotated.
 
 		But, syncing to data frames allows the lidar control loop to read the rpm field and start regulating the motor speed.
 
-		After sufficienct time (at least 5-6 seconds) of runtime, the control loop has stabilized the rpm so that the lidar
+		After the control loop has stabilized the rpm, the lidar
 		produces fully correct data, so resync_lidar() must be called: it does not only sync the data frame, but it also
-		syncs the whole table so that the 1 degree point is at the start of the table.
+		syncs the whole table so that the 1 degree point is at the start of the table. At this point, lidar ignore table
+		is generated from the closeby objects.
 
 		TODO: Implement the trivial check of lidar data not being synced, and resync when necessary.
 	*/
 
-#ifdef TEXT_DEBUG
-	usart_print("pre-syncing lidar... ");
-#endif
 	sync_lidar();
-#ifdef TEXT_DEBUG
-	usart_print("done\r\n");
-#endif
-
-
 
 	int cnt = 0;
 	int lidar_resynced = 0;
@@ -988,7 +979,7 @@ int main()
 
 		int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
 		txbuf[0] = 0xa2;
-		txbuf[1] = 1;
+		txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
 		txbuf[2] = I16_MS(bat_v);
 		txbuf[3] = I16_LS(bat_v);
 		usart_send(txbuf, 4);
@@ -1008,44 +999,32 @@ int main()
 		usart_send(txbuf, 8);
 
 
-		uint16_t tmp = motcons[3].status.last_msg;
-		txbuf[0] = 0xd1;
-		txbuf[1] = (tmp&0b1111111000000000)>>9;
-		txbuf[2] = (tmp&0b0000000111111100)>>2;
-		usart_send(txbuf, 3);
-
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 		// to mm/sec: / 16.72 = *245 / 4094.183
 		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
-		int dbg1_t = dbg1;
-		int dbg2_t = dbg2;
-		int dbg3_t = speedx;
-		int dbg4_t = speedy;
+		dbg[0] = motcon_rx[3].status;
+		dbg[1] = motcon_rx[3].speed;
+		dbg[2] = motcon_rx[3].current;
+		dbg[3] = motcon_rx[3].pos;
+		dbg[4] = motcon_rx[3].res4;
+		dbg[5] = motcon_rx[3].res5;
+		dbg[6] = motcon_rx[3].res6;
+		dbg[7] = motcon_rx[3].crc;
+
 		txbuf[0] = 0xd2;
-		txbuf[1] = I32_I7_4(dbg1_t);
-		txbuf[2] = I32_I7_3(dbg1_t);
-		txbuf[3] = I32_I7_2(dbg1_t);
-		txbuf[4] = I32_I7_1(dbg1_t);
-		txbuf[5] = I32_I7_0(dbg1_t);
-		txbuf[6] = I32_I7_4(dbg2_t);
-		txbuf[7] = I32_I7_3(dbg2_t);
-		txbuf[8] = I32_I7_2(dbg2_t);
-		txbuf[9] = I32_I7_1(dbg2_t);
-		txbuf[10] = I32_I7_0(dbg2_t);
-		txbuf[11] = I32_I7_4(dbg3_t);
-		txbuf[12] = I32_I7_3(dbg3_t);
-		txbuf[13] = I32_I7_2(dbg3_t);
-		txbuf[14] = I32_I7_1(dbg3_t);
-		txbuf[15] = I32_I7_0(dbg3_t);
-		txbuf[16] = I32_I7_4(dbg4_t);
-		txbuf[17] = I32_I7_3(dbg4_t);
-		txbuf[18] = I32_I7_2(dbg4_t);
-		txbuf[19] = I32_I7_1(dbg4_t);
-		txbuf[20] = I32_I7_0(dbg4_t);
-		usart_send(txbuf, 21);
+		for(i=0; i<10; i++)
+		{
+			int tm = dbg[i];
+			txbuf[5*i+1] = I32_I7_4(tm);
+			txbuf[5*i+2] = I32_I7_3(tm);
+			txbuf[5*i+3] = I32_I7_2(tm);
+			txbuf[5*i+4] = I32_I7_1(tm);
+			txbuf[5*i+5] = I32_I7_0(tm);
+		}
+		usart_send(txbuf, 51);
 
 #endif
 

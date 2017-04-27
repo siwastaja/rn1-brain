@@ -10,34 +10,38 @@
 #define MC1_CS1()  {GPIOC->BSRR = 1UL<<5;}
 #define MC1_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
 
-
 #define NUM_MOTCONS 4
 
-
-typedef struct
+#define MOTCON_DATAGRAM_LEN 8
+typedef struct __attribute__ ((packed))
 {
-	int last_msg;
-	int16_t cur_b;
-	int16_t cur_c;
-} motcon_status_t;
+	uint16_t status;
+	int16_t speed;
+	int16_t current;
+	int16_t pos;
+	uint16_t res4;
+	uint16_t res5;
+	uint16_t res6;
+	uint16_t crc;
+} motcon_rx_t;
 
-typedef struct
+typedef struct  __attribute__ ((packed))
 {
+	uint16_t state;
 	int16_t speed;
 	int16_t cur_limit;
-} motcon_cmd_t;
+	uint16_t res3;
+	uint16_t res4;
+	uint16_t res5;
+	uint16_t res6;
+	uint16_t crc;
+} motcon_tx_t;
 
-typedef struct
-{
-	motcon_status_t status;
-	motcon_cmd_t cmd;
-	int send_custom;
-	uint16_t custom_msg;
-} motcon_t;
+extern volatile motcon_rx_t motcon_rx[4];
+extern volatile motcon_tx_t motcon_tx[4];
 
 
 void init_motcons();
 void motcon_fsm();
-void motcon_send_custom(int idx, uint16_t msg);
 
 #endif

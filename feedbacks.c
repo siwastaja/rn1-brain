@@ -9,9 +9,7 @@
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
-extern volatile int dbg1, dbg2, dbg3, dbg4;
-
-extern volatile motcon_t motcons[NUM_MOTCONS];
+extern volatile int dbg[10];
 
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
@@ -32,7 +30,7 @@ volatile int aim_speed = 0;
 
 int ang_accel = 50; //100;
 int ang_top_speed = 500000; //500000;
-int ang_p = 600; //1000 --> 700 --> 600
+int ang_p = 300; //1000 --> 700 --> 600 --> 300
 
 volatile int speed_updated;  // For timeouting robot movements (for faulty communications)
 volatile int manual_control;
@@ -165,7 +163,7 @@ void compass_fsm(int cmd)
 		}
 	}
 
-	dbg4 = state;
+//	dbg4 = state;
 
 
 	if(cx < compass_x_min)
@@ -214,8 +212,8 @@ void move_arc_manual(int comm, int ang)
 		robot_nonmoving = 0;
 
 
-	common_speed = comm<<1;
-	manual_ang_speed = ang;
+	common_speed = comm<<3;
+	manual_ang_speed = ang<<2;
 	speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
 	manual_control = 1;
 }
@@ -242,7 +240,7 @@ void run_feedbacks(int sens_status)
 //	dbg2 = cur_angle;
 
 	int ang_err = cur_angle - aim_angle;
-	dbg3 = ang_err;
+//	dbg3 = ang_err;
 	if(!manual_control && (ang_err < -2*65536 || ang_err > 2*65536))
 	{
 		if(ang_idle)
@@ -359,21 +357,24 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
-		dbg1 = xcel_dc_corrs[0]>>8;
-		dbg2 = xcel_dc_corrs[1]>>8;
+//		dbg1 = xcel_dc_corrs[0]>>8;
+//		dbg2 = xcel_dc_corrs[1]>>8;
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 	}
 
 	int error;
 	if(manual_control)
-		error = -1*latest_gyro->z/32 - manual_ang_speed;
+	{
+		speeda = -1*manual_ang_speed;
+		speedb = manual_ang_speed;
+	}
 	else
-		error = -1*latest_gyro->z/32 - (ang_speed>>12);
-
-	speeda += error>>2;
-	speedb -= error>>2;
-
+	{
+		speeda = -1*(ang_speed>>11);
+		speedb = (ang_speed>>11);
+	}
+/*
 	if((cnt&0x3f) == 0x3f) // slow decay
 	{
 		if(speeda > 0) speeda--;
@@ -382,17 +383,14 @@ void run_feedbacks(int sens_status)
 		if(speedb > 0) speedb--;
 		else if(speedb < 0) speedb++;
 	}
-
+*/
 	if(speeda > MAX_DIFFERENTIAL_SPEED*256) speeda = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speeda < -MAX_DIFFERENTIAL_SPEED*256) speeda = -MAX_DIFFERENTIAL_SPEED*256;
 	if(speedb > MAX_DIFFERENTIAL_SPEED*256) speedb = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speedb < -MAX_DIFFERENTIAL_SPEED*256) speedb = -MAX_DIFFERENTIAL_SPEED*256;
 
-	int a = (common_speed>>1) + (speeda>>9);
-	int b = (common_speed>>1) + (speedb>>9);
-
-	a>>=1;
-	b>>=1;
+	int a = (common_speed) + (speeda);
+	int b = (common_speed) + (speedb);
 
 	if(a > MAX_SPEED) a=MAX_SPEED;
 	else if(a < -MAX_SPEED) a=-MAX_SPEED;
@@ -403,15 +401,20 @@ void run_feedbacks(int sens_status)
 	{
 		LED_OFF();
 		speed_updated--;
-		motcons[2].cmd.speed = a;
-		motcons[3].cmd.speed = -1*b;
+		motcon_tx[2].state = 5;
+		motcon_tx[3].state = 5;
+		motcon_tx[2].speed = a;
+		motcon_tx[3].speed = -1*b;
 	}
 	else
 	{
 		LED_ON();
 		robot_nonmoving = 1;
-		motcons[2].cmd.speed = 0;
-		motcons[3].cmd.speed = 0;
+		motcon_tx[2].speed = 0;
+		motcon_tx[3].speed = 0;
+		motcon_tx[2].state = 1;
+		motcon_tx[3].state = 1;
+
 		speeda=0;
 		speedb=0;
 	}
