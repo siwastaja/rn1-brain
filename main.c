@@ -520,13 +520,23 @@ volatile int new_gyro, new_xcel, new_compass;
 
 volatile int int_x, int_y;
 
+volatile int seconds;
+
 void timebase_10k_handler()
 {
+	static int sec_gen = 0;
 	static int cnt_10k = 0;
 	int status;
 
 	TIM6->SR = 0; // Clear interrupt flag
 	cnt_10k++;
+
+	sec_gen++;
+	if(sec_gen >= 10000)
+	{
+		seconds++;
+		sec_gen = 0;
+	}
 
 	// Run code of all devices expecting 10kHz calls.
 	int dx = 0;
@@ -572,7 +582,7 @@ extern volatile lidar_datum_t lidar_full_rev[90];
 
 uint8_t lidar_ignore[360];
 
-#define LIDAR_IGNORE_LEN 600 // mm
+#define LIDAR_IGNORE_LEN 380 // mm
 
 void generate_lidar_ignore()
 {
@@ -1015,6 +1025,17 @@ int main()
 		buf = o_str_append(buf, "\r\n");
 		usart_print(buffer);
 #endif
+
+
+		if(seconds > 130)
+		{
+			CHARGER_ENA();
+			seconds = 0;
+		}
+		else if(seconds > 120)
+		{
+			CHARGER_DIS();
+		}
 
 	}
 

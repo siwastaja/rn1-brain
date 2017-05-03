@@ -5,11 +5,13 @@
 #include "feedbacks.h"
 #include "gyro_xcel_compass.h"
 #include "motcons.h"
+#include "sonar.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
 extern volatile int dbg[10];
+extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
@@ -22,6 +24,9 @@ int xcel_dc_corrs[3];
 
 int gyro_timing_issues;
 int xcel_timing_issues;
+
+volatile int cur_x = 0;
+volatile int cur_y = 0;
 
 volatile int cur_angle = 0; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
 volatile int cur_compass_angle = 0;
@@ -66,11 +71,21 @@ void zero_xcel_long_integrals()
 	xcel_long_integrals[2] = 0;
 }
 
+volatile int wheel_integrals[2];
+volatile int fwd_speed_limit;
+volatile int speed_limit_lowered;
+
+
+// 700 = 1860
+
 void move_rel_twostep(int angle, int fwd)
 {
 	aim_angle += angle<<16;
 
-	cur_fwd = 0;
+	speed_limit_lowered = 0;
+	wheel_integrals[0] = 0;
+	wheel_integrals[1] = 0;
+	fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
 	aim_fwd = fwd*10;
 
 	ang_top_speed = 150000;
@@ -228,6 +243,16 @@ extern volatile int16_t dbg_timing_shift;
 #define ANG_1_DEG 11930465
 #define ANG_01_DEG 1193047
 
+int nearest_sonar()
+{
+	int n = 99999;
+	if(latest_sonars[0] && latest_sonars[0] < n) n = latest_sonars[0];
+	if(latest_sonars[1] && latest_sonars[1] < n) n = latest_sonars[1];
+	if(latest_sonars[2] && latest_sonars[2] < n) n = latest_sonars[2];
+	return n;
+}
+
+
 
 // Run this at 10 kHz
 void run_feedbacks(int sens_status)
@@ -245,15 +270,14 @@ void run_feedbacks(int sens_status)
 
 	static int fwd_idle = 1;
 	static int correct_fwd = 0;
+	static int correct_fwd_pending = 0;
 
 	static int ang_speed = 0;
 	static int ang_speed_limit = 0;
 
 	static int fwd_speed = 0;
-	static int fwd_speed_limit = 0;
 
 	static int16_t prev_wheel_counts[2];
-	static int wheel_integrals[2];
 
 	cnt++;
 
@@ -264,6 +288,26 @@ void run_feedbacks(int sens_status)
 	int fwd_err = aim_fwd - cur_fwd;
 
 	dbg[3] = fwd_err;
+
+	int son = nearest_sonar();
+	if((speed_limit_lowered == 0 && son < 40) ||
+	   (speed_limit_lowered == 1 && son < 28) ||
+	   (speed_limit_lowered == 2 && son < 15))
+	{
+		speed_limit_lowered++;
+		ang_speed_limit >>= 1;
+		fwd_speed_limit >>= 1;
+	}
+
+	if(nearest_sonar() < 10)
+	{
+		if(fwd_err > 0) // allow backwards
+		{
+			aim_angle = cur_angle;
+			aim_fwd = cur_fwd;
+		}
+	}
+
 
 	if(manual_control)
 	{
@@ -280,13 +324,23 @@ void run_feedbacks(int sens_status)
 
 	if(manual_control)
 	{
-		correct_fwd = 0;
+		correct_fwd_pending = 0;
 	}
 	else if(fwd_err < -100 || fwd_err > 100)
 	{
-		correct_fwd = 1;
+		correct_fwd_pending = 1;
 	}
 	else if(fwd_err < -50 || fwd_err > 50)
+	{
+		correct_fwd_pending = 0;
+	}
+
+	if(correct_fwd_pending)
+	{
+		if((ang_err > 3*(-ANG_1_DEG) && ang_err < 3*ANG_1_DEG))
+			correct_fwd = 1;
+	}
+	else
 	{
 		correct_fwd = 0;
 	}
@@ -306,8 +360,9 @@ void run_feedbacks(int sens_status)
 		// Calculate angular speed with P loop from the gyro integral.
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
-		ang_speed_limit += ang_accel;
-		if(ang_speed_limit > ang_top_speed) ang_speed_limit = ang_top_speed;
+		if(ang_speed_limit < ang_top_speed) ang_speed_limit += ang_accel;
+		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= ang_accel;
+		else ang_speed_limit = ang_top_speed;
 
 		int new_ang_speed = (ang_err>>20)*ang_p;
 		if(new_ang_speed < 0 && new_ang_speed < -1*ang_speed_limit) new_ang_speed = -1*ang_speed_limit;
@@ -331,7 +386,7 @@ void run_feedbacks(int sens_status)
 	dbg[6] = wheel_integrals[0];
 	dbg[7] = wheel_integrals[1];
 
-	cur_fwd = (wheel_integrals[0] + wheel_integrals[1])<<4;
+	cur_fwd = ((wheel_integrals[0] + wheel_integrals[1])*85)>>1;
 
 	prev_wheel_counts[0] = wheel_counts[0];
 	prev_wheel_counts[1] = wheel_counts[1];
@@ -341,16 +396,14 @@ void run_feedbacks(int sens_status)
 		if(fwd_idle)
 		{
 			fwd_idle = 0;
-			wheel_integrals[0] = 0;
-			wheel_integrals[1] = 0;
-			fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
 		}
 
 		// Calculate linear speed with P loop from position error.
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
-		fwd_speed_limit += fwd_accel;
-		if(fwd_speed_limit > fwd_top_speed) fwd_speed_limit = fwd_top_speed;
+		if(fwd_speed_limit < fwd_top_speed) fwd_speed_limit += fwd_accel;
+		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= fwd_accel;
+		else fwd_speed_limit = fwd_top_speed;
 
 		int new_fwd_speed = (fwd_err>>4)*fwd_p;
 		if(new_fwd_speed < 0 && new_fwd_speed < -1*fwd_speed_limit) new_fwd_speed = -1*fwd_speed_limit;
@@ -389,13 +442,14 @@ void run_feedbacks(int sens_status)
 
 		//1 gyro unit = 31.25 mdeg/s; integrated at 10kHz timesteps, 1 unit = 3.125 udeg
 		// Correct ratio = (3.125*10^-6)/(360/(2^32)) = 37.28270222222358615960
-		// Approximated ratio = 76355/2048 = 37.28271484375
+		// Approximated ratio = 76355/2048  = 76355>>11 = 37.28271484375
 		// Error = -0.00003385%
+		// Corrected empirically: 75900>>11
 
 		int gyro_blank = ang_idle?(100*50):(60*50);
 
 		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
-			cur_angle += ((int64_t)latest[2]*(int64_t)76355)>>11;
+			cur_angle += ((int64_t)latest[2]*(int64_t)75900)>>11;
 	}
 
 	if(sens_status & XCEL_NEW_DATA)
@@ -443,7 +497,6 @@ void run_feedbacks(int sens_status)
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 	}
 
-	int error;
 	if(manual_control)
 	{
 		speeda = -1*manual_ang_speed;
