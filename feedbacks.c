@@ -25,9 +25,6 @@ int xcel_dc_corrs[3];
 int gyro_timing_issues;
 int xcel_timing_issues;
 
-volatile int cur_x = 0;
-volatile int cur_y = 0;
-
 volatile int cur_angle = 0; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
 volatile int cur_compass_angle = 0;
 volatile int aim_angle = 0; // same
@@ -75,18 +72,20 @@ volatile int wheel_integrals[2];
 volatile int fwd_speed_limit;
 volatile int speed_limit_lowered;
 
+volatile int dbg_unexp;
 
 // 700 = 1860
 
-void move_rel_twostep(int angle, int fwd)
+void move_rel_twostep(int angle, int fwd /*in mm*/)
 {
+	dbg_unexp = 0;
 	aim_angle += angle<<16;
 
 	speed_limit_lowered = 0;
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
 	fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
-	aim_fwd = fwd*10;
+	aim_fwd = fwd*10; // in 0.1mm
 
 	ang_top_speed = 150000;
 	manual_control = 0;
@@ -277,17 +276,16 @@ void run_feedbacks(int sens_status)
 
 	static int fwd_speed = 0;
 
+	static int expected_fwd_accel = 0;
+
 	static int16_t prev_wheel_counts[2];
 
 	cnt++;
 
-	dbg[1] = aim_fwd;
-	dbg[2] = cur_fwd;
 
 	int ang_err = cur_angle - aim_angle;
 	int fwd_err = aim_fwd - cur_fwd;
 
-	dbg[3] = fwd_err;
 
 	int son = nearest_sonar();
 	if((speed_limit_lowered == 0 && son < 40) ||
@@ -317,7 +315,7 @@ void run_feedbacks(int sens_status)
 	{
 		correct_angle = 1;
 	}
-	else if((ang_err < (-ANG_1_DEG)/2 || ang_err > (ANG_1_DEG)/2))
+	else if((ang_err > (-ANG_1_DEG)/2 && ang_err < (ANG_1_DEG)/2))
 	{
 		correct_angle = 0;
 	}
@@ -326,11 +324,11 @@ void run_feedbacks(int sens_status)
 	{
 		correct_fwd_pending = 0;
 	}
-	else if(fwd_err < -100 || fwd_err > 100)
+	else if(fwd_err < -150 || fwd_err > 150)
 	{
 		correct_fwd_pending = 1;
 	}
-	else if(fwd_err < -50 || fwd_err > 50)
+	else if(fwd_err > -80 && fwd_err < 80)
 	{
 		correct_fwd_pending = 0;
 	}
@@ -344,9 +342,6 @@ void run_feedbacks(int sens_status)
 	{
 		correct_fwd = 0;
 	}
-
-	dbg[4] = correct_fwd;
-	dbg[5] = fwd_idle;
 
 	if(correct_angle)
 	{
@@ -383,13 +378,12 @@ void run_feedbacks(int sens_status)
 	wheel_integrals[0] += wheel_counts[0] - prev_wheel_counts[0];
 	wheel_integrals[1] += wheel_counts[1] - prev_wheel_counts[1];
 
-	dbg[6] = wheel_integrals[0];
-	dbg[7] = wheel_integrals[1];
-
 	cur_fwd = ((wheel_integrals[0] + wheel_integrals[1])*85)>>1;
 
 	prev_wheel_counts[0] = wheel_counts[0];
 	prev_wheel_counts[1] = wheel_counts[1];
+
+	int tmp_expected_accel = -1*fwd_speed;
 
 	if(correct_fwd)
 	{
@@ -413,9 +407,15 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
+		if(!fwd_idle) dbg[2] = dbg[1];
 		fwd_idle=1;
 		fwd_speed = 0;
 	}
+
+	tmp_expected_accel += fwd_speed;
+
+	expected_fwd_accel = ((tmp_expected_accel<<16) + 63*expected_fwd_accel)>>6;
+
 
 	if(sens_status & GYRO_NEW_DATA)
 	{
@@ -464,6 +464,7 @@ void run_feedbacks(int sens_status)
 			}
 			else
 			{
+				dbg[9]++;
 				xcel_dc_corrs[0] = ((latest[0]<<8) + 63*xcel_dc_corrs[0])>>6;
 				xcel_dc_corrs[1] = ((latest[1]<<8) + 63*xcel_dc_corrs[1])>>6;
 				xcel_dc_corrs[2] = ((latest[2]<<8) + 63*xcel_dc_corrs[2])>>6;
@@ -491,8 +492,12 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
-//		dbg1 = xcel_dc_corrs[0]>>8;
-//		dbg2 = xcel_dc_corrs[1]>>8;
+
+		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
+		dbg_unexp += unexpected_accel>>8;
+
+		dbg[0] = unexpected_accel>>8;
+		dbg[1] = dbg_unexp;
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 	}

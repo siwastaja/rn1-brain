@@ -873,6 +873,7 @@ int main()
 
 
 #ifdef BINARY_OUTPUT
+/*
 		msg_gyro_t msg;
 		msg.status = 1;
 		msg.int_x = I16_I14(latest_gyro->x);
@@ -899,7 +900,7 @@ int main()
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
-
+*/
 		if(!(cnt&3))
 		{
 			txbuf[0] = 0x84;
