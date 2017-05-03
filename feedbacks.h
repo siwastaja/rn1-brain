@@ -3,8 +3,8 @@
 
 #define GYRO_LONG_INTEGRAL_IGNORE_LEVEL 0
 
-#define MAX_DIFFERENTIAL_SPEED 250
-#define MAX_SPEED 400
+#define MAX_DIFFERENTIAL_SPEED 3000
+#define MAX_SPEED 6000
 
 void run_feedbacks(int sens_status);
 void move_rel_twostep(int angle, int fwd);

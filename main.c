@@ -257,7 +257,7 @@ void mc_flasher(int mcnum)
 	// Now, the motor controller is reconfiguring its SPI, and we need to make sure we keep the lines idle
 	// as per the reference manual requirements during the initialization.
 
-	delay_ms(20);
+	delay_ms(30); // was 20
 
 	spi1_empty_rx();
 
@@ -422,6 +422,9 @@ volatile int do_re_compass = 0;
 
 volatile int motcon_pi = 10;
 
+volatile int16_t dbg_timing_shift = 5000;
+
+volatile int test_seq = 0;
 void handle_message()
 {
 	switch(process_rx_buf[0])
@@ -449,15 +452,21 @@ void handle_message()
 		sync_to_compass();
 		break;
 
-		// Motor controller debug/dev messages (decrease/increase phase angle finetune)
+		// Motor controller debug/dev messages
 		case 0xd1:
-		if(motcon_pi > 2)
-			motcon_pi--;
+		test_seq = 1;
 		break;
 
 		case 0xd2:
-		if(motcon_pi < 250)
-			motcon_pi++;
+		test_seq = 0;
+		break;
+
+		case 0xd3:
+		dbg_timing_shift -= 50;
+		break;
+
+		case 0xd4:
+		dbg_timing_shift += 50;
 		break;
 
 
@@ -655,7 +664,6 @@ int main()
 	RCC->CFGR |= 0b10; // Change PLL to system clock
 	while((RCC->CFGR & (0b11UL<<2)) != (0b10UL<<2)) ; // Wait for switchover to PLL.
 
-
 	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA2*/ | 1UL<<21 /*DMA1*/;
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/ | 1UL<<8 /*ADC1*/;
@@ -681,11 +689,13 @@ int main()
 	             //     | | | | | | | | | | | | | | | |
 	GPIOA->MODER   = 0b01000000000000001010100100000000;
 	GPIOA->OSPEEDR = 0b00000000000000000100010100000000;
+
+	GPIOB->ODR     = 1UL<<8 | 1UL<<9; // I2C pins high.
+	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOB->MODER   = 0b10101001000010101010000000000000;
+	GPIOB->MODER   = 0b10101001000001011010000000000000;
 	GPIOB->OSPEEDR = 0b01000101000001010000010001000000;
-	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOC->MODER   = 0b00000100101000000000010100110000;
@@ -696,7 +706,7 @@ int main()
 	GPIOD->OSPEEDR = 0b00000000000000000000000001000100;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOE->MODER   = 0b01000000000000000001000000000000;
+	GPIOE->MODER   = 0b01010101010101010101000000000000;
 	GPIOE->OSPEEDR = 0b00000000000000000001000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -760,10 +770,14 @@ int main()
 
 	delay_ms(100);
 
+	GPIOE->BSRR = 1UL<<7; // DBG IO1
+
 	init_gyro_xcel_compass();
 	init_optflow();
 	init_motcons();
 	init_lidar();
+
+
 
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
@@ -788,6 +802,7 @@ int main()
 	ADC1->CR2 |= 1UL<<30; // Start converting.
 
 	__enable_irq();
+
 
 	delay_ms(100);
 	NVIC_SetPriority(TIM6_DAC_IRQn, 0b1010);
@@ -814,6 +829,9 @@ int main()
 
 	sync_lidar();
 
+	GPIOE->BSRR = 1UL<<14; // DBG IO8
+
+
 	int cnt = 0;
 	int lidar_resynced = 0;
 	int do_generate_lidar_ignore = 0;
@@ -826,7 +844,7 @@ int main()
 		char* buf = buffer;
 #endif
 
-		delay_ms(100); // Don't produce too much data now, for network reasons.
+		delay_ms(100); // Don't produce too much data now, for network reasons. WAS 100
 
 		if(lidar_initialized && lidar_speed_in_spec && !lidar_resynced)
 		{
@@ -843,39 +861,6 @@ int main()
 				generate_lidar_ignore();
 		}
 
-
-/*
-		Code like this can be used for debugging purposes:
-		buf = o_str_append(buf, " gyro=");
-		buf = o_utoa8_fixed(latest_gyro->status_reg, buf);
-*/
-
-#ifdef MOTCON_DEBUG
-		delay_ms(50);
-		int val = mc_dbg_rx;
-		buf = o_utoa16_fixed(val, buf);
-		buf = o_str_append(buf, "   ");
-		buf = o_itoa16_fixed(val, buf);
-
-		buf = o_str_append(buf, "   ");
-		buf = o_utoa8_fixed((val&0xff00)>>8, buf);
-		buf = o_str_append(buf, "   ");
-		buf = o_utoa8_fixed((uint8_t)val&0xff, buf);
-
-		buf = o_str_append(buf, "   ");
-		buf = o_itoa8_fixed((val&0xff00)>>8, buf);
-		buf = o_str_append(buf, "   ");
-		buf = o_itoa8_fixed((int8_t)val&0xff, buf);
-
-		int o;
-		buf = o_str_append(buf, "   ");
-		for(o=15; o>=0; o--)
-		{
-			buf = o_str_append(buf, (val&(1<<o))?"1":"0");
-			if(o==4 || o==8 || o==12)
-				buf = o_str_append(buf, " ");
-		}
-#endif
 
 #ifdef BINARY_OUTPUT
 		msg_gyro_t msg;
@@ -904,7 +889,6 @@ int main()
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
-
 
 		if(!(cnt&3))
 		{
@@ -984,7 +968,6 @@ int main()
 		txbuf[3] = I16_LS(bat_v);
 		usart_send(txbuf, 4);
 
-
 		txbuf[0] = 0x85;
 		txbuf[1] = 0b111;
 		int ts = latest_sonars[0]*10;
@@ -998,22 +981,21 @@ int main()
 		txbuf[7] = (ts&(0x7f<<7)) >> 7;
 		usart_send(txbuf, 8);
 
-
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 		// to mm/sec: / 16.72 = *245 / 4094.183
 		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
-		dbg[0] = motcon_rx[3].status;
-		dbg[1] = motcon_rx[3].speed;
-		dbg[2] = motcon_rx[3].current;
-		dbg[3] = motcon_rx[3].pos;
-		dbg[4] = motcon_rx[3].res4;
-		dbg[5] = motcon_rx[3].res5;
-		dbg[6] = motcon_rx[3].res6;
-		dbg[7] = motcon_rx[3].crc;
-
+/*		dbg[0] = motcon_rx[2].status;
+		dbg[1] = motcon_rx[2].speed;
+		dbg[2] = motcon_rx[2].current;
+		dbg[3] = motcon_rx[2].pos;
+		dbg[4] = motcon_rx[2].res4;
+		dbg[5] = motcon_rx[2].res5;
+		dbg[6] = motcon_rx[2].res6;
+		dbg[7] = motcon_rx[2].crc;
+*/
 		txbuf[0] = 0xd2;
 		for(i=0; i<10; i++)
 		{

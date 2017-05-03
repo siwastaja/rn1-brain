@@ -492,6 +492,7 @@ int start_i2c1_sequence(i2c1_device_t d)
 
 void i2c1_config_byte(int dev_addr, int reg_addr, int data)
 {
+	delay_us(100);
 	I2C1->CR1 |= 1UL<<8; // START
 	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
 	I2C1->DR = dev_addr;
@@ -504,6 +505,7 @@ void i2c1_config_byte(int dev_addr, int reg_addr, int data)
 	while(!(I2C1->SR1 & 1UL<<7)) ;
 	I2C1->CR1 |= 1UL<<9; // STOP
 	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+	delay_us(100);
 }
 
 int init_gyro_xcel_compass()
@@ -517,6 +519,8 @@ int init_gyro_xcel_compass()
 	buffer_compass = &compass_data[0];
 	latest_compass = &compass_data[1];
 
+	GPIOE->BSRR = 1UL<<8; // DBG IO2
+
 	/*
 		I2C1 @ APB1 at 30MHz
 		"Tpclk1" = 1/30MHz = 0.03333333us
@@ -527,12 +531,45 @@ int init_gyro_xcel_compass()
 		TRISE: for standard mode,
 		1us / 0.0333333us = 30 -> TRISE = 31
 	*/
+
+	GPIOB->BSRR = 1UL<<(8+16); // SCL low
+	GPIOB->BSRR = 1UL<<(9+16); // SDA low
+	GPIOB->MODER &= ~(0b1111UL<<(2*8));
+	GPIOB->MODER |= (0b0101UL<<(2*8)); // general purpose outputs
+
+	delay_ms(10);
+
+	// Manually generate stop condition
+	GPIOB->BSRR = 1UL<<(8); // SCL high
+	delay_ms(10);
+	GPIOB->BSRR = 1UL<<(9); // SDA high
+	delay_ms(10);
+
+	// Reset the stupid i2c
+	RCC->APB1RSTR = 1UL<<21;
+	delay_ms(10);
+	RCC->APB1RSTR = 0;
+	delay_ms(10);
+
 	I2C1->CR2 = 0b011110 /*APB1 bus is 30MHz*/ | 1UL<<10 /*Buffer IE*/ | 1UL<<9 /*Event IE*/;
 	I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
 	I2C1->TRISE = 30UL;
+
+	GPIOE->BSRR = 1UL<<9; // DBG IO3
+
 	I2C1->CR1 |= 1UL; // Enable I2C
 
-	delay_us(100);
+	GPIOB->MODER &= ~(0b1111UL<<(2*8));
+	GPIOB->MODER |= (0b1010UL<<(2*8));
+
+	GPIOE->BSRR = 1UL<<10; // DBG IO4
+
+
+	delay_us(1000);
+//	delay_ms(100);
+
+
+	GPIOE->BSRR = 1UL<<11; // DBG IO5
 
 	// Init gyro
 
@@ -541,6 +578,7 @@ int init_gyro_xcel_compass()
 
 	i2c1_config_byte(0x40, 0x13,
 		2<<2 /*200Hz data rate*/ | 1<<1 /*ACTIVATE*/);
+
 
 	// Init Accel
 
@@ -575,12 +613,17 @@ int init_gyro_xcel_compass()
 	i2c1_config_byte(0x3C, 0x24,
 		1<<6 /*"block data update"; must be set*/);
 
+	GPIOE->BSRR = 1UL<<12; // DBG IO6
+
+
 	delay_us(100);
 	I2C1->SR1 = 0; // Zero regs to prevent unwanted interrupt.
 	delay_us(1);
 	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
 	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 	NVIC_EnableIRQ(I2C1_EV_IRQn);
+
+	GPIOE->BSRR = 1UL<<13; // DBG IO7
 
 	i2c1_ready = 1;
 

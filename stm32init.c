@@ -133,9 +133,9 @@ extern unsigned int _BOOSTI_BEGIN;
 void stm32init(void)
 {
 	// We need the 5V supply up and running as the very first thing!
-	RCC->AHB1ENR = 1UL<<4;
+	RCC->AHB1ENR = 1UL<<4 /*PORTE*/;
 	GPIOE->ODR = 1UL<<15;
-	GPIOE->MODER = 0b01UL<<(15*2);
+	GPIOE->MODER = 0b01UL<<(15*2) /*ena_5V*/ | 0b0101010101010101UL<<(7*2) /*PE7..PE14 debug outputs*/;
 
 	uint32_t* bss_begin = (uint32_t*)&_BSS_BEGIN;
 	uint32_t* bss_end   = (uint32_t*)&_BSS_END;
@@ -155,6 +155,8 @@ void stm32init(void)
 		data_begin++;
 		datai_begin++;
 	}
+
+	GPIOE->BSRR = 1UL<<8; // DBG IO2
 
 	main();
 }

@@ -19,9 +19,9 @@ typedef struct __attribute__ ((packed))
 	int16_t speed;
 	int16_t current;
 	int16_t pos;
-	uint16_t res4;
-	uint16_t res5;
-	uint16_t res6;
+	int16_t res4;
+	int16_t res5;
+	int16_t res6;
 	uint16_t crc;
 } motcon_rx_t;
 
