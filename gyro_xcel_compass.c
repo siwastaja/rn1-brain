@@ -492,7 +492,7 @@ int start_i2c1_sequence(i2c1_device_t d)
 
 int i2c1_config_byte(int dev_addr, int reg_addr, int data)
 {
-	int timeout = 100000000;
+	int timeout = 1000000;
 	delay_us(100);
 	I2C1->CR1 |= 1UL<<8; // START
 	while(--timeout && (!(I2C1->SR1 & 1))) ; // Wait for SB (Start Generated)
@@ -588,7 +588,7 @@ int init_gyro_xcel_compass()
 	// Init gyro
 
 	if(i2c1_config_byte(0x40, 0x0d,
-		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b01 /*+/- 1000 degr per second range, 1lsb = 31.25 mdeg/s*/))
+		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b11 /*+/- 250 degr per second range, 1lsb = 7.8125 mdeg/s*/))
 		return 1;
 
 	if(i2c1_config_byte(0x40, 0x13,

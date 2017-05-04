@@ -6,6 +6,7 @@
 #include "gyro_xcel_compass.h"
 #include "motcons.h"
 #include "sonar.h"
+#include "sin_lut.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -20,7 +21,9 @@ int64_t xcel_long_integrals[3];
 int64_t xcel_short_integrals[3];
 
 int xcel_dc_corrs[3];
+int gyro_dc_corrs[3];
 
+volatile int64_t cur_x, cur_y;
 
 int gyro_timing_issues;
 int xcel_timing_issues;
@@ -30,9 +33,9 @@ volatile int cur_compass_angle = 0;
 volatile int aim_angle = 0; // same
 volatile int aim_speed = 0;
 
-int ang_accel = 25; //100;
+int ang_accel = 22; //25
 int ang_top_speed;
-int ang_p = 1500;
+int ang_p = 1350; // 1500
 
 volatile int cur_fwd;
 volatile int aim_fwd;
@@ -40,12 +43,18 @@ int fwd_accel = 25;
 int fwd_top_speed;
 int fwd_p = 5000;
 
-volatile int speed_updated;  // For timeouting robot movements (for faulty communications)
 volatile int manual_control;
 volatile int common_speed;
 volatile int manual_ang_speed;
 
-volatile int robot_nonmoving = 1;
+int robot_nonmoving_cnt = 0;
+int robot_nonmoving = 0;
+
+void robot_moves()
+{
+	robot_nonmoving_cnt = 0;
+	robot_nonmoving = 0;
+}
 
 void zero_gyro_short_integrals()
 {
@@ -87,13 +96,12 @@ void move_rel_twostep(int angle, int fwd /*in mm*/)
 	fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
 	aim_fwd = fwd*10; // in 0.1mm
 
-	ang_top_speed = 150000;
+	ang_top_speed = 220000; // 150000
 	manual_control = 0;
 
 	fwd_top_speed = 600000;
 
-	speed_updated = 500000;
-	robot_nonmoving = 0;
+	robot_moves();
 }
 
 void compass_fsm(int cmd)
@@ -121,7 +129,6 @@ void compass_fsm(int cmd)
 		aim_angle += 1431655765;
 		ang_top_speed = 100000;
 		manual_control = 0;
-		speed_updated = 1000000;
 		state = 2;
 	}
 	else if(state == 2)
@@ -131,7 +138,6 @@ void compass_fsm(int cmd)
 		{
 //			aim_angle += (65536/3)<<16;
 			aim_angle += 1431655765;
-			speed_updated = 1000000;
 			state = 3;
 		}
 	}
@@ -142,7 +148,6 @@ void compass_fsm(int cmd)
 		{
 //			aim_angle += (65536/3)<<16;
 			aim_angle += 1431655765;
-			speed_updated = 1000000;
 			state = 4;
 		}
 	}
@@ -153,7 +158,6 @@ void compass_fsm(int cmd)
 		{
 //			aim_angle += (65536/3)<<16;
 			aim_angle += 1431655765;
-			speed_updated = 1000000;
 			state = 5;
 		}
 	}
@@ -164,7 +168,6 @@ void compass_fsm(int cmd)
 		{
 //			aim_angle += (65536/3)<<16;
 			aim_angle += 1431655765;
-			speed_updated = 1000000;
 			state = 6;
 		}
 	}
@@ -175,7 +178,6 @@ void compass_fsm(int cmd)
 		{
 //			aim_angle += (65536/3)<<16;
 			aim_angle += 1431655765;
-			speed_updated = 1000000;
 			state = 0;
 		}
 	}
@@ -219,20 +221,10 @@ void sync_to_compass()
 
 void move_arc_manual(int comm, int ang)
 {
-	if(comm == 0 && ang == 0)
-	{
-		zero_xcel_long_integrals();
-		robot_nonmoving = 1;
-
-	}
-	else
-		robot_nonmoving = 0;
-
-
 	common_speed = comm<<5;
 	manual_ang_speed = ang<<5;
-	speed_updated = 5000; // robot is stopped if 0.5s is elapsed between the speed commands.
 	manual_control = 1;
+	robot_moves();
 }
 
 extern volatile int test_seq;
@@ -252,19 +244,19 @@ int nearest_sonar()
 }
 
 
+volatile int ang_idle = 1;
 
 // Run this at 10 kHz
 void run_feedbacks(int sens_status)
 {
+	static int first = 100;
 	int i;
 	static int cnt = 0;
 	static int prev_gyro_cnt = 0;
 	static int prev_xcel_cnt = 0;
-	static int robot_nonmoving_cnt = 0;
 	static int speeda = 0;
 	static int speedb = 0;
 
-	static int ang_idle = 1;
 	static int correct_angle = 0;
 
 	static int fwd_idle = 1;
@@ -282,6 +274,14 @@ void run_feedbacks(int sens_status)
 
 	cnt++;
 
+
+	if(robot_nonmoving_cnt > 20000)
+		robot_nonmoving = 1;
+	else
+	{
+		robot_nonmoving = 0;
+		robot_nonmoving_cnt++;
+	}
 
 	int ang_err = cur_angle - aim_angle;
 	int fwd_err = aim_fwd - cur_fwd;
@@ -303,6 +303,7 @@ void run_feedbacks(int sens_status)
 		{
 			aim_angle = cur_angle;
 			aim_fwd = cur_fwd;
+			dbg[9]++;
 		}
 	}
 
@@ -335,7 +336,7 @@ void run_feedbacks(int sens_status)
 
 	if(correct_fwd_pending)
 	{
-		if((ang_err > 3*(-ANG_1_DEG) && ang_err < 3*ANG_1_DEG))
+		if((ang_err > 2*(-ANG_1_DEG) && ang_err < 2*ANG_1_DEG))
 			correct_fwd = 1;
 	}
 	else
@@ -375,10 +376,31 @@ void run_feedbacks(int sens_status)
 	wheel_counts[0] = motcon_rx[2].pos;
 	wheel_counts[1] = -1*motcon_rx[3].pos;
 
-	wheel_integrals[0] += wheel_counts[0] - prev_wheel_counts[0];
-	wheel_integrals[1] += wheel_counts[1] - prev_wheel_counts[1];
+	if(first)
+	{
+		first--;
+		prev_wheel_counts[0] = wheel_counts[0];
+		prev_wheel_counts[1] = wheel_counts[1];
+	}
+
+	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
+
+	wheel_integrals[0] += wheel_deltas[0];
+	wheel_integrals[1] += wheel_deltas[1];
 
 	cur_fwd = ((wheel_integrals[0] + wheel_integrals[1])*85)>>1;
+
+	int movement = ((wheel_deltas[0] + wheel_deltas[1])*85)>>1; // in 0.1mm
+
+	int y_idx = cur_angle>>SIN_LUT_SHIFT;
+	if(y_idx < 0) y_idx += SIN_LUT_POINTS;
+	else if(y_idx >= SIN_LUT_POINTS) y_idx -= SIN_LUT_POINTS;
+	int x_idx = SIN_LUT_POINTS/4 - y_idx;
+	if(x_idx < 0) x_idx += SIN_LUT_POINTS;
+	else if(x_idx >= SIN_LUT_POINTS) x_idx -= SIN_LUT_POINTS;
+	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
+	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
+
 
 	prev_wheel_counts[0] = wheel_counts[0];
 	prev_wheel_counts[1] = wheel_counts[1];
@@ -407,10 +429,12 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		if(!fwd_idle) dbg[2] = dbg[1];
 		fwd_idle=1;
 		fwd_speed = 0;
 	}
+
+	if(ang_speed != 0 || fwd_speed != 0) robot_moves();
+
 
 	tmp_expected_accel += fwd_speed;
 
@@ -419,6 +443,26 @@ void run_feedbacks(int sens_status)
 
 	if(sens_status & GYRO_NEW_DATA)
 	{
+
+		int latest[3] = {latest_gyro->x, latest_gyro->y, latest_gyro->z};
+
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 600
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 300
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 200
+		if(latest[0] < -GYRO_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_MOVEMENT_DETECT_THRESHOLD_X ||
+		   latest[1] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_MOVEMENT_DETECT_THRESHOLD_Y ||
+		   latest[2] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_MOVEMENT_DETECT_THRESHOLD_Z)
+		{
+			robot_moves();
+		}
+
+		if(robot_nonmoving)
+		{
+			gyro_dc_corrs[0] = ((latest[0]<<15) + 1023*gyro_dc_corrs[0])>>10;
+			gyro_dc_corrs[1] = ((latest[1]<<15) + 1023*gyro_dc_corrs[1])>>10;
+			gyro_dc_corrs[2] = ((latest[2]<<15) + 1023*gyro_dc_corrs[2])>>10;
+		}
+
 		int gyro_dt = cnt - prev_gyro_cnt;
 		prev_gyro_cnt = cnt;
 		// Gyro should give data at 200Hz, which is 50 steps at 10kHz
@@ -429,17 +473,11 @@ void run_feedbacks(int sens_status)
 			gyro_timing_issues++;
 		}
 
-		int tmp = latest_gyro->z;
-		if(tmp < dbg[8]) dbg[8] = tmp;
-		if(tmp > dbg[9]) dbg[9] = tmp;
-
-		int latest[3] = {latest_gyro->x*gyro_dt, latest_gyro->y*gyro_dt, latest_gyro->z*gyro_dt};
-
 		for(i=0; i<3; i++)
 		{
-//			if(latest[i] < -GYRO_LONG_INTEGRAL_IGNORE_LEVEL || latest[i] > GYRO_LONG_INTEGRAL_IGNORE_LEVEL)
-				gyro_long_integrals[i] += latest[i];
-
+			latest[i] -= gyro_dc_corrs[i]>>15;
+			latest[i] *= gyro_dt;
+			gyro_long_integrals[i] += latest[i];
 			gyro_short_integrals[i] += latest[i];
 		}
 
@@ -447,13 +485,18 @@ void run_feedbacks(int sens_status)
 		// Correct ratio = (3.125*10^-6)/(360/(2^32)) = 37.28270222222358615960
 		// Approximated ratio = 76355/2048  = 76355>>11 = 37.28271484375
 		// Error = -0.00003385%
-		// Corrected empirically: 75900>>11
+		// Corrected empirically: 75800>>11
 
-		int gyro_blank = ang_idle?(100*50):(60*50);
+		//1 gyro unit = 7.8125 mdeg/s; integrated at 10kHz timesteps, 1 unit = 0.78125 udeg
+		// Correct ratio = (0.78125*10^-6)/(360/(2^32)) = 9.32067555555589653990
+		// Approximated ratio = 76355/8192  = 76355>>13 = 9.320678710937500
+
+		int gyro_blank = ang_idle?(50*50):(0);
 
 		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
-			cur_angle += ((int64_t)latest[2]*(int64_t)75900)>>11;
+			cur_angle += ((int64_t)latest[2]*(int64_t)78500)>>13;
 	}
+
 
 	if(sens_status & XCEL_NEW_DATA)
 	{
@@ -461,19 +504,10 @@ void run_feedbacks(int sens_status)
 
 		if(robot_nonmoving)
 		{
-			if(robot_nonmoving_cnt < 50)
-			{
-				robot_nonmoving_cnt++;
-			}
-			else
-			{
-				xcel_dc_corrs[0] = ((latest[0]<<8) + 63*xcel_dc_corrs[0])>>6;
-				xcel_dc_corrs[1] = ((latest[1]<<8) + 63*xcel_dc_corrs[1])>>6;
-				xcel_dc_corrs[2] = ((latest[2]<<8) + 63*xcel_dc_corrs[2])>>6;
-			}
+			xcel_dc_corrs[0] = ((latest[0]<<15) + 255*xcel_dc_corrs[0])>>8;
+			xcel_dc_corrs[1] = ((latest[1]<<15) + 255*xcel_dc_corrs[1])>>8;
+			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
 		}
-		else
-			robot_nonmoving_cnt = 0;
 
 		int xcel_dt = cnt - prev_xcel_cnt;
 		prev_xcel_cnt = cnt;
@@ -487,7 +521,7 @@ void run_feedbacks(int sens_status)
 
 		for(i=0; i<3; i++)
 		{
-			latest[i] -= xcel_dc_corrs[i]>>8;
+			latest[i] -= xcel_dc_corrs[i]>>15;
 			latest[i] *= xcel_dt;
 			if(latest[i] < -3000 || latest[i] > 3000)
 				xcel_long_integrals[i] += (int64_t)latest[i];
@@ -498,8 +532,6 @@ void run_feedbacks(int sens_status)
 		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 		dbg_unexp += unexpected_accel>>8;
 
-		dbg[0] = unexpected_accel>>8;
-		dbg[1] = dbg_unexp;
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 	}
@@ -539,27 +571,10 @@ void run_feedbacks(int sens_status)
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
 
-	if(speed_updated)
-	{
-		LED_OFF();
-		speed_updated--;
-		motcon_tx[2].state = 5;
-		motcon_tx[3].state = 5;
-		motcon_tx[2].speed = a;
-		motcon_tx[3].speed = -1*b;
-	}
-	else
-	{
-		LED_ON();
-		robot_nonmoving = 1;
-		motcon_tx[2].speed = 0;
-		motcon_tx[3].speed = 0;
-		motcon_tx[2].state = 1;
-		motcon_tx[3].state = 1;
-
-		speeda=0;
-		speedb=0;
-	}
+	motcon_tx[2].state = 5;
+	motcon_tx[3].state = 5;
+	motcon_tx[2].speed = a;
+	motcon_tx[3].speed = -1*b;
 
 /*
 	motcon_tx[3].crc = dbg_timing_shift;

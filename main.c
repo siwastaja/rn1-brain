@@ -635,6 +635,9 @@ typedef struct  __attribute__ ((__packed__))
 
 volatile adc_data_t adc_data[ADC_SAMPLES];
 
+extern volatile int64_t cur_x, cur_y;
+extern volatile int ang_idle;
+
 int main()
 {
 	int i;
@@ -874,7 +877,6 @@ int main()
 
 
 #ifdef BINARY_OUTPUT
-/*
 		msg_gyro_t msg;
 		msg.status = 1;
 		msg.int_x = I16_I14(latest_gyro->x);
@@ -901,11 +903,11 @@ int main()
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
-*/
+
 		if(!(cnt&3))
 		{
 			txbuf[0] = 0x84;
-			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
+			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1) | (ang_idle<<2);
 			int i;
 			for(i = 0; i < 90; i++)
 			{
@@ -956,7 +958,20 @@ int main()
 		txbuf[5] = 0;
 		txbuf[6] = I16_MS(cur_c_ang_t);
 		txbuf[7] = I16_LS(cur_c_ang_t);
-		usart_send(txbuf, 8);
+		int tm = cur_x/10;
+		txbuf[8] = I32_I7_4(tm);
+		txbuf[9] = I32_I7_3(tm);
+		txbuf[10] = I32_I7_2(tm);
+		txbuf[11] = I32_I7_1(tm);
+		txbuf[12] = I32_I7_0(tm);
+		tm = cur_y/10;
+		txbuf[13] = I32_I7_4(tm);
+		txbuf[14] = I32_I7_3(tm);
+		txbuf[15] = I32_I7_2(tm);
+		txbuf[16] = I32_I7_1(tm);
+		txbuf[17] = I32_I7_0(tm);
+
+		usart_send(txbuf, 18);
 
 		txbuf[0] = 0xa1;
 		txbuf[1] = 1;
@@ -999,6 +1014,10 @@ int main()
 		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
+
+		dbg[0] = cur_x/10;
+		dbg[1] = cur_y/10;
+
 /*		dbg[0] = motcon_rx[2].status;
 		dbg[1] = motcon_rx[2].speed;
 		dbg[2] = motcon_rx[2].current;
@@ -1011,7 +1030,7 @@ int main()
 		txbuf[0] = 0xd2;
 		for(i=0; i<10; i++)
 		{
-			int tm = dbg[i];
+			tm = dbg[i];
 			txbuf[5*i+1] = I32_I7_4(tm);
 			txbuf[5*i+2] = I32_I7_3(tm);
 			txbuf[5*i+3] = I32_I7_2(tm);

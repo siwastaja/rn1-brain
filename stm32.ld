@@ -21,7 +21,9 @@ SECTIONS
         *(.text)      /* Program code */
         *(.text.*)
         *(.rodata)    /* Read only data */
-        *(.rodata.*)        
+        *(.rodata.*)
+        *(.sin_lut)
+        *(.sin_lut.*)
     } >rom
 
     . = ALIGN(8);
