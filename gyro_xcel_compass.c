@@ -490,26 +490,36 @@ int start_i2c1_sequence(i2c1_device_t d)
 	return 0;
 }
 
-void i2c1_config_byte(int dev_addr, int reg_addr, int data)
+int i2c1_config_byte(int dev_addr, int reg_addr, int data)
 {
+	int timeout = 100000000;
 	delay_us(100);
 	I2C1->CR1 |= 1UL<<8; // START
-	while(!(I2C1->SR1 & 1)) ; // Wait for SB (Start Generated)
+	while(--timeout && (!(I2C1->SR1 & 1))) ; // Wait for SB (Start Generated)
+	if(timeout == 0) return 1;
 	I2C1->DR = dev_addr;
-	while(!(I2C1->SR1 & 2)) ; // Wait for ADDR (Address sent)
+	while(--timeout && (!(I2C1->SR1 & 2))) ; // Wait for ADDR (Address sent)
+	if(timeout == 0) return 1;
 	I2C1->SR2;
-	while(!(I2C1->SR1 & 1UL<<7)) ;
+	while(--timeout && (!(I2C1->SR1 & 1UL<<7))) ;
+	if(timeout == 0) return 1;
 	I2C1->DR = reg_addr;
-	while(!(I2C1->SR1 & 1UL<<7)) ;
+	while(--timeout && (!(I2C1->SR1 & 1UL<<7))) ;
+	if(timeout == 0) return 1;
 	I2C1->DR = data;
-	while(!(I2C1->SR1 & 1UL<<7)) ;
+	while(--timeout && (!(I2C1->SR1 & 1UL<<7))) ;
+	if(timeout == 0) return 1;
 	I2C1->CR1 |= 1UL<<9; // STOP
-	while(!(I2C1->SR1 & 1UL<<2)) ; // Wait for BYTE TRANSFER FINISHED
+	while(--timeout && (!(I2C1->SR1 & 1UL<<2))) ; // Wait for BYTE TRANSFER FINISHED
+	if(timeout == 0) return 1;
 	delay_us(100);
+
+	return 0;
 }
 
 int init_gyro_xcel_compass()
 {
+	i2c1_ready = 0;
 	buffer_gyro = &gyro_data[0];
 	latest_gyro = &gyro_data[1];
 
@@ -518,6 +528,10 @@ int init_gyro_xcel_compass()
 
 	buffer_compass = &compass_data[0];
 	latest_compass = &compass_data[1];
+
+
+	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
+	NVIC_DisableIRQ(I2C1_EV_IRQn);
 
 	GPIOE->BSRR = 1UL<<8; // DBG IO2
 
@@ -573,45 +587,63 @@ int init_gyro_xcel_compass()
 
 	// Init gyro
 
-	i2c1_config_byte(0x40, 0x0d,
-		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b01 /*+/- 1000 degr per second range, 1lsb = 31.25 mdeg/s*/);
+	if(i2c1_config_byte(0x40, 0x0d,
+		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b01 /*+/- 1000 degr per second range, 1lsb = 31.25 mdeg/s*/))
+		return 1;
 
-	i2c1_config_byte(0x40, 0x13,
-		2<<2 /*200Hz data rate*/ | 1<<1 /*ACTIVATE*/);
+	if(i2c1_config_byte(0x40, 0x13,
+		2<<2 /*200Hz data rate*/ | 1<<1 /*ACTIVATE*/))
+		return 1;
+
 
 
 	// Init Accel
 
-	i2c1_config_byte(0x3A, 0x20,
-		0b100<<4 /*200Hz*/ | 1<<3 /*Must be set for proper operation*/ | 0b111 /*Z,Y,X ena*/);
+	if(i2c1_config_byte(0x3A, 0x20,
+		0b100<<4 /*200Hz*/ | 1<<3 /*Must be set for proper operation*/ | 0b111 /*Z,Y,X ena*/))
+		return 1;
+
 
 	// configuring anything seems to break the xcel sensor. 200Hz setting luckily works.
 
-//	i2c1_config_byte(0x3A, 0x21,
+//	if(i2c1_config_byte(0x3A, 0x21,
 //		0b10<<5 /*This field ridiculously configures both LPF and HPF, when HighRes is set: LPF=200/9 Hz. HPF undefined, go figure.*/ |
-//		0<<2 /* HPF off */);
+//		0<<2 /* HPF off */))
+//		return 1;
 
-//	i2c1_config_byte(0x3A, 0x23,
-//		0b11<<6 /*50Hz BW AA*/ | 0b00<<4 /*+- 2g full scale*/ | 1<<3 /*Enable BW selection (lol)*/);
+
+//	if(i2c1_config_byte(0x3A, 0x23,
+//		0b11<<6 /*50Hz BW AA*/ | 0b00<<4 /*+- 2g full scale*/ | 1<<3 /*Enable BW selection (lol)*/)
+//		return 1;
 
 
 
 	// Init Compass
 
-	i2c1_config_byte(0x3C, 0x20,
-		0b11<<5 /*Ultra-high performance mode*/ | 0b100<<2 /*10Hz*/);
+	if(i2c1_config_byte(0x3C, 0x20,
+		0b11<<5 /*Ultra-high performance mode*/ | 0b100<<2 /*10Hz*/))
+		return 1;
 
-	i2c1_config_byte(0x3C, 0x21,
-		0b11<<5 /*must be set*/);
 
-	i2c1_config_byte(0x3C, 0x22,
-		0b00<0 /*continuous*/);
+	if(i2c1_config_byte(0x3C, 0x21,
+		0b11<<5 /*must be set*/))
+		return 1;
 
-	i2c1_config_byte(0x3C, 0x23,
-		0b11<2 /*Z in ultra-high performance mode, too (why not?)*/);
 
-	i2c1_config_byte(0x3C, 0x24,
-		1<<6 /*"block data update"; must be set*/);
+	if(i2c1_config_byte(0x3C, 0x22,
+		0b00<0 /*continuous*/))
+		return 1;
+
+
+	if(i2c1_config_byte(0x3C, 0x23,
+		0b11<2 /*Z in ultra-high performance mode, too (why not?)*/))
+		return 1;
+
+
+	if(i2c1_config_byte(0x3C, 0x24,
+		1<<6 /*"block data update"; must be set*/))
+		return 1;
+
 
 	GPIOE->BSRR = 1UL<<12; // DBG IO6
 

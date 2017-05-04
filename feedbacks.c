@@ -429,6 +429,9 @@ void run_feedbacks(int sens_status)
 			gyro_timing_issues++;
 		}
 
+		int tmp = latest_gyro->z;
+		if(tmp < dbg[8]) dbg[8] = tmp;
+		if(tmp > dbg[9]) dbg[9] = tmp;
 
 		int latest[3] = {latest_gyro->x*gyro_dt, latest_gyro->y*gyro_dt, latest_gyro->z*gyro_dt};
 
@@ -464,7 +467,6 @@ void run_feedbacks(int sens_status)
 			}
 			else
 			{
-				dbg[9]++;
 				xcel_dc_corrs[0] = ((latest[0]<<8) + 63*xcel_dc_corrs[0])>>6;
 				xcel_dc_corrs[1] = ((latest[1]<<8) + 63*xcel_dc_corrs[1])>>6;
 				xcel_dc_corrs[2] = ((latest[2]<<8) + 63*xcel_dc_corrs[2])>>6;

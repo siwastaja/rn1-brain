@@ -782,7 +782,8 @@ int main()
 
 	GPIOE->BSRR = 1UL<<7; // DBG IO1
 
-	init_gyro_xcel_compass();
+	int tries = 5+1;
+	while(--tries && init_gyro_xcel_compass()) delay_ms(50);
 	init_optflow();
 	init_motcons();
 	init_lidar();
