@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#define LIDAR_IGNORE_LEN 380 // mm
 
 #define DEFAULT_LIDAR_RPM 300
 // For determining whether the lidar is turning within the specs, so that the data flow can be synchronized:
@@ -10,6 +11,8 @@
 #define MIN_LIDAR_RPM 260
 
 extern volatile int lidar_rpm_setpoint_x64;
+extern uint8_t lidar_ignore[360];
+
 
 typedef struct __attribute__ ((__packed__))
 {
@@ -37,6 +40,12 @@ void init_lidar();
 uint16_t lidar_calc_checksum(volatile lidar_datum_t* l);
 void lidar_ctrl_loop();
 void deinit_lidar();
+
+void generate_lidar_ignore();
+void copy_lidar_half1(int16_t* dst_start);
+void copy_lidar_half2(int16_t* dst_start);
+
+
 
 
 #endif

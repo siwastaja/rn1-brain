@@ -1,3 +1,9 @@
+/*
+Mechanical feedback module.
+
+Keeps track of position & angle, controls the motors.
+*/
+
 #include <inttypes.h>
 #include <math.h>
 
@@ -56,6 +62,12 @@ void robot_moves()
 	robot_nonmoving = 0;
 }
 
+static int host_alive_watchdog;
+void host_alive()
+{
+	host_alive_watchdog = 10000;
+}
+
 void zero_gyro_short_integrals()
 {
 	gyro_short_integrals[0] = 0;
@@ -77,32 +89,62 @@ void zero_xcel_long_integrals()
 	xcel_long_integrals[2] = 0;
 }
 
-volatile int wheel_integrals[2];
-volatile int fwd_speed_limit;
-volatile int speed_limit_lowered;
+static int wheel_integrals[2];
+static int fwd_speed_limit;
+static int speed_limit_lowered;
 
-volatile int dbg_unexp;
-
-// 700 = 1860
-
-void move_rel_twostep(int angle, int fwd /*in mm*/)
+void rotate_rel(int angle)
 {
-	dbg_unexp = 0;
 	aim_angle += angle<<16;
 
+	speed_limit_lowered = 0;
+	ang_top_speed = 220000; // 150000
+	manual_control = 0;
+	robot_moves();
+}
+
+void rotate_abs(int angle)
+{
+	aim_angle = angle<<16;
+
+	speed_limit_lowered = 0;
+	ang_top_speed = 220000; // 150000
+	manual_control = 0;
+	robot_moves();
+}
+
+void straight_rel(int fwd /*in mm*/)
+{
 	speed_limit_lowered = 0;
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
 	fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
 	aim_fwd = fwd*10; // in 0.1mm
-
-	ang_top_speed = 220000; // 150000
-	manual_control = 0;
-
 	fwd_top_speed = 600000;
-
+	manual_control = 0;
 	robot_moves();
 }
+
+static int do_correct_angle = 0;
+static int do_correct_fwd = 0;
+
+static int angular_allowed = 1;
+static int straight_allowed = 1;
+
+static int ang_idle = 1;
+static int fwd_idle = 1;
+
+
+int correcting_angle()
+{
+	return do_correct_angle || (ang_idle < 1000);
+}
+
+int correcting_straight()
+{
+	return do_correct_fwd || (fwd_idle < 1000);
+}
+
 
 void compass_fsm(int cmd)
 {
@@ -244,8 +286,6 @@ int nearest_sonar()
 }
 
 
-volatile int ang_idle = 1;
-
 // Run this at 10 kHz
 void run_feedbacks(int sens_status)
 {
@@ -256,12 +296,6 @@ void run_feedbacks(int sens_status)
 	static int prev_xcel_cnt = 0;
 	static int speeda = 0;
 	static int speedb = 0;
-
-	static int correct_angle = 0;
-
-	static int fwd_idle = 1;
-	static int correct_fwd = 0;
-	static int correct_fwd_pending = 0;
 
 	static int ang_speed = 0;
 	static int ang_speed_limit = 0;
@@ -308,43 +342,25 @@ void run_feedbacks(int sens_status)
 	}
 
 
-	if(manual_control)
+	if((ang_err < (-ANG_1_DEG) || ang_err > ANG_1_DEG))
 	{
-		correct_angle = 0;
-	}
-	else if((ang_err < (-ANG_1_DEG) || ang_err > ANG_1_DEG))
-	{
-		correct_angle = 1;
+		do_correct_angle = 1;
 	}
 	else if((ang_err > (-ANG_1_DEG)/2 && ang_err < (ANG_1_DEG)/2))
 	{
-		correct_angle = 0;
+		do_correct_angle = 0;
 	}
 
-	if(manual_control)
+	if(fwd_err < -150 || fwd_err > 150)
 	{
-		correct_fwd_pending = 0;
-	}
-	else if(fwd_err < -150 || fwd_err > 150)
-	{
-		correct_fwd_pending = 1;
+		do_correct_fwd = 1;
 	}
 	else if(fwd_err > -80 && fwd_err < 80)
 	{
-		correct_fwd_pending = 0;
+		do_correct_fwd = 0;
 	}
 
-	if(correct_fwd_pending)
-	{
-		if((ang_err > 2*(-ANG_1_DEG) && ang_err < 2*ANG_1_DEG))
-			correct_fwd = 1;
-	}
-	else
-	{
-		correct_fwd = 0;
-	}
-
-	if(correct_angle)
+	if(do_correct_angle && angular_allowed)
 	{
 		if(ang_idle)
 		{
@@ -368,7 +384,7 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		ang_idle=1;
+		if(ang_idle < 10000) ang_idle++;
 		ang_speed = 0;
 	}
 
@@ -407,7 +423,7 @@ void run_feedbacks(int sens_status)
 
 	int tmp_expected_accel = -1*fwd_speed;
 
-	if(correct_fwd)
+	if(do_correct_fwd && straight_allowed)
 	{
 		if(fwd_idle)
 		{
@@ -429,7 +445,7 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		fwd_idle=1;
+		if(fwd_idle < 10000) fwd_idle++;
 		fwd_speed = 0;
 	}
 
@@ -481,17 +497,12 @@ void run_feedbacks(int sens_status)
 			gyro_short_integrals[i] += latest[i];
 		}
 
-		//1 gyro unit = 31.25 mdeg/s; integrated at 10kHz timesteps, 1 unit = 3.125 udeg
-		// Correct ratio = (3.125*10^-6)/(360/(2^32)) = 37.28270222222358615960
-		// Approximated ratio = 76355/2048  = 76355>>11 = 37.28271484375
-		// Error = -0.00003385%
-		// Corrected empirically: 75800>>11
-
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 10kHz timesteps, 1 unit = 0.78125 udeg
 		// Correct ratio = (0.78125*10^-6)/(360/(2^32)) = 9.32067555555589653990
 		// Approximated ratio = 76355/8192  = 76355>>13 = 9.320678710937500
+		// Corrected empirically from there.
 
-		int gyro_blank = ang_idle?(50*50):(0);
+		int gyro_blank = ang_idle?(50*50):(0); // Prevent slow gyro drifting during no operation
 
 		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
 			cur_angle += ((int64_t)latest[2]*(int64_t)78500)>>13;
@@ -504,9 +515,9 @@ void run_feedbacks(int sens_status)
 
 		if(robot_nonmoving)
 		{
-			xcel_dc_corrs[0] = ((latest[0]<<15) + 255*xcel_dc_corrs[0])>>8;
-			xcel_dc_corrs[1] = ((latest[1]<<15) + 255*xcel_dc_corrs[1])>>8;
-			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
+			xcel_dc_corrs[0] = ((latest[0]<<15) + 1023*xcel_dc_corrs[0])>>10;
+			xcel_dc_corrs[1] = ((latest[1]<<15) + 1023*xcel_dc_corrs[1])>>10;
+			xcel_dc_corrs[2] = ((latest[2]<<15) + 1023*xcel_dc_corrs[2])>>10;
 		}
 
 		int xcel_dt = cnt - prev_xcel_cnt;
@@ -530,7 +541,6 @@ void run_feedbacks(int sens_status)
 
 
 		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
-		dbg_unexp += unexpected_accel>>8;
 
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
@@ -547,16 +557,7 @@ void run_feedbacks(int sens_status)
 		speedb = (ang_speed>>8);
 		common_speed = fwd_speed>>8;
 	}
-/*
-	if((cnt&0x3f) == 0x3f) // slow decay
-	{
-		if(speeda > 0) speeda--;
-		else if(speeda < 0) speeda++;
 
-		if(speedb > 0) speedb--;
-		else if(speedb < 0) speedb++;
-	}
-*/
 	if(speeda > MAX_DIFFERENTIAL_SPEED*256) speeda = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speeda < -MAX_DIFFERENTIAL_SPEED*256) speeda = -MAX_DIFFERENTIAL_SPEED*256;
 	if(speedb > MAX_DIFFERENTIAL_SPEED*256) speedb = MAX_DIFFERENTIAL_SPEED*256;
@@ -571,72 +572,20 @@ void run_feedbacks(int sens_status)
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
 
-	motcon_tx[2].state = 5;
-	motcon_tx[3].state = 5;
-	motcon_tx[2].speed = a;
-	motcon_tx[3].speed = -1*b;
-
-/*
-	motcon_tx[3].crc = dbg_timing_shift;
-	if(test_seq > 0)
+	if(host_alive_watchdog)
 	{
-		motcon_tx[2].state = 1;
+		host_alive_watchdog--;
+		motcon_tx[2].state = 5;
 		motcon_tx[3].state = 5;
-
-		test_seq++;
-
-		if(test_seq == 3*10000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = 50; // Absolute minimum creeping should be observed
-		}
-
-		if(test_seq == 3*30000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = -50; // Absolute minimum creeping should be observed
-		}
-
-		if(test_seq == 3*50000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = 250;
-		}
-
-		if(test_seq == 3*70000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = -250;
-		}
-
-		if(test_seq == 3*90000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = 1000;
-		}
-
-		if(test_seq == 3*100000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = -1000;
-		}
-
-		if(test_seq == 3*110000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = 5000;
-		}
-
-		if(test_seq == 3*120000)  
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = -5000;
-		}
-
-		if(test_seq == 3*130000) 
-		{
-			motcon_tx[2].speed = motcon_tx[3].speed = 0;
-			test_seq = 0;
-		}
+		motcon_tx[2].speed = a;
+		motcon_tx[3].speed = -1*b;
 	}
 	else
 	{
-		motcon_tx[2].speed = motcon_tx[3].speed = 0;
 		motcon_tx[2].state = 1;
 		motcon_tx[3].state = 1;
+		motcon_tx[2].speed = 0;
+		motcon_tx[3].speed = 0;
 	}
 
-*/
 }

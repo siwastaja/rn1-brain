@@ -1,3 +1,12 @@
+/*
+Reading the LIDAR is a bit tricky, because the start delimiter byte is not escaped and can reappear in the data.
+The stream of data is rather continuous, and it's unreliable to rely to idle times.
+
+Each packet is 22 bytes fixed.
+Full revolution = 1980 bytes
+
+*/
+
 #include <stdint.h>
 #include "ext_include/stm32f2xx.h"
 
@@ -11,14 +20,82 @@ volatile int lidar_initialized;
 volatile lidar_datum_t lidar_full_rev[90];
 volatile int lidar_rpm_setpoint_x64 = (DEFAULT_LIDAR_RPM)*64;
 
-/*
-Reading the LIDAR is a bit tricky, because the start delimiter byte is not escaped and can reappear in the data.
-The stream of data is rather continuous, and it's unreliable to rely to idle times.
+void lidar_reset_flags() 
+{
+	DMA2->LIFCR = 0b111101UL<<16;
+}
+void lidar_reset_complete_flag() 
+{
+	DMA2->LIFCR = 0b100000UL<<16;
+}
+void lidar_reset_half_flag() 
+{
+	DMA2->LIFCR = 0b010000UL<<16;
+}
 
-Each packet is 22 bytes fixed.
-Full revolution = 1980 bytes
+int lidar_is_complete()
+{
+	return DMA2->LISR & (1UL<<21);
+}
 
-*/
+int lidar_is_half()
+{
+	return DMA2->LISR & (1UL<<20);
+}
+
+uint8_t lidar_ignore[360];
+
+// Process the data so that datapoints either in the ignore list, or having the "error" flag set, are set as 0, and copy to a continuous int16_t table.
+// Data is always positive and 14 bits long.
+void copy_lidar_half1(int16_t* dst_start)
+{
+	int i;
+	for(i = 0; i < 45; i++)
+	{
+		dst_start[i*4+0] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
+		dst_start[i*4+1] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
+		dst_start[i*4+2] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
+		dst_start[i*4+3] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
+	}
+}
+void copy_lidar_half2(int16_t* dst_start)
+{
+	int i;
+	for(i = 45; i < 90; i++)
+	{
+		dst_start[i*4+0] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
+		dst_start[i*4+1] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
+		dst_start[i*4+2] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
+		dst_start[i*4+3] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
+	}
+}
+
+void generate_lidar_ignore()
+{
+	int i;
+	for(i = 0; i < 360; i++) lidar_ignore[i] = 0;
+
+	for(i = 0; i < 90; i++)
+	{
+		int o;
+		for(o = 0; o < 4; o++)
+		{
+			if(!(lidar_full_rev[i].d[o].flags_distance&(1<<15)))
+			{
+				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < LIDAR_IGNORE_LEN)
+				{
+					int cur = i*4+o;
+					int next = cur+1; if(next > 359) next = 0;
+					int prev = cur-1; if(prev < 0) prev = 359;
+					lidar_ignore[prev] = 1;
+					lidar_ignore[cur] = 1;
+					lidar_ignore[next] = 1;
+				}
+			}
+		}
+	}
+}
+
 
 void sync_lidar()
 {

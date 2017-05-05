@@ -424,7 +424,6 @@ volatile int motcon_pi = 10;
 
 volatile int16_t dbg_timing_shift = 5000;
 
-volatile int test_seq = 0;
 void handle_message()
 {
 	switch(process_rx_buf[0])
@@ -444,6 +443,10 @@ void handle_message()
 		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
 		break;
 
+		case 0x8f:
+		host_alive();
+		break;
+
 		case 0x91:
 		do_re_compass = 1;
 		break;
@@ -452,23 +455,18 @@ void handle_message()
 		sync_to_compass();
 		break;
 
-		// Motor controller debug/dev messages
+		// debug/dev messages
 		case 0xd1:
-		test_seq = 1;
 		break;
 
 		case 0xd2:
-		test_seq = 0;
 		break;
 
 		case 0xd3:
-		dbg_timing_shift -= 50;
 		break;
 
 		case 0xd4:
-		dbg_timing_shift += 50;
 		break;
-
 
 		default:
 		break;
@@ -578,37 +576,6 @@ void timebase_10k_handler()
 }
 
 extern volatile lidar_datum_t lidar_full_rev[90];
-
-
-uint8_t lidar_ignore[360];
-
-#define LIDAR_IGNORE_LEN 380 // mm
-
-void generate_lidar_ignore()
-{
-	int i;
-	for(i = 0; i < 360; i++) lidar_ignore[i] = 0;
-
-	for(i = 0; i < 90; i++)
-	{
-		int o;
-		for(o = 0; o < 4; o++)
-		{
-			if(!(lidar_full_rev[i].d[o].flags_distance&(1<<15)))
-			{
-				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < LIDAR_IGNORE_LEN)
-				{
-					int cur = i*4+o;
-					int next = cur+1; if(next > 359) next = 0;
-					int prev = cur-1; if(prev < 0) prev = 359;
-					lidar_ignore[prev] = 1;
-					lidar_ignore[cur] = 1;
-					lidar_ignore[next] = 1;
-				}
-			}
-		}
-	}
-}
 
 
 extern volatile int i2c1_state;
