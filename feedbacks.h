@@ -17,8 +17,15 @@ void straight_rel(int fwd /*in mm*/);
 int correcting_angle();
 int correcting_straight();
 
+extern int cur_angle;
+extern int64_t cur_x;
+extern int64_t cur_y;
 
+void zero_angle();
+void zero_coords();
 
+void allow_angular(int yes);
+void allow_straight(int yes);
 
 
 #endif

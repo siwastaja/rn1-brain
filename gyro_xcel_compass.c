@@ -679,9 +679,9 @@ int gyro_xcel_compass_fsm()
 	static int compass_pending = 0;
 	static int plus_return_cnt = 0;
 	static int minus_return_cnt = 0;
-	static int prev_i2c1_state = -1;
-	static int prev_prev_i2c1_state = -2;
-	static int fix_fail = 0;
+//	static int prev_i2c1_state = -1;
+//	static int prev_prev_i2c1_state = -2;
+//	static int fix_fail = 0;
 
 	gyro_cnt++;
 	xcel_cnt++;
@@ -795,8 +795,8 @@ int gyro_xcel_compass_fsm()
 		}
 	}
 */
-	prev_prev_i2c1_state = prev_i2c1_state;
-	prev_i2c1_state = i2c1_state;
+//	prev_prev_i2c1_state = prev_i2c1_state;
+//	prev_i2c1_state = i2c1_state;
 
 
 	if(gyro_new_data)

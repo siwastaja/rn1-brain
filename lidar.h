@@ -34,6 +34,14 @@ typedef union
 	uint8_t u8[22];
 } lidar_datum_t;
 
+typedef struct
+{
+	int angle;
+	int64_t x;
+	int64_t y;
+	int16_t scan[360];
+} lidar_scan_t;
+
 void sync_lidar();
 void resync_lidar();
 void init_lidar();
@@ -44,6 +52,11 @@ void deinit_lidar();
 void generate_lidar_ignore();
 void copy_lidar_half1(int16_t* dst_start);
 void copy_lidar_half2(int16_t* dst_start);
+void lidar_reset_flags();
+void lidar_reset_complete_flag(); 
+void lidar_reset_half_flag(); 
+int lidar_is_complete();
+int lidar_is_half();
 
 
 

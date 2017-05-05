@@ -54,8 +54,9 @@ void init_optflow()
 	optflow_ready = 1;
 }
 
+#define OPTFLOW_POLL_RATE 10 // unit: 1ms, must be at least 5 (=500us)
 
-// Run this at 10kHz!
+// Run this at 1kHz!
 void optflow_fsm(int* dx, int* dy)
 {
 	if(!optflow_ready) return;
@@ -76,7 +77,7 @@ void optflow_fsm(int* dx, int* dy)
 	{
 		DMA1->HIFCR = 0b111101UL; DMA1_Stream4->CR |= 1UL; // Enable TX DMA to send dummy data
 	}
-	else if(cycle == 5)
+	else if(cycle == 3)
 	{
 		FLOW_CS1();
 		if(DMA1_Stream3->CR & 1UL) // Error: RX DMA stream still on (not finished)
