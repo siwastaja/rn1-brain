@@ -587,7 +587,6 @@ extern volatile int xcel_timestep_len;
 
 extern volatile int lidar_speed_in_spec;
 extern int lidar_initialized;
-extern int cur_angle;
 extern int cur_compass_angle;
 
 extern int64_t xcel_long_integrals[3];
@@ -602,7 +601,7 @@ typedef struct  __attribute__ ((__packed__))
 
 volatile adc_data_t adc_data[ADC_SAMPLES];
 
-extern volatile int64_t cur_x, cur_y;
+extern pos_t cur_pos;
 extern volatile int ang_idle;
 
 int main()
@@ -900,20 +899,7 @@ int main()
 
 		// Do fancy calculation here :)
 
-		/*
-			Compass algorithm (to be moved from here)
-
-			To compensate for robot-referenced magnetic fields and offset errors:
-			Track max, min readings on both X, Y axes while the robot is turning.
-			Scale readings so that they read zero on the middle of the range, e.g.,
-			if X axis reads between 1000 and 3000, make 2000 read as 0.
-			Then calculate the angle with arctan (atan2() handles the signs to resolve
-			the correct quadrant).
-		*/
-
-//		degrees = cur_angle>>(4+16);
-
-		int16_t cur_ang_t = cur_angle>>16;
+		int16_t cur_ang_t = cur_pos.ang>>16;
 		int16_t cur_c_ang_t = cur_compass_angle>>16;
 
 #ifdef BINARY_OUTPUT
@@ -925,13 +911,13 @@ int main()
 		txbuf[5] = 0;
 		txbuf[6] = I16_MS(cur_c_ang_t);
 		txbuf[7] = I16_LS(cur_c_ang_t);
-		int tm = cur_x/10;
+		int tm = cur_pos.x/10;
 		txbuf[8] = I32_I7_4(tm);
 		txbuf[9] = I32_I7_3(tm);
 		txbuf[10] = I32_I7_2(tm);
 		txbuf[11] = I32_I7_1(tm);
 		txbuf[12] = I32_I7_0(tm);
-		tm = cur_y/10;
+		tm = cur_pos.y/10;
 		txbuf[13] = I32_I7_4(tm);
 		txbuf[14] = I32_I7_3(tm);
 		txbuf[15] = I32_I7_2(tm);
@@ -981,9 +967,6 @@ int main()
 		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
-
-		dbg[0] = cur_x/10;
-		dbg[1] = cur_y/10;
 
 /*		dbg[0] = motcon_rx[2].status;
 		dbg[1] = motcon_rx[2].speed;

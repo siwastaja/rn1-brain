@@ -16,8 +16,16 @@ void rotate_abs(int angle);
 void straight_rel(int fwd /*in mm*/);
 int correcting_angle();
 int correcting_straight();
+int robot_moving();
 
+typedef struct
+{
+	int32_t ang; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
+	int32_t x;   // mm
+	int32_t y;   // mm
+} pos_t;
 
+#define COPY_POS(to, from) { (to).ang = (from).ang; (to).x = (from).x; (to).y = (from).y; }
 
 
 

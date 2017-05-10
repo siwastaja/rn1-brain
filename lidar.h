@@ -34,6 +34,14 @@ typedef union
 	uint8_t u8[22];
 } lidar_datum_t;
 
+typedef struct
+{
+	int32_t angle;
+	int32_t x;
+	int32_t y;
+	int16_t scan[360];
+} lidar_scan_t;
+
 void sync_lidar();
 void resync_lidar();
 void init_lidar();

@@ -29,12 +29,11 @@ int64_t xcel_short_integrals[3];
 int xcel_dc_corrs[3];
 int gyro_dc_corrs[3];
 
-volatile int64_t cur_x, cur_y;
+pos_t cur_pos;
 
 int gyro_timing_issues;
 int xcel_timing_issues;
 
-volatile int cur_angle = 0; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
 volatile int cur_compass_angle = 0;
 volatile int aim_angle = 0; // same
 volatile int aim_speed = 0;
@@ -56,10 +55,15 @@ volatile int manual_ang_speed;
 int robot_nonmoving_cnt = 0;
 int robot_nonmoving = 0;
 
-void robot_moves()
+static void robot_moves()
 {
 	robot_nonmoving_cnt = 0;
 	robot_nonmoving = 0;
+}
+
+int robot_moving()
+{
+	return !robot_nonmoving;
 }
 
 static int host_alive_watchdog;
@@ -161,7 +165,7 @@ void compass_fsm(int cmd)
 	int cx = latest_compass->x;
 	int cy = latest_compass->y;
 
-	int ang_err = cur_angle - aim_angle;
+	int ang_err = cur_pos.angle - aim_angle;
 	if(state == 1)
 	{
 		compass_x_min = compass_x_max = cx;
@@ -226,6 +230,16 @@ void compass_fsm(int cmd)
 
 //	dbg4 = state;
 
+	/*
+		Compass algorithm
+
+		To compensate for robot-referenced magnetic fields and offset errors:
+		Track max, min readings on both X, Y axes while the robot is turning.
+		Scale readings so that they read zero on the middle of the range, e.g.,
+		if X axis reads between 1000 and 3000, make 2000 read as 0.
+		Then calculate the angle with arctan (atan2() handles the signs to resolve
+		the correct quadrant).
+	*/
 
 	if(cx < compass_x_min)
 		compass_x_min = cx;
@@ -258,7 +272,7 @@ void compass_fsm(int cmd)
 
 void sync_to_compass()
 {
-	cur_angle = aim_angle = cur_compass_angle;
+	cur_pos.angle = aim_angle = cur_compass_angle;
 }
 
 void move_arc_manual(int comm, int ang)
@@ -317,7 +331,7 @@ void run_feedbacks(int sens_status)
 		robot_nonmoving_cnt++;
 	}
 
-	int ang_err = cur_angle - aim_angle;
+	int ang_err = cur_pos.angle - aim_angle;
 	int fwd_err = aim_fwd - cur_fwd;
 
 
@@ -335,7 +349,7 @@ void run_feedbacks(int sens_status)
 	{
 		if(fwd_err > 0) // allow backwards
 		{
-			aim_angle = cur_angle;
+			aim_angle = cur_pos.angle;
 			aim_fwd = cur_fwd;
 			dbg[9]++;
 		}
@@ -408,14 +422,14 @@ void run_feedbacks(int sens_status)
 
 	int movement = ((wheel_deltas[0] + wheel_deltas[1])*85)>>1; // in 0.1mm
 
-	int y_idx = cur_angle>>SIN_LUT_SHIFT;
+	int y_idx = cur_pos.angle>>SIN_LUT_SHIFT;
 	if(y_idx < 0) y_idx += SIN_LUT_POINTS;
 	else if(y_idx >= SIN_LUT_POINTS) y_idx -= SIN_LUT_POINTS;
 	int x_idx = SIN_LUT_POINTS/4 - y_idx;
 	if(x_idx < 0) x_idx += SIN_LUT_POINTS;
 	else if(x_idx >= SIN_LUT_POINTS) x_idx -= SIN_LUT_POINTS;
-	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
-	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
+	cur_pos.x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
+	cur_pos.y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
 
 
 	prev_wheel_counts[0] = wheel_counts[0];
@@ -505,7 +519,7 @@ void run_feedbacks(int sens_status)
 		int gyro_blank = ang_idle?(50*50):(0); // Prevent slow gyro drifting during no operation
 
 		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
-			cur_angle += ((int64_t)latest[2]*(int64_t)78500)>>13;
+			cur_pos.angle += ((int64_t)latest[2]*(int64_t)78500)>>13;
 	}
 
 
@@ -550,6 +564,7 @@ void run_feedbacks(int sens_status)
 	{
 		speeda = -1*manual_ang_speed;
 		speedb = manual_ang_speed;
+		aim_fwd = cur_fwd = 0; aim_angle = cur_pos.ang; stop_navig_fsms(); robot_moves(); // to prevent surprises when auto mode goes back up.
 	}
 	else
 	{
@@ -586,6 +601,7 @@ void run_feedbacks(int sens_status)
 		motcon_tx[3].state = 1;
 		motcon_tx[2].speed = 0;
 		motcon_tx[3].speed = 0;
+		aim_fwd = cur_fwd = 0; aim_angle = cur_pos.ang; stop_navig_fsms(); // to prevent surprises when we are back up.
 	}
 
 }
