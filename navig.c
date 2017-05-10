@@ -74,6 +74,8 @@ void move_fsm()
 
 		// TODO: check if robot has been nonmoving already, and skip the extra wait.
 		// TODO: Timeout and error if robot is moving; it shouldn't be.
+//		allow_angular(0);
+//		allow_straight(0);
 		if(!robot_moving())
 		{	
 			lidar_reset_flags();
@@ -106,11 +108,9 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_0B:
 		if(lidar_is_complete())
 		{
-			straight_rel(cur_move.rel_fwd);
 			copy_lidar_half2(cur_move.lidars[0].scan);
 			cur_move.lidar_nonread[0] = 1;
-			allow_angular(1);
-			allow_straight(1);
+//			allow_angular(1);
 			rotate_abs(cur_move.abs_angle);
 			cur_move.state++;
 		}
@@ -129,8 +129,8 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 			dbg[4] = dcnt; dcnt = 0;
-			allow_angular(0);
-			allow_straight(0);
+//			allow_angular(0);
+//			allow_straight(0);
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -150,8 +150,8 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 			dbg[6] = dcnt; dcnt = 0;
-			allow_angular(1);
-			allow_straight(1);
+//			allow_angular(1);
+//			allow_straight(1);
 			straight_rel(cur_move.rel_fwd);
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
@@ -172,8 +172,8 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 			dbg[8] = dcnt; dcnt = 0;
-			allow_angular(0);
-			allow_straight(0);
+//			allow_angular(0);
+//			allow_straight(0);
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -192,9 +192,8 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2B:
 		if(lidar_is_complete())
 		{
-			allow_angular(1);
-			allow_straight(1);
-			straight_rel(cur_move.rel_fwd);
+//			allow_angular(1);
+//			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[2].scan);
 			cur_move.lidar_nonread[2] = 1;
 			cur_move.state++;
@@ -212,6 +211,8 @@ void move_fsm()
 
 void move_rel_twostep(int angle, int fwd /*in mm*/)
 {
+	reset_movement();
+	take_control();
 	cur_move.state = MOVE_START;
 	cur_move.abs_angle = cur_pos.ang + (angle<<16);
 	cur_move.rel_fwd = fwd;

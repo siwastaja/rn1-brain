@@ -13,6 +13,7 @@ Keeps track of position & angle, controls the motors.
 #include "motcons.h"
 #include "sonar.h"
 #include "sin_lut.h"
+#include "navig.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -96,6 +97,11 @@ static int wheel_integrals[2];
 static int fwd_speed_limit;
 static int speed_limit_lowered;
 
+void take_control()
+{
+	manual_control = 0;
+}
+
 void rotate_rel(int angle)
 {
 	aim_angle += angle;
@@ -122,10 +128,19 @@ void straight_rel(int fwd /*in mm*/)
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
 	fwd_speed_limit = fwd_accel*20; // use starting speed that equals to 20ms of acceleration
+	cur_fwd = 0;
 	aim_fwd = fwd*10; // in 0.1mm
 	fwd_top_speed = 600000;
 	manual_control = 0;
 	robot_moves();
+}
+
+void reset_movement()
+{
+	cur_fwd = aim_fwd = 0;
+	wheel_integrals[0] = 0;
+	wheel_integrals[1] = 0;
+	aim_angle = cur_pos.ang;
 }
 
 static int do_correct_angle = 0;
@@ -370,8 +385,7 @@ void run_feedbacks(int sens_status)
 	{
 		if(fwd_err > 0) // allow backwards
 		{
-			aim_angle = cur_pos.ang;
-			aim_fwd = cur_fwd;
+			reset_movement();
 		//	dbg[9]++;
 		}
 	}
@@ -586,7 +600,7 @@ void run_feedbacks(int sens_status)
 	{
 		speeda = -1*manual_ang_speed;
 		speedb = manual_ang_speed;
-		aim_fwd = cur_fwd = 0; aim_angle = cur_pos.ang; stop_navig_fsms(); robot_moves(); // to prevent surprises when auto mode goes back up.
+		reset_movement(); stop_navig_fsms(); robot_moves(); // to prevent surprises when auto mode goes back up.
 		common_speed = manual_common_speed;
 	}
 	else
@@ -625,7 +639,7 @@ void run_feedbacks(int sens_status)
 		motcon_tx[3].state = 1;
 		motcon_tx[2].speed = 0;
 		motcon_tx[3].speed = 0;
-		aim_fwd = cur_fwd = 0; aim_angle = cur_pos.ang; stop_navig_fsms(); // to prevent surprises when we are back up.
+		reset_movement(); stop_navig_fsms(); // to prevent surprises when we are back up.
 	}
 
 }

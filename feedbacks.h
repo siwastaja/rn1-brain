@@ -17,6 +17,9 @@ void straight_rel(int fwd /*in mm*/);
 int correcting_angle();
 int correcting_straight();
 int robot_moving();
+void take_control();
+void reset_movement();
+
 
 typedef struct
 {

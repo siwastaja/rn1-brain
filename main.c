@@ -52,6 +52,7 @@ void delay_ms(uint32_t i)
 
 void error(int code)
 {
+	__disable_irq();
 	int i = 0;
 	while(1)
 	{
@@ -676,6 +677,7 @@ int main()
 	RCC->CFGR |= 0b10; // Change PLL to system clock
 	while((RCC->CFGR & (0b11UL<<2)) != (0b10UL<<2)) ; // Wait for switchover to PLL.
 
+
 	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA2*/ | 1UL<<21 /*DMA1*/;
 	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/ | 1UL<<8 /*ADC1*/;
@@ -791,7 +793,6 @@ int main()
 	init_lidar();
 
 
-
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
 	ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 1UL<<1 /*continuous*/;
@@ -848,6 +849,7 @@ int main()
 	int cnt = 0;
 	int lidar_resynced = 0;
 	int do_generate_lidar_ignore = 0;
+
 	while(1)
 	{
 
@@ -948,7 +950,7 @@ int main()
 			}
 			else
 			{
-				COPY_POS(pos, p->pos);
+				COPY_POS(pos, cur_pos);
 				int i;
 				for(i = 0; i < 90; i++)
 				{
@@ -1029,9 +1031,10 @@ int main()
 		txbuf[9] = latest_optflow.max_pixel>>1;
 		txbuf[10] = latest_optflow.dummy>>1;
 		txbuf[11] = latest_optflow.motion>>1;
-#endif
 
 		usart_send(txbuf, 12);
+#endif
+
 
 		int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
 		txbuf[0] = 0xa2;
