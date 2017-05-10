@@ -16,6 +16,8 @@
 #include "sonar.h"
 #include "feedbacks.h"
 #include "navig.h"
+#include "lidar_corr.h"
+
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -638,6 +640,8 @@ volatile adc_data_t adc_data[ADC_SAMPLES];
 extern pos_t cur_pos;
 extern volatile int ang_idle;
 
+volatile int lidar_calc_req;
+
 int main()
 {
 	int i;
@@ -852,10 +856,38 @@ int main()
 
 	while(1)
 	{
-
 		cnt++;
 
-		delay_ms(150); // Don't produce too much data now, for network reasons. WAS 100
+		int corr_ret = 99;
+		if(lidar_calc_req == 1)
+		{
+			pos_t lid_corr;
+			corr_ret = do_lidar_corr(move_get_lidar(0), move_get_lidar(1), &lid_corr);
+			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
+			dbg[2] = corr_ret;
+			dbg[3] = lid_corr.ang;
+			dbg[4] = lid_corr.x;
+			dbg[5] = lid_corr.y;
+			lidar_calc_req = 0;
+		}
+		else if(lidar_calc_req == 2)
+		{
+			pos_t lid_corr;
+			corr_ret = do_lidar_corr(move_get_lidar(1), move_get_lidar(2), &lid_corr);
+			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
+			dbg[2] = corr_ret;
+			dbg[3] = lid_corr.ang;
+			dbg[4] = lid_corr.x;
+			dbg[5] = lid_corr.y;
+			lidar_calc_req = 0;
+		}
+		else
+		{
+			delay_ms(150); // Don't produce too much data now, for network reasons. WAS 100
+		}
+
+		
+
 
 		if(lidar_initialized && lidar_speed_in_spec && !lidar_resynced)
 		{
@@ -951,6 +983,8 @@ int main()
 			else
 			{
 				COPY_POS(pos, cur_pos);
+				pos.x /= 10;
+				pos.y /= 10;
 				int i;
 				for(i = 0; i < 90; i++)
 				{
@@ -974,13 +1008,13 @@ int main()
 			int a_t = pos.ang>>16;
 			txbuf[2] = I16_MS(a_t);
 			txbuf[3] = I16_LS(a_t);
-			int x_t = pos.x/10;
+			int x_t = pos.x;
 			txbuf[4] = I32_I7_4(x_t);
 			txbuf[5] = I32_I7_3(x_t);
 			txbuf[6] = I32_I7_2(x_t);
 			txbuf[7] = I32_I7_1(x_t);
 			txbuf[8] = I32_I7_0(x_t);
-			int y_t = pos.y/10;
+			int y_t = pos.y;
 			txbuf[9] = I32_I7_4(y_t);
 			txbuf[10] = I32_I7_3(y_t);
 			txbuf[11] = I32_I7_2(y_t);

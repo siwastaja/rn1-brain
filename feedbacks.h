@@ -20,15 +20,23 @@ int robot_moving();
 void take_control();
 void reset_movement();
 
+#define ANG_2_5_DEG   29826162
+#define ANG_1_DEG     11930465
+#define ANG_0_5_DEG    5965232
+#define ANG_0_25_DEG   2982616
+#define ANG_0_125_DEG  1491308
+#define ANG_0_1_DEG    1193047
+
 
 typedef struct
 {
 	int32_t ang; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
-	int32_t x;   // mm
-	int32_t y;   // mm
+	int32_t x;   // with lidars: mm. With cur_pos: 1/10 mm.
+	int32_t y;
 } pos_t;
 
 #define COPY_POS(to, from) { (to).ang = (from).ang; (to).x = (from).x; (to).y = (from).y; }
+#define COPY_POS_PER10(to, from) { (to).ang = (from).ang; (to).x = (from).x/10; (to).y = (from).y/10; }
 
 extern pos_t cur_pos;
 

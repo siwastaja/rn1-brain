@@ -634,7 +634,6 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		dbg[2]++;
 		motcon_tx[2].state = 1;
 		motcon_tx[3].state = 1;
 		motcon_tx[2].speed = 0;

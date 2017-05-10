@@ -26,11 +26,12 @@ typedef enum {
 	MOVE_WAIT_ROTATION	= 5,  // Rotate to the final angle; wait until angle is fixed
 	MOVE_LIDAR_SYNC_1	= 6,  
 	MOVE_LIDAR_STORE_1A	= 7,  
-	MOVE_LIDAR_STORE_1B	= 8,  
-	MOVE_WAIT_STRAIGHT	= 9,  // Wait for straight motion to end
-	MOVE_LIDAR_SYNC_2	= 10, 
-	MOVE_LIDAR_STORE_2A	= 11,
-	MOVE_LIDAR_STORE_2B	= 12
+	MOVE_LIDAR_STORE_1B	= 8,
+	MOVE_WAIT_CALC_1	= 9,
+	MOVE_WAIT_STRAIGHT	= 10,  // Wait for straight motion to end
+	MOVE_LIDAR_SYNC_2	= 11, 
+	MOVE_LIDAR_STORE_2A	= 12,
+	MOVE_LIDAR_STORE_2B	= 13
 } move_state_t;
 
 typedef struct
@@ -57,6 +58,16 @@ lidar_scan_t* move_get_valid_lidar(int idx)
 	}
 	return 0;
 }
+
+lidar_scan_t* move_get_lidar(int idx)
+{
+	if(idx < 0 || idx > 2)
+		return 0;
+
+	return &cur_move.lidars[idx];
+}
+
+extern volatile int lidar_calc_req;
 
 void move_fsm()
 {
@@ -99,7 +110,7 @@ void move_fsm()
 			   Since the robot is not moving, it shouldn't matter whether we sample cur_angle, cur_x, cur_y
 			   at the start, middle or end of the lidar scan, but to be on the safe side, we do it in the middle.
 			*/
-			COPY_POS(cur_move.lidars[0].pos, cur_pos);
+			COPY_POS_PER10(cur_move.lidars[0].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[0].scan);
 			cur_move.state++;
 		}
@@ -119,7 +130,7 @@ void move_fsm()
 		case MOVE_WAIT_ROTATION:
 		if(!correcting_angle())
 		{
-			dbg[3] = dcnt; dcnt = 0;
+//			dbg[3] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -128,7 +139,7 @@ void move_fsm()
 		case MOVE_LIDAR_SYNC_1:
 		if(lidar_is_complete())
 		{
-			dbg[4] = dcnt; dcnt = 0;
+//			dbg[4] = dcnt; dcnt = 0;
 //			allow_angular(0);
 //			allow_straight(0);
 			lidar_reset_flags();
@@ -139,8 +150,8 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_1A:
 		if(lidar_is_half())
 		{
-			dbg[5] = dcnt; dcnt = 0;
-			COPY_POS(cur_move.lidars[1].pos, cur_pos);
+//			dbg[5] = dcnt; dcnt = 0;
+			COPY_POS_PER10(cur_move.lidars[1].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[1].scan);
 			cur_move.state++;
 		}
@@ -149,12 +160,20 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_1B:
 		if(lidar_is_complete())
 		{
-			dbg[6] = dcnt; dcnt = 0;
+//			dbg[6] = dcnt; dcnt = 0;
 //			allow_angular(1);
 //			allow_straight(1);
-			straight_rel(cur_move.rel_fwd);
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
+			lidar_calc_req = 1;
+			cur_move.state++;
+		}
+		break;
+
+		case MOVE_WAIT_CALC_1:
+		if(lidar_calc_req == 0)
+		{
+			straight_rel(cur_move.rel_fwd);
 			cur_move.state++;
 		}
 		break;
@@ -162,7 +181,7 @@ void move_fsm()
 		case MOVE_WAIT_STRAIGHT:
 		if(!correcting_straight())
 		{
-			dbg[7] = dcnt; dcnt = 0;
+//			dbg[7] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -171,7 +190,7 @@ void move_fsm()
 		case MOVE_LIDAR_SYNC_2:
 		if(lidar_is_complete())
 		{
-			dbg[8] = dcnt; dcnt = 0;
+//			dbg[8] = dcnt; dcnt = 0;
 //			allow_angular(0);
 //			allow_straight(0);
 			lidar_reset_flags();
@@ -182,8 +201,8 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2A:
 		if(lidar_is_half())
 		{
-			dbg[9] = dcnt; dcnt = 0;
-			COPY_POS(cur_move.lidars[2].pos, cur_pos);
+//			dbg[9] = dcnt; dcnt = 0;
+			COPY_POS_PER10(cur_move.lidars[2].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[2].scan);
 			cur_move.state++;
 		}
