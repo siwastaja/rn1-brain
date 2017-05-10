@@ -15,8 +15,7 @@
 #include "comm.h"
 #include "sonar.h"
 #include "feedbacks.h"
-
-#define BINARY_OUTPUT
+#include "navig.h"
 
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
@@ -436,6 +435,7 @@ void handle_message()
 		break;
 
 		case 0x80:
+		host_alive();
 		move_arc_manual(((int16_t)(int8_t)(process_rx_buf[1]<<1)), ((int16_t)(int8_t)(process_rx_buf[2]<<1)));
 		break;
 
@@ -457,9 +457,11 @@ void handle_message()
 
 		// debug/dev messages
 		case 0xd1:
+		zero_angle();
 		break;
 
 		case 0xd2:
+		zero_coords();
 		break;
 
 		case 0xd3:
@@ -513,7 +515,9 @@ volatile int optflow_errors;
 
 volatile int new_gyro, new_xcel, new_compass;
 /*
-	10kHz interrupts drives practically everything.
+	10kHz interrupts drive practically everything.
+
+	Most of the stuff are ran at 1kHz, different things on each cycle.
 */
 
 volatile int int_x, int_y;
@@ -524,55 +528,84 @@ void timebase_10k_handler()
 {
 	static int sec_gen = 0;
 	static int cnt_10k = 0;
-	int status;
+	static int gyro_xcel_compass_status;
 
 	TIM6->SR = 0; // Clear interrupt flag
-	cnt_10k++;
 
-	sec_gen++;
-	if(sec_gen >= 10000)
-	{
-		seconds++;
-		sec_gen = 0;
-	}
+	int starttime = TIM6->CNT;
 
-	// Run code of all devices expecting 10kHz calls.
-	int dx = 0;
-	int dy = 0;
-	optflow_fsm(&dx, &dy);
-
-	int_x += dx;
-	int_y += dy;
-
-
-	motcon_fsm();
+	// Things expecting 10kHz calls:
+	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
 	sonar_fsm();
-	lidar_ctrl_loop();
-	status = gyro_xcel_compass_fsm();
 
-	if(status & GYRO_NEW_DATA)
+	// Things expecting 1kHz calls:
+	if(cnt_10k == 0)
 	{
-		new_gyro++;
+		sec_gen++;
+		if(sec_gen >= 1000)
+		{
+			seconds++;
+			sec_gen = 0;
+		}
+		motcon_fsm();
+		lidar_ctrl_loop();
+		int dx = 0;
+		int dy = 0;
+		optflow_fsm(&dx, &dy);
+
+		int_x += dx;
+		int_y += dy;
+
+	}
+	else if(cnt_10k == 1)
+	{
+		if(do_handle_message)
+			handle_message();
+
+		motcon_fsm();
+		compass_fsm(do_re_compass);
+		do_re_compass = 0;
+	}
+	else if(cnt_10k == 2)
+	{
+		navig_fsm();
+	}
+	else if(cnt_10k == 3)
+	{
+		run_feedbacks(gyro_xcel_compass_status);
+		gyro_xcel_compass_status = 0;
+	}
+	else if(cnt_10k == 4)
+	{
+		motcon_fsm();
+	}
+	else if(cnt_10k == 5)
+	{
+		motcon_fsm();
+	}
+	else if(cnt_10k == 6)
+	{
+
+	}
+	else if(cnt_10k == 7)
+	{
+
+	}
+	else if(cnt_10k == 8)
+	{
+
+	}
+	else if(cnt_10k == 9)
+	{
+
 	}
 
-	if(status & XCEL_NEW_DATA)
-	{
-		new_xcel++;
-	}
-
-	if(status & COMPASS_NEW_DATA)
-	{
-		new_compass++;
-	}
-
-	if(do_handle_message)
-		handle_message();
-
-	compass_fsm(do_re_compass);
-	do_re_compass = 0;
-	run_feedbacks(status);
 
 
+	cnt_10k++;
+	if(cnt_10k > 9) cnt_10k = 0;
+	int tooktime = TIM6->CNT - starttime;
+	if(tooktime > dbg[0]) dbg[0] = tooktime;
 }
 
 extern volatile lidar_datum_t lidar_full_rev[90];
@@ -819,18 +852,15 @@ int main()
 	{
 
 		cnt++;
-#ifdef TEXT_DEBUG
-		char buffer[4000];
-		char* buf = buffer;
-#endif
 
-		delay_ms(100); // Don't produce too much data now, for network reasons. WAS 100
+		delay_ms(150); // Don't produce too much data now, for network reasons. WAS 100
 
 		if(lidar_initialized && lidar_speed_in_spec && !lidar_resynced)
 		{
 			resync_lidar();
 			lidar_resynced = 1;
 			do_generate_lidar_ignore = 10;
+			dbg[0] = 0;
 		}
 
 
@@ -842,7 +872,8 @@ int main()
 		}
 
 
-#ifdef BINARY_OUTPUT
+//#define SEND_OPTFLOW
+
 		msg_gyro_t msg;
 		msg.status = 1;
 		msg.int_x = I16_I14(latest_gyro->x);
@@ -852,6 +883,7 @@ int main()
 		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
 		usart_send(txbuf, sizeof(msg_gyro_t)+1);
 
+/*
 		msg_xcel_t msgx;
 		msgx.status = 1;
 		msgx.int_x = I16_I14(latest_xcel->x);
@@ -869,40 +901,98 @@ int main()
 		txbuf[0] = 0x82;
 		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
+*/
 
 		if(!(cnt&3))
 		{
 			txbuf[0] = 0x84;
-			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1) | (ang_idle<<2);
-			int i;
-			for(i = 0; i < 90; i++)
+			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
+
+			lidar_scan_t* p;
+
+			pos_t pos;
+
+			// If synced (correlated to moves) images are available, send them. Else, just send the latest image.
+			if( (p = move_get_valid_lidar(0)) )
 			{
-				int o;
-				for(o = 0; o < 4; o++)
+				txbuf[1] |= 0b01<<2;
+				COPY_POS(pos, p->pos);
+				for(i = 0; i < 360; i++)
 				{
-					if((lidar_full_rev[i].d[o].flags_distance&(1<<15)) || lidar_ignore[i*4+o])
+					int v=p->scan[i];
+					txbuf[14+i*2] = v&0x7f;
+					txbuf[14+i*2+1] = (v>>7)&0x7f;
+				}
+			}
+			else if( (p = move_get_valid_lidar(1)) )
+			{
+				txbuf[1] |= 0b10<<2;
+				COPY_POS(pos, p->pos);
+				for(i = 0; i < 360; i++)
+				{
+					int v=p->scan[i];
+					txbuf[14+i*2] = v&0x7f;
+					txbuf[14+i*2+1] = (v>>7)&0x7f;
+				}
+			}
+			else if( (p = move_get_valid_lidar(2)) )
+			{
+				txbuf[1] |= 0b11<<2;
+				COPY_POS(pos, p->pos);
+				for(i = 0; i < 360; i++)
+				{
+					int v=p->scan[i];
+					txbuf[14+i*2] = v&0x7f;
+					txbuf[14+i*2+1] = (v>>7)&0x7f;
+				}
+			}
+			else
+			{
+				COPY_POS(pos, p->pos);
+				int i;
+				for(i = 0; i < 90; i++)
+				{
+					int o;
+					for(o = 0; o < 4; o++)
 					{
-						txbuf[2+8*i+2*o] = 0;
-						txbuf[2+8*i+2*o+1] = 0;
-					}
-					else
-					{
-						txbuf[2+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
-						txbuf[2+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
+						if((lidar_full_rev[i].d[o].flags_distance&(1<<15)) || lidar_ignore[i*4+o])
+						{
+							txbuf[14+8*i+2*o] = 0;
+							txbuf[14+8*i+2*o+1] = 0;
+						}
+						else
+						{
+							txbuf[14+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
+							txbuf[14+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
+						}
 					}
 				}
 			}
-			usart_send(txbuf, 90*4*2+2);
-		}
 
-#endif
+			int a_t = pos.ang>>16;
+			txbuf[2] = I16_MS(a_t);
+			txbuf[3] = I16_LS(a_t);
+			int x_t = pos.x/10;
+			txbuf[4] = I32_I7_4(x_t);
+			txbuf[5] = I32_I7_3(x_t);
+			txbuf[6] = I32_I7_2(x_t);
+			txbuf[7] = I32_I7_1(x_t);
+			txbuf[8] = I32_I7_0(x_t);
+			int y_t = pos.y/10;
+			txbuf[9] = I32_I7_4(y_t);
+			txbuf[10] = I32_I7_3(y_t);
+			txbuf[11] = I32_I7_2(y_t);
+			txbuf[12] = I32_I7_1(y_t);
+			txbuf[13] = I32_I7_0(y_t);
+
+			usart_send(txbuf, 360*2+14);
+		}
 
 		// Do fancy calculation here :)
 
 		int16_t cur_ang_t = cur_pos.ang>>16;
 		int16_t cur_c_ang_t = cur_compass_angle>>16;
 
-#ifdef BINARY_OUTPUT
 		txbuf[0] = 0xa0;
 		txbuf[1] = 1;
 		txbuf[2] = I16_MS(cur_ang_t);
@@ -926,6 +1016,7 @@ int main()
 
 		usart_send(txbuf, 18);
 
+#ifdef SEND_OPTFLOW
 		txbuf[0] = 0xa1;
 		txbuf[1] = 1;
 		txbuf[2] = I16_MS(int_x);
@@ -938,6 +1029,7 @@ int main()
 		txbuf[9] = latest_optflow.max_pixel>>1;
 		txbuf[10] = latest_optflow.dummy>>1;
 		txbuf[11] = latest_optflow.motion>>1;
+#endif
 
 		usart_send(txbuf, 12);
 
@@ -964,9 +1056,8 @@ int main()
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 		// to mm/sec: / 16.72 = *245 / 4094.183
-		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
-		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
-
+//		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
+//		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
 /*		dbg[0] = motcon_rx[2].status;
 		dbg[1] = motcon_rx[2].speed;
@@ -988,14 +1079,6 @@ int main()
 			txbuf[5*i+5] = I32_I7_0(tm);
 		}
 		usart_send(txbuf, 51);
-
-#endif
-
-#ifdef TEXT_DEBUG
-
-		buf = o_str_append(buf, "\r\n");
-		usart_print(buffer);
-#endif
 
 
 		if(seconds > 130)

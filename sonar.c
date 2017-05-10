@@ -6,15 +6,15 @@ extern int latest_sonars[MAX_NUM_SONARS]; // in cm
 
 void sonar_fsm()
 {
-	int i;
 	static int cnt_sonar;
 	static int sonar_times[MAX_NUM_SONARS];
 	cnt_sonar++;
 	if(cnt_sonar == 1000) // Sonar with 100ms intervals
 	{
 		SONAR_PULSE_ON();
-		for(i=0; i<NUM_SONARS; i++)
-			sonar_times[i] = 0;
+		sonar_times[0] = 0;
+		sonar_times[1] = 0;
+		sonar_times[2] = 0;
 	}
 	else if(cnt_sonar == 1001)
 	{
@@ -23,9 +23,9 @@ void sonar_fsm()
 	else if(cnt_sonar > 1000+300) // 30000us pulse = 517 cm top limit
 	{
 		cnt_sonar = 0;
-		for(i=0; i<NUM_SONARS; i++)
-			if(sonar_times[i] != -1)
-				latest_sonars[i] = 0;
+		if(sonar_times[0] != -1) latest_sonars[0] = 0;
+		if(sonar_times[1] != -1) latest_sonars[1] = 0;
+		if(sonar_times[2] != -1) latest_sonars[2] = 0;
 	}
 	else if(cnt_sonar > 1001) // Wait for signals
 	{

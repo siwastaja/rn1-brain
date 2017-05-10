@@ -116,7 +116,7 @@ void sync_lidar()
 					if(!(--timeout)) goto LIDAR_SYNC_TIMEOUT;
 				}
 				data = USART1->DR;
-				if(data == 0xA0+(270/4))
+				if(data == 0xA0+(90/4))
 				{
 					for(i=0; i < shift; i++)
 					{
@@ -181,7 +181,7 @@ uint16_t lidar_calc_checksum(volatile lidar_datum_t* l)
 
 volatile int lidar_speed_in_spec = 0;
 
-// run this at 10 kHz
+// run this at 1 kHz
 void lidar_ctrl_loop()
 {
 	static int in_spec_cnt = 0;
@@ -190,19 +190,18 @@ void lidar_ctrl_loop()
 	int i;
 	int actual_speed = 0;
 
-	if(!lidar_initialized)
-	{
-		TIM4->CCR4 = 0;
-		return;
-	}
-
-
-	if(cycle<100) // actual code runs at 100Hz
+	if(cycle<10) // actual code runs at 100Hz
 	{
 		cycle++;
 		return;
 	}
 	cycle = 0;
+
+	if(!lidar_initialized)
+	{
+		TIM4->CCR4 = 0;
+		return;
+	}
 
 	for(i=0; i<90; i++)
 	{

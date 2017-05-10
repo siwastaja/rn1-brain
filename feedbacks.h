@@ -27,6 +27,13 @@ typedef struct
 
 #define COPY_POS(to, from) { (to).ang = (from).ang; (to).x = (from).x; (to).y = (from).y; }
 
+extern pos_t cur_pos;
+
+void zero_angle();
+void zero_coords();
+
+void allow_angular(int yes);
+void allow_straight(int yes);
 
 
 #endif

@@ -2,6 +2,7 @@
 #define _LIDAR_H
 
 #include <stdint.h>
+#include "feedbacks.h" // for pos_t
 
 #define LIDAR_IGNORE_LEN 380 // mm
 
@@ -36,9 +37,7 @@ typedef union
 
 typedef struct
 {
-	int32_t angle;
-	int32_t x;
-	int32_t y;
+	pos_t pos;
 	int16_t scan[360];
 } lidar_scan_t;
 
@@ -52,6 +51,11 @@ void deinit_lidar();
 void generate_lidar_ignore();
 void copy_lidar_half1(int16_t* dst_start);
 void copy_lidar_half2(int16_t* dst_start);
+void lidar_reset_flags();
+void lidar_reset_complete_flag(); 
+void lidar_reset_half_flag(); 
+int lidar_is_complete();
+int lidar_is_half();
 
 
 

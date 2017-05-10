@@ -34,22 +34,21 @@ pos_t cur_pos;
 int gyro_timing_issues;
 int xcel_timing_issues;
 
-volatile int cur_compass_angle = 0;
-volatile int aim_angle = 0; // same
-volatile int aim_speed = 0;
+int cur_compass_angle = 0;
+int aim_angle = 0; // same
 
-int ang_accel = 22; //25
+int ang_accel = 220;
 int ang_top_speed;
 int ang_p = 1350; // 1500
 
 volatile int cur_fwd;
 volatile int aim_fwd;
-int fwd_accel = 25;
+int fwd_accel = 250;
 int fwd_top_speed;
 int fwd_p = 5000;
 
 volatile int manual_control;
-volatile int common_speed;
+volatile int manual_common_speed;
 volatile int manual_ang_speed;
 
 int robot_nonmoving_cnt = 0;
@@ -69,7 +68,7 @@ int robot_moving()
 static int host_alive_watchdog;
 void host_alive()
 {
-	host_alive_watchdog = 10000;
+	host_alive_watchdog = 1000;
 }
 
 void zero_gyro_short_integrals()
@@ -99,7 +98,7 @@ static int speed_limit_lowered;
 
 void rotate_rel(int angle)
 {
-	aim_angle += angle<<16;
+	aim_angle += angle;
 
 	speed_limit_lowered = 0;
 	ang_top_speed = 220000; // 150000
@@ -109,7 +108,7 @@ void rotate_rel(int angle)
 
 void rotate_abs(int angle)
 {
-	aim_angle = angle<<16;
+	aim_angle = angle;
 
 	speed_limit_lowered = 0;
 	ang_top_speed = 220000; // 150000
@@ -122,7 +121,7 @@ void straight_rel(int fwd /*in mm*/)
 	speed_limit_lowered = 0;
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
-	fwd_speed_limit = fwd_accel*200; // use starting speed that equals to 20ms of acceleration
+	fwd_speed_limit = fwd_accel*20; // use starting speed that equals to 20ms of acceleration
 	aim_fwd = fwd*10; // in 0.1mm
 	fwd_top_speed = 600000;
 	manual_control = 0;
@@ -135,18 +134,40 @@ static int do_correct_fwd = 0;
 static int angular_allowed = 1;
 static int straight_allowed = 1;
 
+void allow_angular(int yes)
+{
+	angular_allowed = yes;
+}
+
+void allow_straight(int yes)
+{
+	straight_allowed = yes;
+}
+
 static int ang_idle = 1;
 static int fwd_idle = 1;
 
 
 int correcting_angle()
 {
-	return do_correct_angle || (ang_idle < 1000);
+	return do_correct_angle || (ang_idle < 500);
 }
 
 int correcting_straight()
 {
-	return do_correct_fwd || (fwd_idle < 1000);
+	return do_correct_fwd || (fwd_idle < 500);
+}
+
+void zero_angle()
+{
+	aim_angle = 0;
+	cur_pos.ang = 0;
+}
+
+void zero_coords()
+{
+	cur_pos.x = 0;
+	cur_pos.y = 0;
 }
 
 
@@ -165,7 +186,7 @@ void compass_fsm(int cmd)
 	int cx = latest_compass->x;
 	int cy = latest_compass->y;
 
-	int ang_err = cur_pos.angle - aim_angle;
+	int ang_err = cur_pos.ang - aim_angle;
 	if(state == 1)
 	{
 		compass_x_min = compass_x_max = cx;
@@ -272,12 +293,12 @@ void compass_fsm(int cmd)
 
 void sync_to_compass()
 {
-	cur_pos.angle = aim_angle = cur_compass_angle;
+	cur_pos.ang = aim_angle = cur_compass_angle;
 }
 
 void move_arc_manual(int comm, int ang)
 {
-	common_speed = comm<<5;
+	manual_common_speed = comm<<5;
 	manual_ang_speed = ang<<5;
 	manual_control = 1;
 	robot_moves();
@@ -300,7 +321,7 @@ int nearest_sonar()
 }
 
 
-// Run this at 10 kHz
+// Run this at 1 kHz
 void run_feedbacks(int sens_status)
 {
 	static int first = 100;
@@ -323,7 +344,7 @@ void run_feedbacks(int sens_status)
 	cnt++;
 
 
-	if(robot_nonmoving_cnt > 20000)
+	if(robot_nonmoving_cnt > 2000)
 		robot_nonmoving = 1;
 	else
 	{
@@ -331,7 +352,7 @@ void run_feedbacks(int sens_status)
 		robot_nonmoving_cnt++;
 	}
 
-	int ang_err = cur_pos.angle - aim_angle;
+	int ang_err = cur_pos.ang - aim_angle;
 	int fwd_err = aim_fwd - cur_fwd;
 
 
@@ -349,9 +370,9 @@ void run_feedbacks(int sens_status)
 	{
 		if(fwd_err > 0) // allow backwards
 		{
-			aim_angle = cur_pos.angle;
+			aim_angle = cur_pos.ang;
 			aim_fwd = cur_fwd;
-			dbg[9]++;
+		//	dbg[9]++;
 		}
 	}
 
@@ -374,12 +395,12 @@ void run_feedbacks(int sens_status)
 		do_correct_fwd = 0;
 	}
 
-	if(do_correct_angle && angular_allowed)
+	if(!manual_control && do_correct_angle && angular_allowed)
 	{
 		if(ang_idle)
 		{
 			ang_idle = 0;
-			ang_speed_limit = ang_accel*200; // use starting speed that equals to 20ms of acceleration
+			ang_speed_limit = ang_accel*20; // use starting speed that equals to 20ms of acceleration
 			zero_gyro_short_integrals();
 		}
 
@@ -422,7 +443,7 @@ void run_feedbacks(int sens_status)
 
 	int movement = ((wheel_deltas[0] + wheel_deltas[1])*85)>>1; // in 0.1mm
 
-	int y_idx = cur_pos.angle>>SIN_LUT_SHIFT;
+	int y_idx = cur_pos.ang>>SIN_LUT_SHIFT;
 	if(y_idx < 0) y_idx += SIN_LUT_POINTS;
 	else if(y_idx >= SIN_LUT_POINTS) y_idx -= SIN_LUT_POINTS;
 	int x_idx = SIN_LUT_POINTS/4 - y_idx;
@@ -437,7 +458,7 @@ void run_feedbacks(int sens_status)
 
 	int tmp_expected_accel = -1*fwd_speed;
 
-	if(do_correct_fwd && straight_allowed)
+	if(!manual_control && do_correct_fwd && straight_allowed)
 	{
 		if(fwd_idle)
 		{
@@ -488,18 +509,18 @@ void run_feedbacks(int sens_status)
 
 		if(robot_nonmoving)
 		{
-			gyro_dc_corrs[0] = ((latest[0]<<15) + 1023*gyro_dc_corrs[0])>>10;
-			gyro_dc_corrs[1] = ((latest[1]<<15) + 1023*gyro_dc_corrs[1])>>10;
-			gyro_dc_corrs[2] = ((latest[2]<<15) + 1023*gyro_dc_corrs[2])>>10;
+			gyro_dc_corrs[0] = ((latest[0]<<15) + 255*gyro_dc_corrs[0])>>8;
+			gyro_dc_corrs[1] = ((latest[1]<<15) + 255*gyro_dc_corrs[1])>>8;
+			gyro_dc_corrs[2] = ((latest[2]<<15) + 255*gyro_dc_corrs[2])>>8;
 		}
 
 		int gyro_dt = cnt - prev_gyro_cnt;
 		prev_gyro_cnt = cnt;
-		// Gyro should give data at 200Hz, which is 50 steps at 10kHz
-		if(gyro_dt < 30 || gyro_dt > 200)
+		// Gyro should give data at 200Hz, which is 5 steps at 1kHz
+		if(gyro_dt < 2 || gyro_dt > 20)
 		{
 			// If the timing is clearly out of range, assume 200Hz data rate and log the error.
-			gyro_dt = 50;
+			gyro_dt = 5;
 			gyro_timing_issues++;
 		}
 
@@ -511,15 +532,15 @@ void run_feedbacks(int sens_status)
 			gyro_short_integrals[i] += latest[i];
 		}
 
-		//1 gyro unit = 7.8125 mdeg/s; integrated at 10kHz timesteps, 1 unit = 0.78125 udeg
-		// Correct ratio = (0.78125*10^-6)/(360/(2^32)) = 9.32067555555589653990
-		// Approximated ratio = 76355/8192  = 76355>>13 = 9.320678710937500
+		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
+		// Correct ratio = (7.8125*10^-6)/(360/(2^32)) = 93.2067555555589653990
+		// Approximated ratio = 763550/8192  = 763550>>13 = 93.20678710937500
 		// Corrected empirically from there.
 
-		int gyro_blank = ang_idle?(50*50):(0); // Prevent slow gyro drifting during no operation
+		int gyro_blank = robot_nonmoving?(40*5):(0); // Prevent slow gyro drifting during no operation
 
 		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
-			cur_pos.angle += ((int64_t)latest[2]*(int64_t)78500)>>13;
+			cur_pos.ang += ((int64_t)latest[2]*(int64_t)763300)>>13;
 	}
 
 
@@ -529,18 +550,18 @@ void run_feedbacks(int sens_status)
 
 		if(robot_nonmoving)
 		{
-			xcel_dc_corrs[0] = ((latest[0]<<15) + 1023*xcel_dc_corrs[0])>>10;
-			xcel_dc_corrs[1] = ((latest[1]<<15) + 1023*xcel_dc_corrs[1])>>10;
-			xcel_dc_corrs[2] = ((latest[2]<<15) + 1023*xcel_dc_corrs[2])>>10;
+			xcel_dc_corrs[0] = ((latest[0]<<15) + 255*xcel_dc_corrs[0])>>8;
+			xcel_dc_corrs[1] = ((latest[1]<<15) + 255*xcel_dc_corrs[1])>>8;
+			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
 		}
 
 		int xcel_dt = cnt - prev_xcel_cnt;
 		prev_xcel_cnt = cnt;
-		// Xcel should give data at 200Hz, which is 50 steps at 10kHz
-		if(xcel_dt < 30 || xcel_dt > 200)
+		// Xcel should give data at 200Hz, which is 5 steps at 1kHz
+		if(xcel_dt < 2 || xcel_dt > 20)
 		{
 			// If the timing is clearly out of range, assume 200Hz data rate and log the error.
-			xcel_dt = 50;
+			xcel_dt = 5;
 			xcel_timing_issues++;
 		}
 
@@ -557,14 +578,16 @@ void run_feedbacks(int sens_status)
 		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 
 
-		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
+		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 1kHz timesteps, 1 unit = 0.59841 mm/s
 	}
 
+	int common_speed;
 	if(manual_control)
 	{
 		speeda = -1*manual_ang_speed;
 		speedb = manual_ang_speed;
 		aim_fwd = cur_fwd = 0; aim_angle = cur_pos.ang; stop_navig_fsms(); robot_moves(); // to prevent surprises when auto mode goes back up.
+		common_speed = manual_common_speed;
 	}
 	else
 	{
@@ -597,6 +620,7 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
+		dbg[2]++;
 		motcon_tx[2].state = 1;
 		motcon_tx[3].state = 1;
 		motcon_tx[2].speed = 0;
