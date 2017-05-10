@@ -31,7 +31,8 @@ typedef enum {
 	MOVE_WAIT_STRAIGHT	= 10,  // Wait for straight motion to end
 	MOVE_LIDAR_SYNC_2	= 11, 
 	MOVE_LIDAR_STORE_2A	= 12,
-	MOVE_LIDAR_STORE_2B	= 13
+	MOVE_LIDAR_STORE_2B	= 13,
+	MOVE_WAIT_CALC_2	= 14
 } move_state_t;
 
 typedef struct
@@ -85,8 +86,8 @@ void move_fsm()
 
 		// TODO: check if robot has been nonmoving already, and skip the extra wait.
 		// TODO: Timeout and error if robot is moving; it shouldn't be.
-//		allow_angular(0);
-//		allow_straight(0);
+		allow_angular(0);
+		allow_straight(0);
 		if(!robot_moving())
 		{	
 			lidar_reset_flags();
@@ -121,7 +122,7 @@ void move_fsm()
 		{
 			copy_lidar_half2(cur_move.lidars[0].scan);
 			cur_move.lidar_nonread[0] = 1;
-//			allow_angular(1);
+			allow_angular(1);
 			rotate_abs(cur_move.abs_angle);
 			cur_move.state++;
 		}
@@ -132,6 +133,7 @@ void move_fsm()
 		{
 //			dbg[3] = dcnt; dcnt = 0;
 			lidar_reset_flags();
+			allow_angular(0);
 			cur_move.state++;
 		}
 		break;
@@ -140,8 +142,6 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 //			dbg[4] = dcnt; dcnt = 0;
-//			allow_angular(0);
-//			allow_straight(0);
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -165,7 +165,7 @@ void move_fsm()
 //			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
-			lidar_calc_req = 1;
+//			lidar_calc_req = 1;
 			cur_move.state++;
 		}
 		break;
@@ -173,16 +173,20 @@ void move_fsm()
 		case MOVE_WAIT_CALC_1:
 		if(lidar_calc_req == 0)
 		{
+			allow_angular(1);
+			allow_straight(1);
 			straight_rel(cur_move.rel_fwd);
 			cur_move.state++;
 		}
 		break;
 
 		case MOVE_WAIT_STRAIGHT:
-		if(!correcting_straight())
+		if(!correcting_straight() && !correcting_angle())
 		{
 //			dbg[7] = dcnt; dcnt = 0;
 			lidar_reset_flags();
+			allow_angular(0);
+			allow_straight(0);
 			cur_move.state++;
 		}
 		break;
@@ -191,8 +195,6 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 //			dbg[8] = dcnt; dcnt = 0;
-//			allow_angular(0);
-//			allow_straight(0);
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -211,14 +213,21 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2B:
 		if(lidar_is_complete())
 		{
-//			allow_angular(1);
-//			allow_straight(1);
+			allow_angular(1);
+			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[2].scan);
 			cur_move.lidar_nonread[2] = 1;
+			lidar_calc_req = 2;
 			cur_move.state++;
 		}
 		break;
 
+		case MOVE_WAIT_CALC_2:
+		if(lidar_calc_req == 0)
+		{
+			cur_move.state = 0;
+		}
+		break;
 
 		default:
 		dcnt = 0;
@@ -230,6 +239,7 @@ void move_fsm()
 
 void move_rel_twostep(int angle, int fwd /*in mm*/)
 {
+	dbg[8]+=100;
 	reset_movement();
 	take_control();
 	cur_move.state = MOVE_START;

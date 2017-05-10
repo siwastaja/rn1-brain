@@ -203,7 +203,7 @@ void pre_search(point_t* img1, point_t* img2)
 			/*
 				We want to log minimum and maximum o index so that we can only scan the relevant possible area.
 			*/
-			if(dist < 300*300)
+			if(dist < 400*400)
 			{
 				int o_aligned = (o<128)?o:o-256; // We want to have negative numbers from the high range, so that looking for min/max works.
 				if(o_aligned < o_smallest) o_smallest = o_aligned;
@@ -233,7 +233,7 @@ void pre_search(point_t* img1, point_t* img2)
 		}
 
 	}
-	dbg[8] = num_img1_masked;
+//	dbg[8] = num_img1_masked;
 }
 
 // returns 256..14656, bigger = better
@@ -306,7 +306,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 			300mm	256
 		*/
 
-		int32_t dist_scaled = (256*(300*300+1600))/(smallest+1600);
+		int32_t dist_scaled = (256*(400*400+1600))/(smallest+1600);
 		dist_sum += dist_scaled;
 	}
 
