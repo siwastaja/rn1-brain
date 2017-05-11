@@ -973,26 +973,23 @@ int main()
 		cnt++;
 
 		int corr_ret = 99;
-		if(lidar_calc_req == 1)
+		if(lidar_calc_req)
 		{
 			pos_t lid_corr;
-			corr_ret = do_lidar_corr(move_get_lidar(0), move_get_lidar(1), &lid_corr);
+			lidar_scan_t* sca = move_get_lidar(lidar_calc_req-1);
+			lidar_scan_t* scb = move_get_lidar(lidar_calc_req);
+
+			corr_ret = do_lidar_corr(sca, scb, &lid_corr);
 			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
 			dbg[2] = corr_ret;
 			dbg[3] = lid_corr.ang;
 			dbg[4] = lid_corr.x;
 			dbg[5] = lid_corr.y;
-			lidar_calc_req = 0;
-		}
-		else if(lidar_calc_req == 2)
-		{
-			pos_t lid_corr;
-			corr_ret = do_lidar_corr(move_get_lidar(1), move_get_lidar(2), &lid_corr);
-			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
-			dbg[2] = corr_ret;
-			dbg[3] = lid_corr.ang;
-			dbg[4] = lid_corr.x;
-			dbg[5] = lid_corr.y;
+			correct_location_without_moving(lid_corr);
+			// correct the image, too, for sending:
+			scb->pos.ang += lid_corr.ang;
+			scb->pos.x += lid_corr.x;
+			scb->pos.y += lid_corr.y;
 			lidar_calc_req = 0;
 		}
 		else
@@ -1182,7 +1179,6 @@ int main()
 		txbuf[3] = I16_LS(bat_v);
 		usart_send(txbuf, 4);
 
-/*
 		txbuf[0] = 0x85;
 		txbuf[1] = 0b111;
 		int ts = latest_sonars[0]*10;
@@ -1195,7 +1191,6 @@ int main()
 		txbuf[6] = ts&0x7f;
 		txbuf[7] = (ts&(0x7f<<7)) >> 7;
 		usart_send(txbuf, 8);
-*/
 
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s

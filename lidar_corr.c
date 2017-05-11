@@ -257,7 +257,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 		if(!img1[i].valid) continue;
 
 		int smallest = 1000*1000;
-/*		uint8_t odx = o_starts[i];
+		uint8_t odx = o_starts[i];
 		int range = o_ranges[i];
 
 		for(int o = 0; o < range; o++)
@@ -272,8 +272,9 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 				smallest = dist;
 			}
 		}
-*/
- //Non-optimized code going through all points:
+
+		// Non-optimized code going through all points:
+/*
 		for(int o = 0; o < 256; o++)
 		{
 			if(!img2[o].valid) continue;
@@ -285,7 +286,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 				smallest = dist;
 			}
 		}
-
+*/
 
 		// Divider offset: (to avoid division by zero and numbers too huge)
 		// 50 breaks the results down

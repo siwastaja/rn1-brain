@@ -16,6 +16,7 @@ void rotate_abs(int angle);
 void straight_rel(int fwd /*in mm*/);
 int correcting_angle();
 int correcting_straight();
+int correcting_either();
 int robot_moving();
 void take_control();
 void reset_movement();
@@ -47,5 +48,6 @@ void allow_angular(int yes);
 void allow_straight(int yes);
 void auto_disallow(int yes);
 
+void correct_location_without_moving(pos_t corr);
 
 #endif

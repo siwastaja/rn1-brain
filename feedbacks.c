@@ -169,7 +169,6 @@ void auto_disallow(int yes)
 static int ang_idle = 1;
 static int fwd_idle = 1;
 
-
 int correcting_angle()
 {
 	return do_correct_angle || (ang_idle < 700); // was 500
@@ -178,6 +177,11 @@ int correcting_angle()
 int correcting_straight()
 {
 	return do_correct_fwd || (fwd_idle < 700); // was 500
+}
+
+int correcting_either()
+{
+	return do_correct_angle || (ang_idle < 700) || do_correct_fwd || (fwd_idle < 700);
 }
 
 void zero_angle()
@@ -190,6 +194,14 @@ void zero_coords()
 {
 	cur_pos.x = 0;
 	cur_pos.y = 0;
+}
+
+void correct_location_without_moving(pos_t corr)
+{
+	cur_pos.x += corr.x;
+	cur_pos.y += corr.y;
+	cur_pos.ang += corr.ang;
+	aim_angle += corr.ang;
 }
 
 
@@ -418,11 +430,11 @@ void run_feedbacks(int sens_status)
 
 	if(auto_keepstill)
 	{
-		if(!do_correct_angle && ang_idle > 300)
+		if(!do_correct_angle && ang_idle > 300 && !do_correct_fwd && fwd_idle > 300)
+		{
 			angular_allowed = 0;
-
-		if(!do_correct_fwd && fwd_idle > 300)
 			straight_allowed = 0;
+		}
 	}
 
 	if(!manual_control && do_correct_angle) // && angular_allowed)

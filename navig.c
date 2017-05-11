@@ -90,7 +90,7 @@ void move_fsm()
 		allow_straight(0);
 		if(!robot_moving())
 		{
-			dbg[2] = dbg[3] = dbg[4] = dbg[5] = 0;
+//			dbg[2] = dbg[3] = dbg[4] = dbg[5] = 0;
 			cur_move.lidars[0].pos.ang = 0;
 			cur_move.lidars[0].pos.x = 9999;	
 			cur_move.lidars[0].pos.y = 9999;
@@ -148,7 +148,7 @@ void move_fsm()
 		break;
 
 		case MOVE_WAIT_ROTATION:
-		if(!correcting_angle())
+		if(!correcting_either())
 		{
 //			dbg[3] = dcnt; dcnt = 0;
 			lidar_reset_flags();
@@ -181,7 +181,7 @@ void move_fsm()
 //			dbg[6] = dcnt; dcnt = 0;
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
-//			lidar_calc_req = 1;
+			lidar_calc_req = 1;
 			cur_move.state++;
 		}
 		break;
@@ -198,7 +198,7 @@ void move_fsm()
 		break;
 
 		case MOVE_WAIT_STRAIGHT:
-		if(!correcting_straight() && !correcting_angle())
+		if(!correcting_either())
 		{
 //			dbg[7] = dcnt; dcnt = 0;
 			lidar_reset_flags();
