@@ -89,7 +89,25 @@ void move_fsm()
 		allow_angular(0);
 		allow_straight(0);
 		if(!robot_moving())
-		{	
+		{
+			dbg[2] = dbg[3] = dbg[4] = dbg[5] = 0;
+			cur_move.lidars[0].pos.ang = 0;
+			cur_move.lidars[0].pos.x = 9999;	
+			cur_move.lidars[0].pos.y = 9999;
+			for(int i = 0; i < 360; i+=4)
+			{
+				cur_move.lidars[0].scan[i] = 8000;
+				cur_move.lidars[1].scan[i] = 8000;
+				cur_move.lidars[2].scan[i] = 8000;
+			}
+			cur_move.lidars[1].pos.ang = 0;
+			cur_move.lidars[1].pos.x = 9999;	
+			cur_move.lidars[1].pos.y = 9999;
+
+			cur_move.lidars[2].pos.ang = 0;
+			cur_move.lidars[2].pos.x = 9999;	
+			cur_move.lidars[2].pos.y = 9999;
+
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -123,6 +141,7 @@ void move_fsm()
 			copy_lidar_half2(cur_move.lidars[0].scan);
 			cur_move.lidar_nonread[0] = 1;
 			allow_angular(1);
+			auto_disallow(1);
 			rotate_abs(cur_move.abs_angle);
 			cur_move.state++;
 		}
@@ -133,7 +152,6 @@ void move_fsm()
 		{
 //			dbg[3] = dcnt; dcnt = 0;
 			lidar_reset_flags();
-			allow_angular(0);
 			cur_move.state++;
 		}
 		break;
@@ -161,8 +179,6 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 //			dbg[6] = dcnt; dcnt = 0;
-//			allow_angular(1);
-//			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
 //			lidar_calc_req = 1;
@@ -175,6 +191,7 @@ void move_fsm()
 		{
 			allow_angular(1);
 			allow_straight(1);
+			auto_disallow(1);
 			straight_rel(cur_move.rel_fwd);
 			cur_move.state++;
 		}
@@ -185,8 +202,6 @@ void move_fsm()
 		{
 //			dbg[7] = dcnt; dcnt = 0;
 			lidar_reset_flags();
-			allow_angular(0);
-			allow_straight(0);
 			cur_move.state++;
 		}
 		break;
@@ -213,6 +228,8 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2B:
 		if(lidar_is_complete())
 		{
+			reset_movement();
+			auto_disallow(0);
 			allow_angular(1);
 			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[2].scan);

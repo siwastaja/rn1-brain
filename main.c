@@ -32,7 +32,8 @@
 
 volatile int dbg[10];
 
-uint8_t txbuf[1024];
+//uint8_t txbuf[1024];
+uint8_t txbuf[2048];
 
 void delay_us(uint32_t i)
 {
@@ -642,6 +643,119 @@ extern volatile int ang_idle;
 
 volatile int lidar_calc_req;
 
+void dev_send_jutsk(point_t* img, int id)
+{
+	txbuf[0] = 0x98;
+	txbuf[1] = id;
+
+	for(int i = 0; i < 128; i++)
+	{
+		int valid = img[i].valid;
+		int x = img[i].x;
+		int y = img[i].y;
+		txbuf[2+5*i+0] = valid?1:0;
+		txbuf[2+5*i+1] = I16_MS(x);
+		txbuf[2+5*i+2] = I16_LS(x);
+		txbuf[2+5*i+3] = I16_MS(y);
+		txbuf[2+5*i+4] = I16_LS(y);
+	}
+
+	usart_send(txbuf, 5*128+2);
+
+	txbuf[0] = 0x99;
+	txbuf[1] = id;
+
+	for(int i = 0; i < 128; i++)
+	{
+		int valid = img[i+128].valid;
+		int x = img[i+128].x;
+		int y = img[i+128].y;
+		txbuf[2+5*i+0] = valid?1:0;
+		txbuf[2+5*i+1] = I16_MS(x);
+		txbuf[2+5*i+2] = I16_LS(x);
+		txbuf[2+5*i+3] = I16_MS(y);
+		txbuf[2+5*i+4] = I16_LS(y);
+	}
+
+	usart_send(txbuf, 5*128+2);
+}
+
+
+void dev_send_hommel(lidar_scan_t* p1, lidar_scan_t* p2, int bonus)
+{
+	pos_t posi;
+
+	txbuf[0] = 0x84;
+	txbuf[1] = 0b1011;
+	COPY_POS(posi, p1->pos);
+	for(int i = 0; i < 360; i++)
+	{
+		int v=p1->scan[i];
+		txbuf[14+i*2] = v&0x7f;
+		txbuf[14+i*2+1] = (v>>7)&0x7f;
+	}
+	int a_t = posi.ang>>16;
+	txbuf[2] = I16_MS(a_t);
+	txbuf[3] = I16_LS(a_t);
+	int x_t = posi.x;
+	txbuf[4] = I32_I7_4(x_t);
+	txbuf[5] = I32_I7_3(x_t);
+	txbuf[6] = I32_I7_2(x_t);
+	txbuf[7] = I32_I7_1(x_t);
+	txbuf[8] = I32_I7_0(x_t);
+	int y_t = posi.y;
+	txbuf[9] = I32_I7_4(y_t);
+	txbuf[10] = I32_I7_3(y_t);
+	txbuf[11] = I32_I7_2(y_t);
+	txbuf[12] = I32_I7_1(y_t);
+	txbuf[13] = I32_I7_0(y_t);
+
+	txbuf[360*2+14] = I32_I7_4(bonus);
+	txbuf[360*2+15] = I32_I7_3(bonus);
+	txbuf[360*2+16] = I32_I7_2(bonus);
+	txbuf[360*2+17] = I32_I7_1(bonus);
+	txbuf[360*2+18] = I32_I7_0(bonus);
+
+	usart_send(txbuf, 360*2+19);
+
+
+	txbuf[0] = 0x84;
+	txbuf[1] = 0b1111;
+	COPY_POS(posi, p2->pos);
+	for(int i = 0; i < 360; i++)
+	{
+		int v=p2->scan[i];
+		txbuf[14+i*2] = v&0x7f;
+		txbuf[14+i*2+1] = (v>>7)&0x7f;
+	}
+	a_t = posi.ang>>16;
+	txbuf[2] = I16_MS(a_t);
+	txbuf[3] = I16_LS(a_t);
+	x_t = posi.x;
+	txbuf[4] = I32_I7_4(x_t);
+	txbuf[5] = I32_I7_3(x_t);
+	txbuf[6] = I32_I7_2(x_t);
+	txbuf[7] = I32_I7_1(x_t);
+	txbuf[8] = I32_I7_0(x_t);
+	y_t = posi.y;
+	txbuf[9] = I32_I7_4(y_t);
+	txbuf[10] = I32_I7_3(y_t);
+	txbuf[11] = I32_I7_2(y_t);
+	txbuf[12] = I32_I7_1(y_t);
+	txbuf[13] = I32_I7_0(y_t);
+
+	txbuf[360*2+14] = I32_I7_4(bonus);
+	txbuf[360*2+15] = I32_I7_3(bonus);
+	txbuf[360*2+16] = I32_I7_2(bonus);
+	txbuf[360*2+17] = I32_I7_1(bonus);
+	txbuf[360*2+18] = I32_I7_0(bonus);
+
+	usart_send(txbuf, 360*2+19);
+
+	delay_ms(100);
+}
+
+
 int main()
 {
 	int i;
@@ -937,7 +1051,7 @@ int main()
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
 */
 
-		if(!(cnt&3))
+//		if(!(cnt&3))
 		{
 			txbuf[0] = 0x84;
 			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
@@ -985,23 +1099,14 @@ int main()
 				COPY_POS(pos, cur_pos);
 				pos.x /= 10;
 				pos.y /= 10;
-				int i;
-				for(i = 0; i < 90; i++)
+
+				int16_t basic_scan[360];
+				copy_lidar_full(basic_scan);
+				for(i = 0; i < 360; i++)
 				{
-					int o;
-					for(o = 0; o < 4; o++)
-					{
-						if((lidar_full_rev[i].d[o].flags_distance&(1<<15)) || lidar_ignore[i*4+o])
-						{
-							txbuf[14+8*i+2*o] = 0;
-							txbuf[14+8*i+2*o+1] = 0;
-						}
-						else
-						{
-							txbuf[14+8*i+2*o] = lidar_full_rev[i].d[o].flags_distance&0x7f;
-							txbuf[14+8*i+2*o+1] = (lidar_full_rev[i].d[o].flags_distance>>7)&0x7f;
-						}
-					}
+					int v=basic_scan[i];
+					txbuf[14+i*2] = v&0x7f;
+					txbuf[14+i*2+1] = (v>>7)&0x7f;
 				}
 			}
 
@@ -1077,6 +1182,7 @@ int main()
 		txbuf[3] = I16_LS(bat_v);
 		usart_send(txbuf, 4);
 
+/*
 		txbuf[0] = 0x85;
 		txbuf[1] = 0b111;
 		int ts = latest_sonars[0]*10;
@@ -1089,6 +1195,7 @@ int main()
 		txbuf[6] = ts&0x7f;
 		txbuf[7] = (ts&(0x7f<<7)) >> 7;
 		usart_send(txbuf, 8);
+*/
 
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s

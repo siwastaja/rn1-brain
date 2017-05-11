@@ -50,25 +50,41 @@ uint8_t lidar_ignore[360];
 void copy_lidar_half1(int16_t* dst_start)
 {
 	int i;
+	int o = 359;
 	for(i = 0; i < 45; i++)
 	{
-		dst_start[i*4+0] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
-		dst_start[i*4+1] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
-		dst_start[i*4+2] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
-		dst_start[i*4+3] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
 	}
 }
 void copy_lidar_half2(int16_t* dst_start)
 {
 	int i;
+	int o = 179;
 	for(i = 45; i < 90; i++)
 	{
-		dst_start[i*4+0] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
-		dst_start[i*4+1] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
-		dst_start[i*4+2] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
-		dst_start[i*4+3] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
 	}
 }
+void copy_lidar_full(int16_t* dst_start)
+{
+	int i;
+	int o = 359;
+	for(i = 0; i < 90; i++)
+	{
+		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
+		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
+	}
+
+}
+
 
 void generate_lidar_ignore()
 {

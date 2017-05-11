@@ -51,6 +51,8 @@ void deinit_lidar();
 void generate_lidar_ignore();
 void copy_lidar_half1(int16_t* dst_start);
 void copy_lidar_half2(int16_t* dst_start);
+void copy_lidar_full(int16_t* dst_start);
+
 void lidar_reset_flags();
 void lidar_reset_complete_flag(); 
 void lidar_reset_half_flag(); 

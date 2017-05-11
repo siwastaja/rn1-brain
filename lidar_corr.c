@@ -251,13 +251,13 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 	Finally, divide by the number of points to get comparable value regardless of num of valid points.
 	*/
 
-	double dist_sum = 0.0;
+	int32_t dist_sum = 0;
 	for(int i = 0; i < 256; i++)
 	{
 		if(!img1[i].valid) continue;
 
-		int smallest = 2000000000;
-		uint8_t odx = o_starts[i];
+		int smallest = 1000*1000;
+/*		uint8_t odx = o_starts[i];
 		int range = o_ranges[i];
 
 		for(int o = 0; o < range; o++)
@@ -272,8 +272,8 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 				smallest = dist;
 			}
 		}
-
-/* Non-optimized code going through all points:
+*/
+ //Non-optimized code going through all points:
 		for(int o = 0; o < 256; o++)
 		{
 			if(!img2[o].valid) continue;
@@ -285,7 +285,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 				smallest = dist;
 			}
 		}
-*/
+
 
 		// Divider offset: (to avoid division by zero and numbers too huge)
 		// 50 breaks the results down
@@ -310,7 +310,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 		dist_sum += dist_scaled;
 	}
 
-	return dist_sum;
+	return dist_sum>>8;
 }
 
 /*
@@ -323,6 +323,12 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 	>0 on failure
 
 */
+
+extern void dev_send_hommel(lidar_scan_t* p1, lidar_scan_t* p2, int bonus);
+extern void dev_send_jutsk(point_t* img, int id);
+
+extern void delay_ms(uint32_t i);
+
 
 int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 {
@@ -378,8 +384,13 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 		return 1;
 	}
 	
+	// scan2 position is modified during processing. Instead of memcpying the whole scan2, we just store and restore the pos.
+	pos_t scan2_very_orig_pos;
 	pos_t orig_pos;
+	COPY_POS(scan2_very_orig_pos, scan2->pos);
 	COPY_POS(orig_pos, scan2->pos);
+
+	// Run PASS 1
 
 	int biggest_lvl = 0;
 	int best_a, best_x, best_y;
@@ -395,8 +406,12 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 				scan_to_2d(scan2, img2);
 
+//				dev_send_jutsk(img1, 0);
+//				dev_send_jutsk(img2, 1);
+
 				int lvl = calc_match_lvl(img1, img2);
 				lvl = lvl * PASS1_A_WEIGH[a_corr] * PASS1_X_WEIGH[x_corr] * PASS1_Y_WEIGH[y_corr];
+//				dev_send_hommel(scan1, scan2, lvl);
 
 				if(lvl > biggest_lvl)
 				{
@@ -411,6 +426,7 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 	if(biggest_lvl == 0)
 	{
+		COPY_POS(scan2->pos, scan2_very_orig_pos);
 		return 2;
 	}
 
@@ -421,6 +437,10 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 	corr->ang    += PASS1_A[best_a];
 	corr->x      += PASS1_X[best_x];
 	corr->y      += PASS1_Y[best_y];
+
+//	COPY_POS(scan2->pos, orig_pos);
+//	dev_send_hommel(scan1, scan2, biggest_lvl);
+//	delay_ms(5000);
 
 	// Run pass 2
 
@@ -438,7 +458,11 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 				scan_to_2d(scan2, img2);
 
+//				dev_send_jutsk(img1, 0);
+//				dev_send_jutsk(img2, 1);
+
 				int lvl = calc_match_lvl(img1, img2);
+//				dev_send_hommel(scan1, scan2, lvl);
 
 				if(lvl > biggest_lvl)
 				{
@@ -454,6 +478,7 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 	if(biggest_lvl == 0)
 	{
+		COPY_POS(scan2->pos, scan2_very_orig_pos);
 		return 3;
 	}
 
@@ -464,6 +489,10 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 	corr->ang    += PASS2_A[best_a];
 	corr->x      += PASS2_X[best_x];
 	corr->y      += PASS2_Y[best_y];
+
+//	COPY_POS(scan2->pos, orig_pos);
+//	dev_send_hommel(scan1, scan2, biggest_lvl);
+//	delay_ms(5000);
 	
 
 	// Run pass 3
@@ -481,7 +510,11 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 				scan_to_2d(scan2, img2);
 
+//				dev_send_jutsk(img1, 0);
+//				dev_send_jutsk(img2, 1);
+
 				int lvl = calc_match_lvl(img1, img2);
+//				dev_send_hommel(scan1, scan2, lvl);
 
 				if(lvl > biggest_lvl)
 				{
@@ -496,6 +529,7 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 
 	if(biggest_lvl == 0)
 	{
+		COPY_POS(scan2->pos, scan2_very_orig_pos);
 		return 4;
 	}
 
@@ -507,6 +541,11 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 	corr->x      += PASS3_X[best_x];
 	corr->y      += PASS3_Y[best_y];
 
+//	COPY_POS(scan2->pos, orig_pos);
+//	dev_send_hommel(scan1, scan2, biggest_lvl);
+//	delay_ms(5000);
+
+	COPY_POS(scan2->pos, scan2_very_orig_pos);
 	return 0;
 }
 

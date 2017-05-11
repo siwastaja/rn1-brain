@@ -44,9 +44,9 @@ int ang_p = 1350; // 1500
 
 volatile int cur_fwd;
 volatile int aim_fwd;
-int fwd_accel = 250;
+int fwd_accel = 350; // was 250, kinda sluggish
 int fwd_top_speed;
-int fwd_p = 5000;
+int fwd_p = 3500; // 5000 gives rather strong deceleration; 2500 feels sluggish
 
 volatile int manual_control;
 volatile int manual_common_speed;
@@ -143,6 +143,8 @@ void reset_movement()
 	aim_angle = cur_pos.ang;
 }
 
+static int auto_keepstill;
+
 static int do_correct_angle = 0;
 static int do_correct_fwd = 0;
 
@@ -159,18 +161,23 @@ void allow_straight(int yes)
 	straight_allowed = yes;
 }
 
+void auto_disallow(int yes)
+{
+	auto_keepstill = yes;
+}
+
 static int ang_idle = 1;
 static int fwd_idle = 1;
 
 
 int correcting_angle()
 {
-	return do_correct_angle || (ang_idle < 500);
+	return do_correct_angle || (ang_idle < 700); // was 500
 }
 
 int correcting_straight()
 {
-	return do_correct_fwd || (fwd_idle < 500);
+	return do_correct_fwd || (fwd_idle < 700); // was 500
 }
 
 void zero_angle()
@@ -391,7 +398,7 @@ void run_feedbacks(int sens_status)
 	}
 
 
-	if((ang_err < (-ANG_1_DEG) || ang_err > ANG_1_DEG))
+	if(angular_allowed && (ang_err < (-ANG_1_DEG) || ang_err > ANG_1_DEG))
 	{
 		do_correct_angle = 1;
 	}
@@ -400,7 +407,7 @@ void run_feedbacks(int sens_status)
 		do_correct_angle = 0;
 	}
 
-	if(fwd_err < -150 || fwd_err > 150)
+	if(straight_allowed && (fwd_err < -150 || fwd_err > 150))
 	{
 		do_correct_fwd = 1;
 	}
@@ -409,7 +416,16 @@ void run_feedbacks(int sens_status)
 		do_correct_fwd = 0;
 	}
 
-	if(!manual_control && do_correct_angle && angular_allowed)
+	if(auto_keepstill)
+	{
+		if(!do_correct_angle && ang_idle > 300)
+			angular_allowed = 0;
+
+		if(!do_correct_fwd && fwd_idle > 300)
+			straight_allowed = 0;
+	}
+
+	if(!manual_control && do_correct_angle) // && angular_allowed)
 	{
 		if(ang_idle)
 		{
@@ -472,7 +488,7 @@ void run_feedbacks(int sens_status)
 
 	int tmp_expected_accel = -1*fwd_speed;
 
-	if(!manual_control && do_correct_fwd && straight_allowed)
+	if(!manual_control && do_correct_fwd) // && straight_allowed)
 	{
 		if(fwd_idle)
 		{
@@ -486,7 +502,7 @@ void run_feedbacks(int sens_status)
 		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= fwd_accel;
 		else fwd_speed_limit = fwd_top_speed;
 
-		int new_fwd_speed = (fwd_err>>4)*fwd_p;
+		int new_fwd_speed = (fwd_err>>4)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
 		if(new_fwd_speed < 0 && new_fwd_speed < -1*fwd_speed_limit) new_fwd_speed = -1*fwd_speed_limit;
 		if(new_fwd_speed > 0 && new_fwd_speed > fwd_speed_limit) new_fwd_speed = fwd_speed_limit;
 

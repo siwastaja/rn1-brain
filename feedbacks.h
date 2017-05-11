@@ -45,6 +45,7 @@ void zero_coords();
 
 void allow_angular(int yes);
 void allow_straight(int yes);
+void auto_disallow(int yes);
 
 
 #endif
