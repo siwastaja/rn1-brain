@@ -38,9 +38,9 @@ int xcel_timing_issues;
 int cur_compass_angle = 0;
 int aim_angle = 0; // same
 
-int ang_accel = 220;
+int ang_accel = 300; // was 220
 int ang_top_speed;
-int ang_p = 1350; // 1500
+int ang_p = 1000; //1350; // 1500
 
 volatile int cur_fwd;
 volatile int aim_fwd;
@@ -108,7 +108,7 @@ void rotate_rel(int angle)
 	aim_angle += angle;
 
 	speed_limit_lowered = 0;
-	ang_top_speed = 220000; // 150000
+	ang_top_speed = 300000; // was 220000
 	manual_control = 0;
 	robot_moves();
 }
@@ -128,11 +128,11 @@ void straight_rel(int fwd /*in mm*/)
 	speed_limit_lowered = 0;
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
-	fwd_accel = final_fwd_accel/6;
-	fwd_speed_limit = fwd_accel*70; // use starting speed that equals to 70ms of acceleration
+	fwd_accel = final_fwd_accel/4;
+	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
 	cur_fwd = 0;
 	aim_fwd = fwd*10; // in 0.1mm
-	fwd_top_speed = 600000;
+	fwd_top_speed = 800000; // was 600000
 	manual_control = 0;
 	robot_moves();
 }
@@ -360,6 +360,7 @@ int nearest_sonar()
 // Run this at 1 kHz
 void run_feedbacks(int sens_status)
 {
+	static int fwd_nonidle;
 	static int first = 100;
 	int i;
 	static int cnt = 0;
@@ -377,7 +378,7 @@ void run_feedbacks(int sens_status)
 
 	static int16_t prev_wheel_counts[2];
 
-	static int front_wheels_in_line = 0;
+	static int rear_wheels_in_line = 0;
 
 	cnt++;
 
@@ -414,30 +415,48 @@ void run_feedbacks(int sens_status)
 	}
 
 
-	if(angular_allowed && (ang_err < (-ANG_1_DEG) || ang_err > ANG_1_DEG))
-	{
-		do_correct_angle = 1;
-	}
-	else if((ang_err > (-ANG_1_DEG)/2 && ang_err < (ANG_1_DEG)/2))
-	{
-		do_correct_angle = 0;
-	}
-
 	if(straight_allowed && (fwd_err < -150 || fwd_err > 150))
 	{
 		do_correct_fwd = 1;
 	}
-	else if(fwd_err > -80 && fwd_err < 80)
+	
+	if(!straight_allowed || (fwd_err > -80 && fwd_err < 80))
 	{
 		do_correct_fwd = 0;
 	}
 
-	if(ang_err > (-10*ANG_1_DEG) && ang_err < (10*ANG_1_DEG) && !fwd_idle)
-		front_wheels_in_line++;
-	else
-		front_wheels_in_line = 0;
+	/*
+	When going straight at the same time, smaller error in angle starts the correction.
+	This causes the following style:
+	- When turning first, angle is only fixed within +-3 deg
+	- When the straight segment starts, angle is being fixed within +-0.5 deg.
+	- This way, turning is quick, and there is no oscillation caused by the BLDC control at extremely small speeds / steps.
+	- When the robot moves forward at the same time, tire speeds have common mode, and angular control only slighly changes the offset between the tires.
+	  This works very well without oscillation. Also, during straight segment, the rear wheels are properly aligned.
+	- Start doing the tighter angular control after 300 ms of straight segment
+	*/
 
-	if(front_wheels_in_line > 800)
+	if(angular_allowed && 
+		(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
+		 || (                    (ang_err < (3*-ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
+	{
+		do_correct_angle = 1;
+	}
+
+	if(!angular_allowed || 
+		    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
+		|| (                    (ang_err > (2*-ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
+	{
+		do_correct_angle = 0;
+	}
+
+
+	if(ang_err > (-10*ANG_1_DEG) && ang_err < (10*ANG_1_DEG) && !fwd_idle)
+		rear_wheels_in_line++;
+	else
+		rear_wheels_in_line = 0;
+
+	if(rear_wheels_in_line > 800)
 	{
 		fwd_accel = final_fwd_accel;
 	}
@@ -457,7 +476,6 @@ void run_feedbacks(int sens_status)
 		{
 			ang_idle = 0;
 			ang_speed_limit = ang_accel*20; // use starting speed that equals to 20ms of acceleration
-			zero_gyro_short_integrals();
 		}
 
 		// Calculate angular speed with P loop from the gyro integral.
@@ -467,7 +485,7 @@ void run_feedbacks(int sens_status)
 		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= ang_accel;
 		else ang_speed_limit = ang_top_speed;
 
-		int new_ang_speed = (ang_err>>20)*ang_p;
+		int new_ang_speed = (ang_err>>20)*ang_p + ((ang_err>0)?22000:-22000) /*step-style feedforward for minimum speed*/;
 		if(new_ang_speed < 0 && new_ang_speed < -1*ang_speed_limit) new_ang_speed = -1*ang_speed_limit;
 		if(new_ang_speed > 0 && new_ang_speed > ang_speed_limit) new_ang_speed = ang_speed_limit;
 
@@ -520,6 +538,7 @@ void run_feedbacks(int sens_status)
 		{
 			fwd_idle = 0;
 		}
+		fwd_nonidle++;
 
 		// Calculate linear speed with P loop from position error.
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
@@ -537,6 +556,7 @@ void run_feedbacks(int sens_status)
 	else
 	{
 		if(fwd_idle < 10000) fwd_idle++;
+		fwd_nonidle = 0;
 		fwd_speed = 0;
 	}
 
