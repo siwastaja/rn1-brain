@@ -447,6 +447,11 @@ void handle_message()
 		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
 		break;
 
+		case 0x82:
+		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
+		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 0);
+		break;
+
 		case 0x8f:
 		host_alive();
 		break;
@@ -572,16 +577,16 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 2)
 	{
-		navig_fsm();
+		navig_fsm1();
 	}
 	else if(cnt_10k == 3)
 	{
-		run_feedbacks(gyro_xcel_compass_status);
-		gyro_xcel_compass_status = 0;
+		navig_fsm2();
 	}
 	else if(cnt_10k == 4)
 	{
-		motcon_fsm();
+		run_feedbacks(gyro_xcel_compass_status);
+		gyro_xcel_compass_status = 0;
 	}
 	else if(cnt_10k == 5)
 	{
@@ -589,7 +594,7 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 6)
 	{
-
+		motcon_fsm();
 	}
 	else if(cnt_10k == 7)
 	{
@@ -973,18 +978,19 @@ int main()
 		cnt++;
 
 		int corr_ret = 99;
-		if(lidar_calc_req)
+		int calc_req = lidar_calc_req;
+		if(calc_req)
 		{
 			pos_t lid_corr;
-			lidar_scan_t* sca = move_get_lidar(lidar_calc_req-1);
-			lidar_scan_t* scb = move_get_lidar(lidar_calc_req);
+			lidar_scan_t* sca = move_get_lidar(calc_req-1);
+			lidar_scan_t* scb = move_get_lidar(calc_req);
 
 			corr_ret = do_lidar_corr(sca, scb, &lid_corr);
 			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
-			dbg[2] = corr_ret;
-			dbg[3] = lid_corr.ang;
-			dbg[4] = lid_corr.x;
-			dbg[5] = lid_corr.y;
+//			dbg[2] = corr_ret;
+//			dbg[3] = lid_corr.ang;
+//			dbg[4] = lid_corr.x;
+//			dbg[5] = lid_corr.y;
 			correct_location_without_moving(lid_corr);
 			// correct the image, too, for sending:
 			scb->pos.ang += lid_corr.ang;

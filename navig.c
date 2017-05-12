@@ -6,6 +6,7 @@ Collision avoidance, simple mechanical tasks.
 */
 
 #include <stdint.h>
+#include <math.h>
 
 #include "lidar.h"
 #include "sonar.h"
@@ -13,6 +14,9 @@ Collision avoidance, simple mechanical tasks.
 #include "feedbacks.h"
 
 extern volatile int dbg[10];
+
+//#define XY_DONT_AT_START_LEN 200 /*don't recalculate ang,straigt at this many first millimeters */
+#define XY_DONT_AT_END_LEN 300 /*don't recalculate ang,straight at this many last millimeters to (x,y) dstination*/
 
 
 // State machine for lidar-synced turn-then-straight segment.
@@ -39,13 +43,16 @@ typedef struct
 {
 	int valid;
 	move_state_t state;
-	int abs_angle;
+	int abs_ang;
 	int rel_fwd;
 	int lidar_nonread[3];
 	lidar_scan_t lidars[3]; // Before turning; after turning; after straight segment. Including the assumed (ang,x,y).
 } move_t;
 
 static move_t cur_move;
+static int dest_x, dest_y;
+static int correct_xy;
+
 
 lidar_scan_t* move_get_valid_lidar(int idx)
 {
@@ -142,7 +149,7 @@ void move_fsm()
 			cur_move.lidar_nonread[0] = 1;
 			allow_angular(1);
 			auto_disallow(1);
-			rotate_abs(cur_move.abs_angle);
+			rotate_abs(cur_move.abs_ang);
 			cur_move.state++;
 		}
 		break;
@@ -181,14 +188,14 @@ void move_fsm()
 //			dbg[6] = dcnt; dcnt = 0;
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
-			lidar_calc_req = 1;
 			cur_move.state++;
 		}
 		break;
 
 		case MOVE_WAIT_CALC_1:
-		if(lidar_calc_req == 0)
+		if(lidar_calc_req != 1) // If we still have the previous calc1 going on, let it finish. calc2 is ok to still run.
 		{
+			lidar_calc_req = 1;
 			allow_angular(1);
 			allow_straight(1);
 			auto_disallow(1);
@@ -198,6 +205,13 @@ void move_fsm()
 		break;
 
 		case MOVE_WAIT_STRAIGHT:
+		if(correct_xy && (cur_move.rel_fwd < -1*XY_DONT_AT_END_LEN || cur_move.rel_fwd > XY_DONT_AT_END_LEN))
+		{
+			change_angle_abs(cur_move.abs_ang);
+			change_straight_rel(cur_move.rel_fwd);
+			dbg[4]++;
+		}
+
 		if(!correcting_either())
 		{
 //			dbg[7] = dcnt; dcnt = 0;
@@ -234,14 +248,14 @@ void move_fsm()
 			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[2].scan);
 			cur_move.lidar_nonread[2] = 1;
-			lidar_calc_req = 2;
 			cur_move.state++;
 		}
 		break;
 
 		case MOVE_WAIT_CALC_2:
-		if(lidar_calc_req == 0)
+		if(lidar_calc_req != 2) // If previous calc2 is still unfinished, let it finish. calc1 is ok to still run.
 		{
+			lidar_calc_req = 2;
 			cur_move.state = 0;
 		}
 		break;
@@ -254,13 +268,14 @@ void move_fsm()
 }
 
 
-void move_rel_twostep(int angle, int fwd /*in mm*/)
+void move_rel_twostep(int angle16, int fwd /*in mm*/)
 {
 	dbg[8]+=100;
 	reset_movement();
 	take_control();
+	correct_xy = 0;
 	cur_move.state = MOVE_START;
-	cur_move.abs_angle = cur_pos.ang + (angle<<16);
+	cur_move.abs_ang = cur_pos.ang + (angle16<<16);
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
 	cur_move.lidar_nonread[0] = 0;
@@ -268,8 +283,68 @@ void move_rel_twostep(int angle, int fwd /*in mm*/)
 	cur_move.lidar_nonread[2] = 0;
 }
 
+void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
+{
+	dbg[8]+=100;
+	reset_movement();
+	take_control();
+	correct_xy = 0;
+	cur_move.state = MOVE_START;
+	cur_move.abs_ang = angle32;
+	cur_move.rel_fwd = fwd;
+	cur_move.valid = 1;
+	cur_move.lidar_nonread[0] = 0;
+	cur_move.lidar_nonread[1] = 0;
+	cur_move.lidar_nonread[2] = 0;
+}
 
-void navig_fsm()
+void xy_fsm()
+{
+	if(!correct_xy)
+	{
+		return;
+	}
+
+	int dx = dest_x - (cur_pos.x/10);
+	int dy = dest_y - (cur_pos.y/10);
+
+	int new_fwd = sqrt(dx*dx + dy*dy);
+	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
+
+	dbg[2] = new_fwd/10;
+	dbg[3] = new_ang/11930465; // to deg.
+
+	cur_move.rel_fwd = new_fwd;
+	cur_move.abs_ang = new_ang;
+}
+
+
+void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars)
+{
+	dbg[2] = dbg[3] = dbg[4] = 0;
+
+	dest_x = x;
+	dest_y = y;
+
+	int dx = dest_x - (cur_pos.x/10);
+	int dy = dest_y - (cur_pos.y/10);
+
+	int new_fwd = sqrt(dx*dx + dy*dy);
+	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
+
+	dbg[2] = new_fwd/10;
+	dbg[3] = new_ang/11930465; // to deg.
+	move_absa_rels_twostep(new_ang, new_fwd);
+	correct_xy = 1;
+
+}
+
+void navig_fsm1()
+{
+	xy_fsm();
+}
+
+void navig_fsm2()
 {
 	move_fsm();
 	dbg[1] = cur_move.state;

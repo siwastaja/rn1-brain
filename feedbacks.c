@@ -42,8 +42,7 @@ int ang_accel = 300; // was 220
 int ang_top_speed;
 int ang_p = 1000; //1350; // 1500
 
-volatile int cur_fwd;
-volatile int aim_fwd;
+int aim_fwd;
 int final_fwd_accel = 400;
 int fwd_accel = 350; // was 250, kinda sluggish
 int fwd_top_speed;
@@ -94,7 +93,6 @@ void zero_xcel_long_integrals()
 	xcel_long_integrals[2] = 0;
 }
 
-static int wheel_integrals[2];
 static int fwd_speed_limit;
 static int speed_limit_lowered;
 
@@ -123,25 +121,30 @@ void rotate_abs(int angle)
 	robot_moves();
 }
 
+void change_angle_abs(int angle)
+{
+	aim_angle = angle;
+}
+
 void straight_rel(int fwd /*in mm*/)
 {
 	speed_limit_lowered = 0;
-	wheel_integrals[0] = 0;
-	wheel_integrals[1] = 0;
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
-	cur_fwd = 0;
 	aim_fwd = fwd*10; // in 0.1mm
 	fwd_top_speed = 800000; // was 600000
 	manual_control = 0;
 	robot_moves();
 }
 
+void change_straight_rel(int fwd /*in mm*/)
+{
+	aim_fwd = fwd*10; // in 0.1mm
+}
+
 void reset_movement()
 {
-	cur_fwd = aim_fwd = 0;
-	wheel_integrals[0] = 0;
-	wheel_integrals[1] = 0;
+	aim_fwd = 0;
 	aim_angle = cur_pos.ang;
 }
 
@@ -392,7 +395,7 @@ void run_feedbacks(int sens_status)
 	}
 
 	int ang_err = cur_pos.ang - aim_angle;
-	int fwd_err = aim_fwd - cur_fwd;
+	int fwd_err = aim_fwd;
 
 
 	int son = nearest_sonar();
@@ -510,12 +513,9 @@ void run_feedbacks(int sens_status)
 
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
 
-	wheel_integrals[0] += wheel_deltas[0];
-	wheel_integrals[1] += wheel_deltas[1];
-
-	cur_fwd = ((wheel_integrals[0] + wheel_integrals[1])*85)>>1;
-
 	int movement = ((wheel_deltas[0] + wheel_deltas[1])*85)>>1; // in 0.1mm
+
+	aim_fwd -= movement;
 
 	int y_idx = cur_pos.ang>>SIN_LUT_SHIFT;
 	if(y_idx < 0) y_idx += SIN_LUT_POINTS;

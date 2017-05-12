@@ -50,4 +50,8 @@ void auto_disallow(int yes);
 
 void correct_location_without_moving(pos_t corr);
 
+void change_angle_abs(int angle);
+void change_straight_rel(int fwd /*in mm*/);
+
+
 #endif
