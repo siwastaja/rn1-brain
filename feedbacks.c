@@ -44,6 +44,7 @@ int ang_p = 1350; // 1500
 
 volatile int cur_fwd;
 volatile int aim_fwd;
+int final_fwd_accel = 400;
 int fwd_accel = 350; // was 250, kinda sluggish
 int fwd_top_speed;
 int fwd_p = 3500; // 5000 gives rather strong deceleration; 2500 feels sluggish
@@ -127,7 +128,8 @@ void straight_rel(int fwd /*in mm*/)
 	speed_limit_lowered = 0;
 	wheel_integrals[0] = 0;
 	wheel_integrals[1] = 0;
-	fwd_speed_limit = fwd_accel*20; // use starting speed that equals to 20ms of acceleration
+	fwd_accel = final_fwd_accel/6;
+	fwd_speed_limit = fwd_accel*70; // use starting speed that equals to 70ms of acceleration
 	cur_fwd = 0;
 	aim_fwd = fwd*10; // in 0.1mm
 	fwd_top_speed = 600000;
@@ -375,6 +377,8 @@ void run_feedbacks(int sens_status)
 
 	static int16_t prev_wheel_counts[2];
 
+	static int front_wheels_in_line = 0;
+
 	cnt++;
 
 
@@ -426,6 +430,16 @@ void run_feedbacks(int sens_status)
 	else if(fwd_err > -80 && fwd_err < 80)
 	{
 		do_correct_fwd = 0;
+	}
+
+	if(ang_err > (-10*ANG_1_DEG) && ang_err < (10*ANG_1_DEG) && !fwd_idle)
+		front_wheels_in_line++;
+	else
+		front_wheels_in_line = 0;
+
+	if(front_wheels_in_line > 800)
+	{
+		fwd_accel = final_fwd_accel;
 	}
 
 	if(auto_keepstill)
