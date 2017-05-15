@@ -1025,14 +1025,17 @@ int main()
 
 //#define SEND_OPTFLOW
 
-		msg_gyro_t msg;
-		msg.status = 1;
-		msg.int_x = I16_I14(latest_gyro->x);
-		msg.int_y = I16_I14(latest_gyro->y);
-		msg.int_z = I16_I14(latest_gyro->z);
-		txbuf[0] = 128;
-		memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
-		usart_send(txbuf, sizeof(msg_gyro_t)+1);
+		if(!(cnt&3))
+		{
+			msg_gyro_t msg;
+			msg.status = 1;
+			msg.int_x = I16_I14(latest_gyro->x);
+			msg.int_y = I16_I14(latest_gyro->y);
+			msg.int_z = I16_I14(latest_gyro->z);
+			txbuf[0] = 128;
+			memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
+			usart_send(txbuf, sizeof(msg_gyro_t)+1);
+		}
 
 /*
 		msg_xcel_t msgx;
@@ -1054,7 +1057,9 @@ int main()
 		usart_send(txbuf, sizeof(msg_compass_t)+1);
 */
 
-//		if(!(cnt&3))
+		int send_lidar = 0;
+		if(!(cnt&3)) send_lidar = 1;
+
 		{
 			txbuf[0] = 0x84;
 			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
@@ -1066,6 +1071,7 @@ int main()
 			// If synced (correlated to moves) images are available, send them. Else, just send the latest image.
 			if( (p = move_get_valid_lidar(0)) )
 			{
+				send_lidar=1;
 				txbuf[1] |= 0b01<<2;
 				COPY_POS(pos, p->pos);
 				for(i = 0; i < 360; i++)
@@ -1077,6 +1083,7 @@ int main()
 			}
 			else if( (p = move_get_valid_lidar(1)) )
 			{
+				send_lidar=1;
 				txbuf[1] |= 0b10<<2;
 				COPY_POS(pos, p->pos);
 				for(i = 0; i < 360; i++)
@@ -1088,6 +1095,7 @@ int main()
 			}
 			else if( (p = move_get_valid_lidar(2)) )
 			{
+				send_lidar=1;
 				txbuf[1] |= 0b11<<2;
 				COPY_POS(pos, p->pos);
 				for(i = 0; i < 360; i++)
@@ -1097,7 +1105,7 @@ int main()
 					txbuf[14+i*2+1] = (v>>7)&0x7f;
 				}
 			}
-			else
+			else if(send_lidar)
 			{
 				COPY_POS(pos, cur_pos);
 				pos.x /= 10;
@@ -1113,23 +1121,26 @@ int main()
 				}
 			}
 
-			int a_t = pos.ang>>16;
-			txbuf[2] = I16_MS(a_t);
-			txbuf[3] = I16_LS(a_t);
-			int x_t = pos.x;
-			txbuf[4] = I32_I7_4(x_t);
-			txbuf[5] = I32_I7_3(x_t);
-			txbuf[6] = I32_I7_2(x_t);
-			txbuf[7] = I32_I7_1(x_t);
-			txbuf[8] = I32_I7_0(x_t);
-			int y_t = pos.y;
-			txbuf[9] = I32_I7_4(y_t);
-			txbuf[10] = I32_I7_3(y_t);
-			txbuf[11] = I32_I7_2(y_t);
-			txbuf[12] = I32_I7_1(y_t);
-			txbuf[13] = I32_I7_0(y_t);
+			if(send_lidar)
+			{
+				int a_t = pos.ang>>16;
+				txbuf[2] = I16_MS(a_t);
+				txbuf[3] = I16_LS(a_t);
+				int x_t = pos.x;
+				txbuf[4] = I32_I7_4(x_t);
+				txbuf[5] = I32_I7_3(x_t);
+				txbuf[6] = I32_I7_2(x_t);
+				txbuf[7] = I32_I7_1(x_t);
+				txbuf[8] = I32_I7_0(x_t);
+				int y_t = pos.y;
+				txbuf[9] = I32_I7_4(y_t);
+				txbuf[10] = I32_I7_3(y_t);
+				txbuf[11] = I32_I7_2(y_t);
+				txbuf[12] = I32_I7_1(y_t);
+				txbuf[13] = I32_I7_0(y_t);
 
-			usart_send(txbuf, 360*2+14);
+				usart_send(txbuf, 360*2+14);
+			}
 		}
 
 		// Do fancy calculation here :)
@@ -1178,12 +1189,15 @@ int main()
 #endif
 
 
-		int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
-		txbuf[0] = 0xa2;
-		txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
-		txbuf[2] = I16_MS(bat_v);
-		txbuf[3] = I16_LS(bat_v);
-		usart_send(txbuf, 4);
+		if(!(cnt&7))
+		{
+			int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
+			txbuf[0] = 0xa2;
+			txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
+			txbuf[2] = I16_MS(bat_v);
+			txbuf[3] = I16_LS(bat_v);
+			usart_send(txbuf, 4);
+		}
 
 		txbuf[0] = 0x85;
 		txbuf[1] = 0b111;

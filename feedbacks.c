@@ -69,7 +69,7 @@ int robot_moving()
 static int host_alive_watchdog;
 void host_alive()
 {
-	host_alive_watchdog = 1000;
+	host_alive_watchdog = 5000;
 }
 
 void zero_gyro_short_integrals()
