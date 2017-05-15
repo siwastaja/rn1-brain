@@ -20,6 +20,8 @@ int correcting_either();
 int robot_moving();
 void take_control();
 void reset_movement();
+int speed_limit_status();
+void lower_speed_limit();
 
 #define ANG_2_5_DEG   29826162
 #define ANG_1_DEG     11930465

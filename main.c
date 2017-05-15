@@ -997,10 +997,12 @@ int main()
 			scb->pos.x += lid_corr.x;
 			scb->pos.y += lid_corr.y;
 			lidar_calc_req = 0;
+
+			if(corr_ret == 0) delay_ms(100);
 		}
 		else
 		{
-			delay_ms(150); // Don't produce too much data now, for network reasons. WAS 100
+			delay_ms(180); // Don't produce too much data now, for network reasons. WAS 100
 		}
 
 		
@@ -1025,7 +1027,7 @@ int main()
 
 //#define SEND_OPTFLOW
 
-		if(!(cnt&3))
+		if(!(cnt&7))
 		{
 			msg_gyro_t msg;
 			msg.status = 1;
@@ -1058,7 +1060,7 @@ int main()
 */
 
 		int send_lidar = 0;
-		if(!(cnt&3)) send_lidar = 1;
+		if(!(cnt&7)) send_lidar = 1;
 
 		{
 			txbuf[0] = 0x84;
@@ -1189,7 +1191,7 @@ int main()
 #endif
 
 
-		if(!(cnt&7))
+		if(!(cnt&15))
 		{
 			int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
 			txbuf[0] = 0xa2;
@@ -1199,18 +1201,22 @@ int main()
 			usart_send(txbuf, 4);
 		}
 
-		txbuf[0] = 0x85;
-		txbuf[1] = 0b111;
-		int ts = latest_sonars[0]*10;
-		txbuf[2] = ts&0x7f;
-		txbuf[3] = (ts&(0x7f<<7)) >> 7;
-		ts = latest_sonars[1]*10;
-		txbuf[4] = ts&0x7f;
-		txbuf[5] = (ts&(0x7f<<7)) >> 7;
-		ts = latest_sonars[2]*10;
-		txbuf[6] = ts&0x7f;
-		txbuf[7] = (ts&(0x7f<<7)) >> 7;
-		usart_send(txbuf, 8);
+
+		if(!(cnt&3))
+		{
+			txbuf[0] = 0x85;
+			txbuf[1] = 0b111;
+			int ts = latest_sonars[0]*10;
+			txbuf[2] = ts&0x7f;
+			txbuf[3] = (ts&(0x7f<<7)) >> 7;
+			ts = latest_sonars[1]*10;
+			txbuf[4] = ts&0x7f;
+			txbuf[5] = (ts&(0x7f<<7)) >> 7;
+			ts = latest_sonars[2]*10;
+			txbuf[6] = ts&0x7f;
+			txbuf[7] = (ts&(0x7f<<7)) >> 7;
+			usart_send(txbuf, 8);
+		}
 
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s

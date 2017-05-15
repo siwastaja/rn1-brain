@@ -13,6 +13,8 @@ Collision avoidance, simple mechanical tasks.
 #include "navig.h"
 #include "feedbacks.h"
 
+extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
+
 extern volatile int dbg[10];
 
 //#define XY_DONT_AT_START_LEN 200 /*don't recalculate ang,straigt at this many first millimeters */
@@ -53,6 +55,14 @@ static move_t cur_move;
 static int dest_x, dest_y;
 static int correct_xy;
 
+int nearest_sonar()
+{
+	int n = 99999;
+	if(latest_sonars[0] && latest_sonars[0] < n) n = latest_sonars[0];
+	if(latest_sonars[1] && latest_sonars[1] < n) n = latest_sonars[1];
+	if(latest_sonars[2] && latest_sonars[2] < n) n = latest_sonars[2];
+	return n;
+}
 
 lidar_scan_t* move_get_valid_lidar(int idx)
 {
@@ -311,9 +321,6 @@ void xy_fsm()
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
 
-	dbg[2] = new_fwd/10;
-	dbg[3] = new_ang/11930465; // to deg.
-
 	cur_move.rel_fwd = new_fwd;
 	cur_move.abs_ang = new_ang;
 }
@@ -332,8 +339,6 @@ void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars)
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
 
-	dbg[2] = new_fwd/10;
-	dbg[3] = new_ang/11930465; // to deg.
 	move_absa_rels_twostep(new_ang, new_fwd);
 	correct_xy = 1;
 
@@ -346,6 +351,24 @@ void navig_fsm1()
 
 void navig_fsm2()
 {
+	if(cur_move.state && cur_move.rel_fwd > 0) // check sonars if running positive forward.
+	{
+		int son = nearest_sonar();
+		int limit_status = speed_limit_status();
+		if((limit_status == 0 && son < 50) ||
+		   (limit_status == 1 && son < 35) ||
+		   (limit_status == 2 && son < 20))
+		{
+			lower_speed_limit();
+		}
+
+		if(son < 12)
+		{
+			reset_movement();
+			cur_move.state = 0;
+		}
+	}
+
 	move_fsm();
 	dbg[1] = cur_move.state;
 }

@@ -377,8 +377,8 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 	int points1 = scan_num_points(img1);
 	int points2 = scan_num_points(img2);
 
-	dbg[6] = points1;
-	dbg[7] = points2;
+	//dbg[6] = points1;
+	//dbg[7] = points2;
 
 	if(points1 < 40 || points2 < 40)
 	{

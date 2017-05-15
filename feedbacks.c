@@ -11,7 +11,6 @@ Keeps track of position & angle, controls the motors.
 #include "feedbacks.h"
 #include "gyro_xcel_compass.h"
 #include "motcons.h"
-#include "sonar.h"
 #include "sin_lut.h"
 #include "navig.h"
 
@@ -19,7 +18,6 @@ Keeps track of position & angle, controls the motors.
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
 extern volatile int dbg[10];
-extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
@@ -94,11 +92,24 @@ void zero_xcel_long_integrals()
 }
 
 static int fwd_speed_limit;
+static int ang_speed_limit = 0;
 static int speed_limit_lowered;
 
 void take_control()
 {
 	manual_control = 0;
+}
+
+int speed_limit_status()
+{
+	return speed_limit_lowered;
+}
+
+void lower_speed_limit()
+{
+	speed_limit_lowered++;
+	ang_top_speed >>= 1;
+	fwd_top_speed >>= 1;
 }
 
 void rotate_rel(int angle)
@@ -350,16 +361,6 @@ extern volatile int16_t dbg_timing_shift;
 #define ANG_1_DEG 11930465
 #define ANG_01_DEG 1193047
 
-int nearest_sonar()
-{
-	int n = 99999;
-	if(latest_sonars[0] && latest_sonars[0] < n) n = latest_sonars[0];
-	if(latest_sonars[1] && latest_sonars[1] < n) n = latest_sonars[1];
-	if(latest_sonars[2] && latest_sonars[2] < n) n = latest_sonars[2];
-	return n;
-}
-
-
 // Run this at 1 kHz
 void run_feedbacks(int sens_status)
 {
@@ -373,7 +374,6 @@ void run_feedbacks(int sens_status)
 	static int speedb = 0;
 
 	static int ang_speed = 0;
-	static int ang_speed_limit = 0;
 
 	static int fwd_speed = 0;
 
@@ -386,7 +386,7 @@ void run_feedbacks(int sens_status)
 	cnt++;
 
 
-	if(robot_nonmoving_cnt > 2000)
+	if(robot_nonmoving_cnt > 1500)
 		robot_nonmoving = 1;
 	else
 	{
@@ -396,27 +396,6 @@ void run_feedbacks(int sens_status)
 
 	int ang_err = cur_pos.ang - aim_angle;
 	int fwd_err = aim_fwd;
-
-
-	int son = nearest_sonar();
-	if((speed_limit_lowered == 0 && son < 40) ||
-	   (speed_limit_lowered == 1 && son < 28) ||
-	   (speed_limit_lowered == 2 && son < 15))
-	{
-		speed_limit_lowered++;
-		ang_speed_limit >>= 1;
-		fwd_speed_limit >>= 1;
-	}
-
-	if(nearest_sonar() < 10)
-	{
-		if(fwd_err > 0) // allow backwards
-		{
-			reset_movement();
-		//	dbg[9]++;
-		}
-	}
-
 
 	if(straight_allowed && (fwd_err < -150 || fwd_err > 150))
 	{
@@ -485,7 +464,7 @@ void run_feedbacks(int sens_status)
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
 		if(ang_speed_limit < ang_top_speed) ang_speed_limit += ang_accel;
-		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= ang_accel;
+		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= 2*ang_accel;
 		else ang_speed_limit = ang_top_speed;
 
 		int new_ang_speed = (ang_err>>20)*ang_p + ((ang_err>0)?22000:-22000) /*step-style feedforward for minimum speed*/;
@@ -544,7 +523,7 @@ void run_feedbacks(int sens_status)
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
 		if(fwd_speed_limit < fwd_top_speed) fwd_speed_limit += fwd_accel;
-		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= fwd_accel;
+		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= 2*fwd_accel;
 		else fwd_speed_limit = fwd_top_speed;
 
 		int new_fwd_speed = (fwd_err>>4)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
@@ -573,9 +552,9 @@ void run_feedbacks(int sens_status)
 
 		int latest[3] = {latest_gyro->x, latest_gyro->y, latest_gyro->z};
 
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 600
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 300
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 200
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 800
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 600
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 400
 		if(latest[0] < -GYRO_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_MOVEMENT_DETECT_THRESHOLD_X ||
 		   latest[1] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_MOVEMENT_DETECT_THRESHOLD_Y ||
 		   latest[2] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_MOVEMENT_DETECT_THRESHOLD_Z)
@@ -607,6 +586,8 @@ void run_feedbacks(int sens_status)
 			gyro_long_integrals[i] += latest[i];
 			gyro_short_integrals[i] += latest[i];
 		}
+
+		dbg[2] = gyro_dc_corrs[2]>>15;
 
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
 		// Correct ratio = (7.8125*10^-6)/(360/(2^32)) = 93.2067555555589653990
