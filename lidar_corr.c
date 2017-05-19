@@ -43,6 +43,7 @@ static int PASS1_A_WEIGH[PASS1_NUM_A] =
 	11
 };
 
+/*
 #define PASS1_NUM_X 11
 static int PASS1_X[PASS1_NUM_X] =
 {
@@ -64,6 +65,41 @@ static int PASS1_X_WEIGH[PASS1_NUM_X] =
 	13,
 	15,
 	17,
+	18,
+	18,
+	18,
+	17,
+	15,
+	13,
+	10
+};
+*/
+
+#define PASS1_NUM_X 13
+static int PASS1_X[PASS1_NUM_X] =
+{
+	-190
+	-150,
+	-120,
+	-90,
+	-60,
+	-30,
+	0,
+	30,
+	60,
+	90,
+	120,
+	150,
+	190
+};
+static int PASS1_X_WEIGH[PASS1_NUM_X] =
+{
+	10,
+	13,
+	15,
+	17,
+	18,
+	18,
 	18,
 	18,
 	18,

@@ -77,6 +77,11 @@ lidar_scan_t* move_get_valid_lidar(int idx)
 	return 0;
 }
 
+void move_mark_lidar_nonread(int idx)
+{
+	cur_move.lidar_nonread[idx] = 1;
+}
+
 lidar_scan_t* move_get_lidar(int idx)
 {
 	if(idx < 0 || idx > 2)
@@ -192,7 +197,7 @@ void move_fsm()
 		if(lidar_is_complete())
 		{
 			copy_lidar_half2(cur_move.lidars[1].scan);
-			cur_move.lidar_nonread[1] = 1;
+//			cur_move.lidar_nonread[1] = 1;
 			cur_move.state++;
 		}
 		break;
@@ -248,7 +253,7 @@ void move_fsm()
 			allow_angular(1);
 			allow_straight(1);
 			copy_lidar_half2(cur_move.lidars[2].scan);
-			cur_move.lidar_nonread[2] = 1;
+//			cur_move.lidar_nonread[2] = 1;
 			cur_move.state++;
 		}
 		break;

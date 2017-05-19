@@ -1009,6 +1009,7 @@ int main()
 			scb->pos.x += lid_corr.x;
 			scb->pos.y += lid_corr.y;
 			lidar_calc_req = 0;
+			move_mark_lidar_nonread(calc_req);
 
 			if(corr_ret == 0) delay_ms(100);
 		}
