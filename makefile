@@ -54,7 +54,6 @@ syms:
 asm: $(ASMS)
 
 e: 
-	nano main.c gyro_xcel_compass.h gyro_xcel_compass.c lidar.h lidar.c optflow.h optflow.c motcons.h motcons.c stm32init.c flash.h flash.c sonar.h sonar.c comm.h
-
+	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar_corr.h lidar_corr.c
 s:
 	sudo screen /dev/ttyUSB0 115200

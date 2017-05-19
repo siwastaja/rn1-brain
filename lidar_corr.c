@@ -63,11 +63,11 @@ static int PASS1_X_WEIGH[PASS1_NUM_X] =
 	10,
 	13,
 	15,
-	16,
 	17,
 	18,
+	18,
+	18,
 	17,
-	16,
 	15,
 	13,
 	10
@@ -109,14 +109,16 @@ static int PASS3_A[PASS3_NUM_A] =
 	2*ANG_0_25_DEG
 };
 
-#define PASS3_NUM_X 5
+#define PASS3_NUM_X 7
 static int PASS3_X[PASS3_NUM_X] =
 {
-	-10,
-	-5,
+	-9,
+	-6,
+	-3,
 	0,
-	5,
-	10,
+	3,
+	6,
+	9
 };
 
 
@@ -307,7 +309,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 			300mm	256
 		*/
 
-		int32_t dist_scaled = (256*(400*400+1600))/(smallest+1600);
+		int32_t dist_scaled = (256*(400*400+1200))/(smallest+1200);
 		dist_sum += dist_scaled;
 	}
 

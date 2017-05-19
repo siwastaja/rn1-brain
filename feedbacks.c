@@ -55,6 +55,7 @@ int robot_nonmoving = 0;
 
 static void robot_moves()
 {
+	dbg[8]++;
 	robot_nonmoving_cnt = 0;
 	robot_nonmoving = 0;
 }
@@ -208,6 +209,8 @@ void zero_angle()
 
 void zero_coords()
 {
+	dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
+
 	cur_pos.x = 0;
 	cur_pos.y = 0;
 }
@@ -587,16 +590,32 @@ void run_feedbacks(int sens_status)
 			gyro_short_integrals[i] += latest[i];
 		}
 
-		dbg[2] = gyro_dc_corrs[2]>>15;
+/*		dbg[2] = gyro_dc_corrs[2]>>15;
+
+		if(robot_nonmoving)
+		{
+			if(latest[2] < dbg[4]) dbg[4] = latest[2];
+			if(latest[2] > dbg[5]) dbg[5] = latest[2];
+		}
+		else
+		{
+			if(latest[2] < dbg[6]) dbg[6] = latest[2];
+			if(latest[2] > dbg[7]) dbg[7] = latest[2];
+		}
+*/
 
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
 		// Correct ratio = (7.8125*10^-6)/(360/(2^32)) = 93.2067555555589653990
 		// Approximated ratio = 763550/8192  = 763550>>13 = 93.20678710937500
 		// Corrected empirically from there.
 
-		int gyro_blank = robot_nonmoving?(40*5):(0); // Prevent slow gyro drifting during no operation
+//		int gyro_blank = robot_nonmoving?(40*5):(0); // Prevent slow gyro drifting during no operation
 
-		if(latest[2] < -1*gyro_blank || latest[2] > gyro_blank)
+		int gyro_blank = robot_nonmoving?(100*5):(50*5); // Prevent slow gyro drifting during no operation
+
+		if(latest[2] < -1*gyro_blank)  // Negative = left
+			cur_pos.ang += ((int64_t)latest[2]*(int64_t)763300)>>13;
+		else if(latest[2] > gyro_blank) // Positive = right
 			cur_pos.ang += ((int64_t)latest[2]*(int64_t)763300)>>13;
 	}
 

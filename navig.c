@@ -107,7 +107,6 @@ void move_fsm()
 		allow_straight(0);
 		if(!robot_moving())
 		{
-//			dbg[2] = dbg[3] = dbg[4] = dbg[5] = 0;
 			cur_move.lidars[0].pos.ang = 0;
 			cur_move.lidars[0].pos.x = 9999;	
 			cur_move.lidars[0].pos.y = 9999;
@@ -167,7 +166,6 @@ void move_fsm()
 		case MOVE_WAIT_ROTATION:
 		if(!correcting_either())
 		{
-//			dbg[3] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -176,7 +174,6 @@ void move_fsm()
 		case MOVE_LIDAR_SYNC_1:
 		if(lidar_is_complete())
 		{
-//			dbg[4] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -185,7 +182,6 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_1A:
 		if(lidar_is_half())
 		{
-//			dbg[5] = dcnt; dcnt = 0;
 			COPY_POS_PER10(cur_move.lidars[1].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[1].scan);
 			cur_move.state++;
@@ -195,7 +191,6 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_1B:
 		if(lidar_is_complete())
 		{
-//			dbg[6] = dcnt; dcnt = 0;
 			copy_lidar_half2(cur_move.lidars[1].scan);
 			cur_move.lidar_nonread[1] = 1;
 			cur_move.state++;
@@ -203,7 +198,7 @@ void move_fsm()
 		break;
 
 		case MOVE_WAIT_CALC_1:
-		if(lidar_calc_req != 1) // If we still have the previous calc1 going on, let it finish. calc2 is ok to still run.
+		if(!lidar_calc_req) // Let previous calc finish first
 		{
 			lidar_calc_req = 1;
 			allow_angular(1);
@@ -219,12 +214,10 @@ void move_fsm()
 		{
 			change_angle_abs(cur_move.abs_ang);
 			change_straight_rel(cur_move.rel_fwd);
-			dbg[4]++;
 		}
 
 		if(!correcting_either())
 		{
-//			dbg[7] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -233,7 +226,6 @@ void move_fsm()
 		case MOVE_LIDAR_SYNC_2:
 		if(lidar_is_complete())
 		{
-//			dbg[8] = dcnt; dcnt = 0;
 			lidar_reset_flags();
 			cur_move.state++;
 		}
@@ -242,7 +234,6 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2A:
 		if(lidar_is_half())
 		{
-//			dbg[9] = dcnt; dcnt = 0;
 			COPY_POS_PER10(cur_move.lidars[2].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[2].scan);
 			cur_move.state++;
@@ -263,7 +254,7 @@ void move_fsm()
 		break;
 
 		case MOVE_WAIT_CALC_2:
-		if(lidar_calc_req != 2) // If previous calc2 is still unfinished, let it finish. calc1 is ok to still run.
+		if(!lidar_calc_req) // Let calc1 finish first
 		{
 			lidar_calc_req = 2;
 			cur_move.state = 0;
@@ -280,7 +271,6 @@ void move_fsm()
 
 void move_rel_twostep(int angle16, int fwd /*in mm*/)
 {
-	dbg[8]+=100;
 	reset_movement();
 	take_control();
 	correct_xy = 0;
@@ -295,7 +285,6 @@ void move_rel_twostep(int angle16, int fwd /*in mm*/)
 
 void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
 {
-	dbg[8]+=100;
 	reset_movement();
 	take_control();
 	correct_xy = 0;
@@ -328,8 +317,6 @@ void xy_fsm()
 
 void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars)
 {
-	dbg[2] = dbg[3] = dbg[4] = 0;
-
 	dest_x = x;
 	dest_y = y;
 

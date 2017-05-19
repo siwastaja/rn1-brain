@@ -985,14 +985,26 @@ int main()
 			lidar_scan_t* sca = move_get_lidar(calc_req-1);
 			lidar_scan_t* scb = move_get_lidar(calc_req);
 
+//			lidar_scan_t sca_copy, scb_copy;
+//			memcpy(&sca_copy, sca, sizeof(lidar_scan_t));
+//			memcpy(&scb_copy, scb, sizeof(lidar_scan_t));
+
 			corr_ret = do_lidar_corr(sca, scb, &lid_corr);
+
 			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
-//			dbg[2] = corr_ret;
-//			dbg[3] = lid_corr.ang;
-//			dbg[4] = lid_corr.x;
-//			dbg[5] = lid_corr.y;
+
+			if(calc_req == 1)
+			{
+				dbg[4] = lid_corr.ang / 1193046; // to 0.1 degs
+			}
+			if(calc_req == 2)
+			{
+				dbg[5] = lid_corr.ang / 1193046; // to 0.1 degs
+			}
+
+
 			correct_location_without_moving(lid_corr);
-			// correct the image, too, for sending:
+			// correct the image, too
 			scb->pos.ang += lid_corr.ang;
 			scb->pos.x += lid_corr.x;
 			scb->pos.y += lid_corr.y;
