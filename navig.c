@@ -302,6 +302,8 @@ void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
 	cur_move.lidar_nonread[2] = 0;
 }
 
+static int back_mode_hommel = 0;
+
 void xy_fsm()
 {
 	if(!correct_xy)
@@ -315,13 +317,31 @@ void xy_fsm()
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
 
+	if(back_mode_hommel == 2) // Force backwards
+	{
+		new_fwd *= -1;
+		new_ang = (uint32_t)new_ang + 2147483648UL;
+	}
+	else if(back_mode_hommel == 1) // Auto decision
+	{
+		int ang_err = cur_pos.ang - new_ang;
+		dbg[4] = ang_err;
+		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg
+		{
+			dbg[5]++;
+			new_fwd *= -1;
+			new_ang = (uint32_t)new_ang + 2147483648UL;
+		}
+	}
+
 	cur_move.rel_fwd = new_fwd;
 	cur_move.abs_ang = new_ang;
 }
 
 
-void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars)
+void move_xy_abs(int32_t x, int32_t y, int back_mode)
 {
+	back_mode_hommel = back_mode;
 	dest_x = x;
 	dest_y = y;
 
@@ -330,6 +350,23 @@ void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars)
 
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
+
+	if(back_mode == 2) // Force backwards
+	{
+		new_fwd *= -1;
+		new_ang = (uint32_t)new_ang + 2147483648UL;
+	}
+	else if(back_mode == 1) // Auto decision
+	{
+		int ang_err = cur_pos.ang - new_ang;
+		dbg[4] = ang_err;
+		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg
+		{
+			dbg[5]++;
+			new_fwd *= -1;
+			new_ang = (uint32_t)new_ang + 2147483648UL;
+		}
+	}
 
 	move_absa_rels_twostep(new_ang, new_fwd);
 	correct_xy = 1;

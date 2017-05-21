@@ -4,7 +4,7 @@
 #include "lidar.h"
 
 void move_rel_twostep(int angle, int fwd /*in mm*/);
-void move_xy_abs(int32_t x, int32_t y, int stop_for_lidars);
+void move_xy_abs(int32_t x, int32_t y, int back_mode);
 void navig_fsm1();
 void navig_fsm2();
 lidar_scan_t* move_get_valid_lidar(int idx);

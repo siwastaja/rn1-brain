@@ -449,7 +449,7 @@ void handle_message()
 
 		case 0x82:
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
-		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 0);
+		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 1 /*auto decide reverse*/);
 		break;
 
 		case 0x8f:
@@ -993,7 +993,7 @@ int main()
 
 			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
 
-			if(calc_req == 1)
+/*			if(calc_req == 1)
 			{
 				dbg[4] = lid_corr.ang / 1193046; // to 0.1 degs
 			}
@@ -1001,7 +1001,7 @@ int main()
 			{
 				dbg[5] = lid_corr.ang / 1193046; // to 0.1 degs
 			}
-
+*/
 
 			correct_location_without_moving(lid_corr);
 			// correct the image, too
