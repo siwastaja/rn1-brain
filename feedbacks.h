@@ -34,12 +34,11 @@ void lower_speed_limit();
 typedef struct
 {
 	int32_t ang; // int32_t range --> -180..+180 deg; let it overflow freely. 1 unit = 83.81903171539 ndeg
-	int32_t x;   // with lidars: mm. With cur_pos: 1/10 mm.
-	int32_t y;
+	int32_t x;   // mm
+	int32_t y;   // mm
 } pos_t;
 
 #define COPY_POS(to, from) { (to).ang = (from).ang; (to).x = (from).x; (to).y = (from).y; }
-#define COPY_POS_PER10(to, from) { (to).ang = (from).ang; (to).x = (from).x/10; (to).y = (from).y/10; }
 
 extern pos_t cur_pos;
 

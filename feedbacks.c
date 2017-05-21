@@ -28,6 +28,9 @@ int64_t xcel_short_integrals[3];
 int xcel_dc_corrs[3];
 int gyro_dc_corrs[3];
 
+// cur x,y are being integrated at higher than 1mm resolution; the result is copied in mm to cur_pos.
+static int64_t cur_x;
+static int64_t cur_y;
 pos_t cur_pos;
 
 int gyro_timing_issues;
@@ -44,7 +47,7 @@ int aim_fwd;
 int final_fwd_accel = 400;
 int fwd_accel = 350; // was 250, kinda sluggish
 int fwd_top_speed;
-int fwd_p = 3500; // 5000 gives rather strong deceleration; 2500 feels sluggish
+int fwd_p = 2200; // 3100 gives rather strong deceleration; 1600 feels sluggish
 
 volatile int manual_control;
 volatile int manual_common_speed;
@@ -55,7 +58,6 @@ int robot_nonmoving = 0;
 
 static void robot_moves()
 {
-	dbg[8]++;
 	robot_nonmoving_cnt = 0;
 	robot_nonmoving = 0;
 }
@@ -143,7 +145,7 @@ void straight_rel(int fwd /*in mm*/)
 	speed_limit_lowered = 0;
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
-	aim_fwd = fwd*10; // in 0.1mm
+	aim_fwd = fwd<<16;
 	fwd_top_speed = 800000; // was 600000
 	manual_control = 0;
 	robot_moves();
@@ -151,7 +153,7 @@ void straight_rel(int fwd /*in mm*/)
 
 void change_straight_rel(int fwd /*in mm*/)
 {
-	aim_fwd = fwd*10; // in 0.1mm
+	aim_fwd = fwd<<16;
 }
 
 void reset_movement()
@@ -188,12 +190,12 @@ static int fwd_idle = 1;
 
 int correcting_angle()
 {
-	return do_correct_angle || (ang_idle < 700); // was 500
+	return do_correct_angle || (ang_idle < 700);
 }
 
 int correcting_straight()
 {
-	return do_correct_fwd || (fwd_idle < 700); // was 500
+	return do_correct_fwd || (fwd_idle < 700);
 }
 
 int correcting_either()
@@ -211,14 +213,13 @@ void zero_coords()
 {
 	dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
 
-	cur_pos.x = 0;
-	cur_pos.y = 0;
+	cur_x = cur_y = 0;
 }
 
 void correct_location_without_moving(pos_t corr)
 {
-	cur_pos.x += corr.x;
-	cur_pos.y += corr.y;
+	cur_x += corr.x<<16;
+	cur_y += corr.y<<16;
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
 }
@@ -400,12 +401,11 @@ void run_feedbacks(int sens_status)
 	int ang_err = cur_pos.ang - aim_angle;
 	int fwd_err = aim_fwd;
 
-	if(straight_allowed && (fwd_err < -150 || fwd_err > 150))
+	if(straight_allowed && (fwd_err < -15*65536 || fwd_err > 15*65536))
 	{
 		do_correct_fwd = 1;
 	}
-	
-	if(!straight_allowed || (fwd_err > -80 && fwd_err < 80))
+	if(!straight_allowed || (fwd_err > -8*65536 && fwd_err < 8*65536))
 	{
 		do_correct_fwd = 0;
 	}
@@ -455,7 +455,7 @@ void run_feedbacks(int sens_status)
 		}
 	}
 
-	if(!manual_control && do_correct_angle) // && angular_allowed)
+	if(!manual_control && do_correct_angle)
 	{
 		if(ang_idle)
 		{
@@ -485,17 +485,20 @@ void run_feedbacks(int sens_status)
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[2].pos;
 	wheel_counts[1] = -1*motcon_rx[3].pos;
-
 	if(first)
 	{
 		first--;
 		prev_wheel_counts[0] = wheel_counts[0];
 		prev_wheel_counts[1] = wheel_counts[1];
 	}
-
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
+	prev_wheel_counts[0] = wheel_counts[0];
+	prev_wheel_counts[1] = wheel_counts[1];
 
-	int movement = ((wheel_deltas[0] + wheel_deltas[1])*85)>>1; // in 0.1mm
+	if(wheel_deltas[0] != 0 || wheel_deltas[1] != 0)
+		robot_moves();
+
+	int movement = (wheel_deltas[0] + wheel_deltas[1])*278528; // in 1mm/65536
 
 	aim_fwd -= movement;
 
@@ -505,16 +508,18 @@ void run_feedbacks(int sens_status)
 	int x_idx = SIN_LUT_POINTS/4 - y_idx;
 	if(x_idx < 0) x_idx += SIN_LUT_POINTS;
 	else if(x_idx >= SIN_LUT_POINTS) x_idx -= SIN_LUT_POINTS;
-	cur_pos.x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
-	cur_pos.y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
 
+	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
+	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
 
-	prev_wheel_counts[0] = wheel_counts[0];
-	prev_wheel_counts[1] = wheel_counts[1];
+	// Copy accurate accumulation variables to cur_pos here:
+	cur_pos.x = cur_x>>16;
+	cur_pos.y = cur_y>>16;
+
 
 	int tmp_expected_accel = -1*fwd_speed;
 
-	if(!manual_control && do_correct_fwd) // && straight_allowed)
+	if(!manual_control && do_correct_fwd)
 	{
 		if(fwd_idle)
 		{
@@ -529,7 +534,7 @@ void run_feedbacks(int sens_status)
 		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= 2*fwd_accel;
 		else fwd_speed_limit = fwd_top_speed;
 
-		int new_fwd_speed = (fwd_err>>4)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
+		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
 		if(new_fwd_speed < 0 && new_fwd_speed < -1*fwd_speed_limit) new_fwd_speed = -1*fwd_speed_limit;
 		if(new_fwd_speed > 0 && new_fwd_speed > fwd_speed_limit) new_fwd_speed = fwd_speed_limit;
 

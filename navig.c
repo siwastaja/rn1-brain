@@ -150,7 +150,7 @@ void move_fsm()
 			   Since the robot is not moving, it shouldn't matter whether we sample cur_angle, cur_x, cur_y
 			   at the start, middle or end of the lidar scan, but to be on the safe side, we do it in the middle.
 			*/
-			COPY_POS_PER10(cur_move.lidars[0].pos, cur_pos);
+			COPY_POS(cur_move.lidars[0].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[0].scan);
 			cur_move.state++;
 		}
@@ -187,7 +187,7 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_1A:
 		if(lidar_is_half())
 		{
-			COPY_POS_PER10(cur_move.lidars[1].pos, cur_pos);
+			COPY_POS(cur_move.lidars[1].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[1].scan);
 			cur_move.state++;
 		}
@@ -239,7 +239,7 @@ void move_fsm()
 		case MOVE_LIDAR_STORE_2A:
 		if(lidar_is_half())
 		{
-			COPY_POS_PER10(cur_move.lidars[2].pos, cur_pos);
+			COPY_POS(cur_move.lidars[2].pos, cur_pos);
 			copy_lidar_half1(cur_move.lidars[2].scan);
 			cur_move.state++;
 		}
@@ -311,8 +311,8 @@ void xy_fsm()
 		return;
 	}
 
-	int dx = dest_x - (cur_pos.x/10);
-	int dy = dest_y - (cur_pos.y/10);
+	int dx = dest_x - cur_pos.x;
+	int dy = dest_y - cur_pos.y;
 
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
@@ -325,10 +325,8 @@ void xy_fsm()
 	else if(back_mode_hommel == 1) // Auto decision
 	{
 		int ang_err = cur_pos.ang - new_ang;
-		dbg[4] = ang_err;
 		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg
 		{
-			dbg[5]++;
 			new_fwd *= -1;
 			new_ang = (uint32_t)new_ang + 2147483648UL;
 		}
@@ -345,8 +343,8 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode)
 	dest_x = x;
 	dest_y = y;
 
-	int dx = dest_x - (cur_pos.x/10);
-	int dy = dest_y - (cur_pos.y/10);
+	int dx = dest_x - cur_pos.x;
+	int dy = dest_y - cur_pos.y;
 
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
@@ -359,10 +357,8 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode)
 	else if(back_mode == 1) // Auto decision
 	{
 		int ang_err = cur_pos.ang - new_ang;
-		dbg[4] = ang_err;
 		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg
 		{
-			dbg[5]++;
 			new_fwd *= -1;
 			new_ang = (uint32_t)new_ang + 2147483648UL;
 		}

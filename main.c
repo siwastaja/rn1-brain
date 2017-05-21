@@ -1131,8 +1131,6 @@ int main()
 			else if(send_lidar)
 			{
 				COPY_POS(pos, cur_pos);
-				pos.x /= 10;
-				pos.y /= 10;
 
 				int16_t basic_scan[360];
 				copy_lidar_full(basic_scan);
@@ -1166,8 +1164,6 @@ int main()
 			}
 		}
 
-		// Do fancy calculation here :)
-
 		int16_t cur_ang_t = cur_pos.ang>>16;
 		int16_t cur_c_ang_t = cur_compass_angle>>16;
 
@@ -1179,13 +1175,13 @@ int main()
 		txbuf[5] = 0;
 		txbuf[6] = I16_MS(cur_c_ang_t);
 		txbuf[7] = I16_LS(cur_c_ang_t);
-		int tm = cur_pos.x/10;
+		int tm = cur_pos.x;
 		txbuf[8] = I32_I7_4(tm);
 		txbuf[9] = I32_I7_3(tm);
 		txbuf[10] = I32_I7_2(tm);
 		txbuf[11] = I32_I7_1(tm);
 		txbuf[12] = I32_I7_0(tm);
-		tm = cur_pos.y/10;
+		tm = cur_pos.y;
 		txbuf[13] = I32_I7_4(tm);
 		txbuf[14] = I32_I7_3(tm);
 		txbuf[15] = I32_I7_2(tm);
