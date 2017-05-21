@@ -205,6 +205,20 @@ static void scan_to_2d(lidar_scan_t* in, point_t* out)
 	}
 }
 
+// For moving lidar scans with 360 scan points, and 90 position points.
+static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out)
+{
+	for(int i = 0; i < 360; i++)
+	{
+		int pos_idx = i>>2;
+		uint32_t angle = (uint32_t)in->pos[pos_idx].ang + (uint32_t)i*(uint32_t)ANG_1_DEG;
+		int32_t y_idx = (angle)>>SIN_LUT_SHIFT;
+		int32_t x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
+		out[i].x = in->pos[pos_idx].x + (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15);
+		out[i].y = in->pos[pos_idx].y + (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15);
+	}
+}
+
 
 static int scan_num_points(point_t* img)
 {
@@ -215,6 +229,11 @@ static int scan_num_points(point_t* img)
 	}
 	return n;
 }
+
+
+live_lidar_scan_t live1, live2;
+
+live_lidar_scan_t* p_live_store;
 
 
 /*
@@ -280,7 +299,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 	/*
 	For each point in the first image, search the nearest point in the second image; any valid point will do.
 
-	Use square root to scale the distance so that small distances are more meaningfull than large distances;
+	Use 1/x function to scale the distance so that small distances are more meaningfull than large distances;
 	this is to ignore objects that are really different between the images, trying to account for objects common
 	for both images.
 
@@ -351,6 +370,52 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 
 	return dist_sum>>8;
 }
+
+
+
+/*
+	Specifically optimized version for live scans (scans 200ms apart, so smaller differences, but 360 points)
+
+	in 200ms, robot can:
+	* turn 18 degrees at 4 sec/360deg.
+	* go 33 cm at 6 km/h (1.67 m/s)
+
+	So, I decided looking at points for +/- 24 deg is ok.
+*/
+
+
+int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
+{
+	int32_t dist_sum = 0;
+	for(int i = 0; i < 360; i++)
+	{
+		if(!img1[i].valid) continue;
+
+		int smallest = 1000*1000;
+		uint8_t odx = i-24;
+		if(odx < 0) odx+=360;
+		for(int o = 0; o < 48; o++)
+		{
+			odx++;
+			if(odx>359) odx=0;
+			if(!img2[odx].valid) continue;
+			int dx = img2[odx].x - img1[i].x;
+			int dy = img2[odx].y - img1[i].y;
+			int dist = sq(dx) + sq(dy);
+			if(dist < smallest)
+			{
+				smallest = dist;
+			}
+		}
+
+		int32_t dist_scaled = (360*(200*200+400))/(smallest+400);
+		dist_sum += dist_scaled;
+	}
+
+	return dist_sum>>8;
+}
+
+
 
 /*
 

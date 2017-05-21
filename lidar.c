@@ -11,6 +11,7 @@ Full revolution = 1980 bytes
 #include "ext_include/stm32f2xx.h"
 
 #include "lidar.h"
+#include "lidar_corr.h" // for point_t
 
 extern void delay_us(uint32_t i);
 extern void delay_ms(uint32_t i);
@@ -85,6 +86,49 @@ void copy_lidar_full(int16_t* dst_start)
 
 }
 
+
+/*
+	livelidar_add_4points()
+
+	Run this for each lidar data packet.
+	Data is prepared and stored with location info (cur_pos from feedbacks.c) on each sample.
+*/
+int live_store_cnt; 
+
+extern live_lidar_scan_t* p_livelidar_store;
+extern point_t* p_livelid2d_store;
+extern volatile int live_lidar_calc_req;
+
+/*
+	Call lidar_fsm() at 1 kHz.
+*/
+void lidar_fsm()
+{
+	static int prev_cur_packet;
+	int packets_left = DMA2_Stream2->NDTR/22;
+	int cur_packet = 89-packets_left; if(cur_packet == -1) cur_packet = 0;
+
+	if(cur_packet != prev_cur_packet)
+	{
+		int idx = prev_cur_packet;
+		COPY_POS(p_livelidar_store->pos[idx], cur_pos);
+		p_livelid2d_store[idx*4+0].valid = (!lidar_ignore[idx*4+0] && lidar_full_rev[idx].d[0].flags_distance&(1<<15)));
+		p_livelid2d_store[idx*4+1].valid = (!lidar_ignore[idx*4+1] && lidar_full_rev[idx].d[1].flags_distance&(1<<15)));
+		p_livelid2d_store[idx*4+2].valid = (!lidar_ignore[idx*4+2] && lidar_full_rev[idx].d[2].flags_distance&(1<<15)));
+		p_livelid2d_store[idx*4+3].valid = (!lidar_ignore[idx*4+3] && lidar_full_rev[idx].d[3].flags_distance&(1<<15)));
+		p_livelidar_store->scan[idx*4+0] = lidar_full_rev[i].d[0].flags_distance&0x3fff;
+		p_livelidar_store->scan[idx*4+1] = lidar_full_rev[i].d[1].flags_distance&0x3fff;
+		p_livelidar_store->scan[idx*4+2] = lidar_full_rev[i].d[2].flags_distance&0x3fff;
+		p_livelidar_store->scan[idx*4+3] = lidar_full_rev[i].d[3].flags_distance&0x3fff;
+
+		if(prev_cur_packet == 89)
+		{
+			// We just got the full round.
+			live_lidar_calc_req = 1;
+		}
+	}
+	prev_cur_packet = cur_packet;
+}
 
 void generate_lidar_ignore()
 {
@@ -198,7 +242,7 @@ uint16_t lidar_calc_checksum(volatile lidar_datum_t* l)
 volatile int lidar_speed_in_spec = 0;
 
 // run this at 1 kHz
-void lidar_ctrl_loop()
+void lidar_motor_ctrl_loop()
 {
 	static int in_spec_cnt = 0;
 	static int cycle = 0;

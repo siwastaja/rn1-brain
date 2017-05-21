@@ -41,11 +41,18 @@ typedef struct
 	int16_t scan[360];
 } lidar_scan_t;
 
+typedef struct
+{
+	pos_t pos[90]; // Each four points share the same position.
+	int16_t scan[360];
+} live_lidar_scan_t;
+
+
 void sync_lidar();
 void resync_lidar();
 void init_lidar();
 uint16_t lidar_calc_checksum(volatile lidar_datum_t* l);
-void lidar_ctrl_loop();
+void lidar_motor_ctrl_loop();
 void deinit_lidar();
 
 void generate_lidar_ignore();

@@ -532,6 +532,7 @@ volatile int new_gyro, new_xcel, new_compass;
 volatile int int_x, int_y;
 
 volatile int seconds;
+volatile int millisec;
 
 void timebase_10k_handler()
 {
@@ -550,6 +551,7 @@ void timebase_10k_handler()
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
 	{
+		millisec++;
 		sec_gen++;
 		if(sec_gen >= 1000)
 		{
@@ -557,7 +559,7 @@ void timebase_10k_handler()
 			sec_gen = 0;
 		}
 		motcon_fsm();
-		lidar_ctrl_loop();
+		lidar_motor_ctrl_loop();
 		int dx = 0;
 		int dy = 0;
 		optflow_fsm(&dx, &dy);
@@ -590,6 +592,7 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 5)
 	{
+		lidar_fsm();
 		motcon_fsm();
 	}
 	else if(cnt_10k == 6)
@@ -598,7 +601,6 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 7)
 	{
-
 	}
 	else if(cnt_10k == 8)
 	{
@@ -647,6 +649,8 @@ extern pos_t cur_pos;
 extern volatile int ang_idle;
 
 volatile int lidar_calc_req;
+volatile int live_lidar_calc_req;
+
 
 void dev_send_jutsk(point_t* img, int id)
 {
