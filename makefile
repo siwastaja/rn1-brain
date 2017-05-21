@@ -54,6 +54,6 @@ syms:
 asm: $(ASMS)
 
 e: 
-	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar_corr.h lidar_corr.c
+	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar_corr.h lidar_corr.c &
 s:
 	sudo screen /dev/ttyUSB0 115200
