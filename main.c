@@ -649,7 +649,6 @@ extern pos_t cur_pos;
 extern volatile int ang_idle;
 
 volatile int lidar_calc_req;
-volatile int live_lidar_calc_req;
 
 
 void dev_send_jutsk(point_t* img, int id)

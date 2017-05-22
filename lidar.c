@@ -87,20 +87,14 @@ void copy_lidar_full(int16_t* dst_start)
 }
 
 
-/*
-	livelidar_add_4points()
-
-	Run this for each lidar data packet.
-	Data is prepared and stored with location info (cur_pos from feedbacks.c) on each sample.
-*/
-int live_store_cnt; 
-
 extern live_lidar_scan_t* p_livelidar_store;
 extern point_t* p_livelid2d_store;
-extern volatile int live_lidar_calc_req;
-
+extern int* p_livelidar_num_samples_store; // For counting validness of data for lidar-based correction.
 /*
 	Call lidar_fsm() at 1 kHz.
+
+	As lidar produces full revolutions at 5Hz, packets are generated at 450Hz.
+	Data is prepared and stored with location info (cur_pos from feedbacks.c) on each sample.
 */
 void lidar_fsm()
 {
@@ -110,21 +104,58 @@ void lidar_fsm()
 
 	if(cur_packet != prev_cur_packet)
 	{
-		int idx = prev_cur_packet;
-		COPY_POS(p_livelidar_store->pos[idx], cur_pos);
-		p_livelid2d_store[idx*4+0].valid = (!lidar_ignore[idx*4+0] && lidar_full_rev[idx].d[0].flags_distance&(1<<15)));
-		p_livelid2d_store[idx*4+1].valid = (!lidar_ignore[idx*4+1] && lidar_full_rev[idx].d[1].flags_distance&(1<<15)));
-		p_livelid2d_store[idx*4+2].valid = (!lidar_ignore[idx*4+2] && lidar_full_rev[idx].d[2].flags_distance&(1<<15)));
-		p_livelid2d_store[idx*4+3].valid = (!lidar_ignore[idx*4+3] && lidar_full_rev[idx].d[3].flags_distance&(1<<15)));
-		p_livelidar_store->scan[idx*4+0] = lidar_full_rev[i].d[0].flags_distance&0x3fff;
-		p_livelidar_store->scan[idx*4+1] = lidar_full_rev[i].d[1].flags_distance&0x3fff;
-		p_livelidar_store->scan[idx*4+2] = lidar_full_rev[i].d[2].flags_distance&0x3fff;
-		p_livelidar_store->scan[idx*4+3] = lidar_full_rev[i].d[3].flags_distance&0x3fff;
+		int valid;
+		int idx = prev_cur_packet; // We read from previous packet, since writing it is finished.
+		int odx = 89-idx; // We write starting from the end to mirror the lidar image.
+		int valid_tbl_odx = odx/15; // Validness table includes total counts of valid points divided in six 60 degree segments.
+		COPY_POS(p_livelidar_store->pos[odx], cur_pos);
+
+		valid = !((lidar_ignore[idx*4+0]) || (lidar_full_rev[idx].d[0].flags_distance&(1<<15)));
+		p_livelid2d_store[odx*4+3].valid = valid;
+		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
+
+		valid = !((lidar_ignore[idx*4+1]) || (lidar_full_rev[idx].d[1].flags_distance&(1<<15)));
+		p_livelid2d_store[odx*4+2].valid = valid;
+		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
+
+		valid = !((lidar_ignore[idx*4+2]) || (lidar_full_rev[idx].d[2].flags_distance&(1<<15)));
+		p_livelid2d_store[odx*4+1].valid = valid;
+		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
+
+		valid = !((lidar_ignore[idx*4+3]) || (lidar_full_rev[idx].d[3].flags_distance&(1<<15)));
+		p_livelid2d_store[odx*4+0].valid = valid;
+		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
+
+		p_livelidar_store->scan[odx*4+3] = lidar_full_rev[idx].d[0].flags_distance&0x3fff;
+		p_livelidar_store->scan[odx*4+2] = lidar_full_rev[idx].d[1].flags_distance&0x3fff;
+		p_livelidar_store->scan[odx*4+1] = lidar_full_rev[idx].d[2].flags_distance&0x3fff;
+		p_livelidar_store->scan[odx*4+0] = lidar_full_rev[idx].d[3].flags_distance&0x3fff;
+
+		if(prev_cur_packet == 79)
+		{
+			// Time is running out: tell lidar_corr that calculation must be finished ASAP, or terminated.
+			// It won't be terminated right away; the termination condition is not checked too frequently as
+			// it would slow down the process.
+			live_lidar_calc_must_be_finished();
+		}
 
 		if(prev_cur_packet == 89)
 		{
 			// We just got the full round.
-			live_lidar_calc_req = 1;
+
+			// Now processing the two previous lidar images is (must be) finished, and the correction
+			// has already been applied to the latter one. We still need to apply the same correction
+			// to this new image we just finished storing:
+			apply_corr_to_livelidar(p_livelidar_store);
+
+			// Now, correction is applied to both images: the previous one, and the one just finished.
+			// We can swap the buffers to start gathering the new image, and start processing the latest scan:
+			livelidar_storage_finished();
+
+			// One more thing, we need to apply the correction to the robot coordinates right here,
+			// so that we get the new coords applied to the new lidar scan from the start:
+			extern pos_t latest_corr; // from lidar_corr.c
+			correct_location_without_moving(latest_corr);
 		}
 	}
 	prev_cur_packet = cur_packet;

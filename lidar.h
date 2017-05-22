@@ -66,7 +66,26 @@ void lidar_reset_half_flag();
 int lidar_is_complete();
 int lidar_is_half();
 
+void lidar_fsm();
 
+
+/*
+ Lidar-based 2D MAP on uart:
+
+num_bytes
+ 1	uint8 start byte
+ 1	uint7 status
+ 2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
+ 5	int32 cur_x   ( " " )
+ 5	int32 cur_y   ( " " ) 
+1440	360 * point
+	  2	int14  x referenced to cur_x
+	  2	int14  y referenced to cur_y
+
+	Total: 1454
+	Time to tx at 115200: 126 ms
+
+*/
 
 
 #endif

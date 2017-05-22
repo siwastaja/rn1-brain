@@ -12,5 +12,9 @@ typedef struct
 
 int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr);
 
+void live_lidar_calc_must_be_finished();
+void apply_corr_to_livelidar(live_lidar_scan_t* lid);
+void livelidar_storage_finished();
+
 
 #endif

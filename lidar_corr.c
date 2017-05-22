@@ -43,38 +43,6 @@ static int PASS1_A_WEIGH[PASS1_NUM_A] =
 	11
 };
 
-/*
-#define PASS1_NUM_X 11
-static int PASS1_X[PASS1_NUM_X] =
-{
-	-200,
-	-160,
-	-120,
-	-80,
-	-40,
-	0,
-	40,
-	80,
-	120,
-	160,
-	200
-};
-static int PASS1_X_WEIGH[PASS1_NUM_X] =
-{
-	10,
-	13,
-	15,
-	17,
-	18,
-	18,
-	18,
-	17,
-	15,
-	13,
-	10
-};
-*/
-
 #define PASS1_NUM_X 13
 static int PASS1_X[PASS1_NUM_X] =
 {
@@ -206,16 +174,16 @@ static void scan_to_2d(lidar_scan_t* in, point_t* out)
 }
 
 // For moving lidar scans with 360 scan points, and 90 position points.
-static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out)
+static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out, int32_t corr_a, int32_t corr_x, int32_t corr_y)
 {
 	for(int i = 0; i < 360; i++)
 	{
 		int pos_idx = i>>2;
-		uint32_t angle = (uint32_t)in->pos[pos_idx].ang + (uint32_t)i*(uint32_t)ANG_1_DEG;
-		int32_t y_idx = (angle)>>SIN_LUT_SHIFT;
-		int32_t x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
-		out[i].x = in->pos[pos_idx].x + (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15);
-		out[i].y = in->pos[pos_idx].y + (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15);
+		uint32_t angle = (uint32_t)in->pos[pos_idx].ang + (uint32_t)i*(uint32_t)ANG_1_DEG + (uint32_t)corr_a;
+		int y_idx = (angle)>>SIN_LUT_SHIFT;
+		int x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
+		out[i].x = corr_x + in->pos[pos_idx].x + (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15);
+		out[i].y = corr_y + in->pos[pos_idx].y + (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15);
 	}
 }
 
@@ -229,12 +197,6 @@ static int scan_num_points(point_t* img)
 	}
 	return n;
 }
-
-
-live_lidar_scan_t live1, live2;
-
-live_lidar_scan_t* p_live_store;
-
 
 /*
 
@@ -377,12 +339,15 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 	Specifically optimized version for live scans (scans 200ms apart, so smaller differences, but 360 points)
 
 	in 200ms, robot can:
-	* turn 18 degrees at 4 sec/360deg.
+	* (turn 18 degrees at 4 sec/360deg., which is irrelevant since we know how much we have turned.)
 	* go 33 cm at 6 km/h (1.67 m/s)
 
-	So, I decided looking at points for +/- 24 deg is ok.
+	So, I decided looking at points for +/- 20 deg is ok.
 */
 
+int angle_optim; // must be smaller than SEARCH_RANGE
+
+#define SEARCH_RANGE 25
 
 int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 {
@@ -391,24 +356,38 @@ int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 	{
 		if(!img1[i].valid) continue;
 
-		int smallest = 1000*1000;
-		uint8_t odx = i-24;
-		if(odx < 0) odx+=360;
-		for(int o = 0; o < 48; o++)
+		int smallest = 500*500;
+		int o = i-SEARCH_RANGE+angle_optim;
+		if(o < 0) o+=360;
+		int o_end = o+2*SEARCH_RANGE;
+
+		// let o run [i-SEARCH_RANGE..i+SEARCH_RANGE], with wrapping from 359->0.
+		// Two separate loops prevent wrapping condition on each inner loop.
+		if(o_end > 360)
 		{
-			odx++;
-			if(odx>359) odx=0;
-			if(!img2[odx].valid) continue;
-			int dx = img2[odx].x - img1[i].x;
-			int dy = img2[odx].y - img1[i].y;
-			int dist = sq(dx) + sq(dy);
-			if(dist < smallest)
+			o_end -= 360;
+			for(; o < 360; o++)
 			{
-				smallest = dist;
+				if(!img2[o].valid) continue;
+				int dx = img2[o].x - img1[i].x;
+				int dy = img2[o].y - img1[i].y;
+				int dist = sq(dx) + sq(dy);
+				if(dist < smallest) smallest = dist;
 			}
+			o = 0;
 		}
 
-		int32_t dist_scaled = (360*(200*200+400))/(smallest+400);
+		for(; o < o_end; o++)
+		{
+			if(!img2[o].valid) continue;
+			int dx = img2[o].x - img1[i].x;
+			int dy = img2[o].y - img1[i].y;
+			int dist = sq(dx) + sq(dy);
+			if(dist < smallest) smallest = dist;
+		}
+
+
+		int32_t dist_scaled = (256*(200*200+200))/(smallest+200);
 		dist_sum += dist_scaled;
 	}
 
@@ -653,4 +632,353 @@ int do_lidar_corr(lidar_scan_t* scan1, lidar_scan_t* scan2, pos_t* corr)
 	return 0;
 }
 
+
+/*
+
+State                :    0   1   2   0   1   2   0   1   2
+Lidar store          :   111 222 333 111 222 333 111 222 333
+Process img1 (before):           111 222 333 111 222 333 111
+Process img2 (after) :           222 333 111 222 333 111 222
+Apply correction to  :              2   3   1   2   3   1   2
+Apply correction to  :              3   1   2   3   1   2   3
+Apply corr to cur_pos:              x   x   x   x   x   x   x
+*/
+
+pos_t latest_corr;
+
+void apply_corr_to_livelidar(live_lidar_scan_t* lid)
+{
+	for(int i = 0; i < 90; i++)
+	{
+		lid->pos[i].ang += latest_corr.ang;
+		lid->pos[i].x   += latest_corr.x;
+		lid->pos[i].y   += latest_corr.y;
+	}
+}
+
+live_lidar_scan_t lidlive1, lidlive2, lidlive3;
+point_t l2dlive1[360], l2dlive2[360], l2dlive3[360];
+
+live_lidar_scan_t* p_livelidar_store;
+point_t*           p_livelid2d_store;
+
+live_lidar_scan_t* p_livelidar_img1;
+point_t*           p_livelid2d_img1;
+
+live_lidar_scan_t* p_livelidar_img2;
+point_t*           p_livelid2d_img2;
+
+// For counting validness of data for lidar-based correction.
+int num_samples1[6];
+int num_samples2[6];
+int num_samples3[6];
+
+int* p_livelidar_num_samples_store;
+int* p_livelidar_num_samples_img1;
+int* p_livelidar_num_samples_img2;
+
+int live_lidar_calc_req;
+
+void livelidar_storage_finished()
+{
+	static int state = 0;
+
+	if(state == 0)
+	{
+		p_livelidar_store = &lidlive2;
+		p_livelid2d_store = l2dlive2;
+		for(int i=0; i<6; i++) num_samples2[i] = 0;
+		p_livelidar_num_samples_store = num_samples2;
+		p_livelidar_img1  = &lidlive3;
+		p_livelid2d_img1  = l2dlive3;
+		p_livelidar_num_samples_img1 = num_samples3;
+		p_livelidar_img2  = &lidlive1;
+		p_livelid2d_img2  = l2dlive1;
+		p_livelidar_num_samples_img2 = num_samples1;
+		state = 1;
+	}
+	else if(state == 1)
+	{
+		p_livelidar_store = &lidlive3;
+		p_livelid2d_store = l2dlive3;
+		for(int i=0; i<6; i++) num_samples3[i] = 0;
+		p_livelidar_num_samples_store = num_samples3;
+		p_livelidar_img1  = &lidlive1;
+		p_livelid2d_img1  = l2dlive1;
+		p_livelidar_num_samples_img1 = num_samples1;
+		p_livelidar_img2  = &lidlive2;
+		p_livelid2d_img2  = l2dlive2;
+		p_livelidar_num_samples_img2 = num_samples2;
+		state = 2;
+	}
+	else // state == 2
+	{
+		p_livelidar_store = &lidlive1;
+		p_livelid2d_store = l2dlive1;
+		for(int i=0; i<6; i++) num_samples1[i] = 0;
+		p_livelidar_num_samples_store = num_samples1;
+		p_livelidar_img1  = &lidlive2;
+		p_livelid2d_img1  = l2dlive2;
+		p_livelidar_num_samples_img1 = num_samples2;
+		p_livelidar_img2  = &lidlive3;
+		p_livelid2d_img2  = l2dlive3;
+		p_livelidar_num_samples_img2 = num_samples3;
+		state = 0;
+	}
+
+	live_lidar_calc_req = 1;
+}
+
+
+
+
+
+#define LIVE_PASS1_NUM_A 5
+static int LIVE_PASS1_A[LIVE_PASS1_NUM_A] =
+{
+	-2*ANG_1_DEG,
+	-1*ANG_1_DEG,
+	0,
+	1*ANG_1_DEG,
+	2*ANG_1_DEG,
+};
+static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
+{
+	5,
+	6,
+	6,
+	6,
+	5,
+};
+
+#define LIVE_PASS1_NUM_X 7
+static int LIVE_PASS1_X[LIVE_PASS1_NUM_X] =
+{
+	-90,
+	-60,
+	-30,
+	0,
+	30,
+	60,
+	90,
+};
+static int LIVE_PASS1_X_WEIGH[LIVE_PASS1_NUM_X] =
+{
+	4,
+	5,
+	6,
+	6,
+	6,
+	5,
+	4,
+};
+
+
+#define LIVE_PASS2_NUM_A 5
+static int LIVE_PASS2_A[LIVE_PASS2_NUM_A] =
+{
+	-2*ANG_0_5_DEG,
+	-1*ANG_0_5_DEG,
+	0,
+	1*ANG_0_5_DEG,
+	2*ANG_0_5_DEG
+};
+
+#define LIVE_PASS2_NUM_X 7
+static int LIVE_PASS2_X[LIVE_PASS2_NUM_X] =
+{
+	-30,
+	-20,
+	-10,
+	0,
+	10,
+	20,
+	30,
+};
+
+
+#define LIVE_PASS3_NUM_A 5
+static int LIVE_PASS3_A[LIVE_PASS3_NUM_A] =
+{
+	-2*ANG_0_25_DEG,
+	-1*ANG_0_25_DEG,
+	0,
+	1*ANG_0_25_DEG,
+	2*ANG_0_25_DEG
+};
+
+#define LIVE_PASS3_NUM_X 7
+static int LIVE_PASS3_X[LIVE_PASS3_NUM_X] =
+{
+	-9,
+	-6,
+	-3,
+	0,
+	3,
+	6,
+	9
+};
+
+
+// Use the same tables for X & Y
+#define LIVE_PASS1_NUM_Y LIVE_PASS1_NUM_X
+#define LIVE_PASS1_Y LIVE_PASS1_X
+#define LIVE_PASS1_Y_WEIGH LIVE_PASS1_X_WEIGH
+#define LIVE_PASS2_NUM_Y LIVE_PASS2_NUM_X
+#define LIVE_PASS2_Y LIVE_PASS2_X
+#define LIVE_PASS3_NUM_Y LIVE_PASS3_NUM_X
+#define LIVE_PASS3_Y LIVE_PASS3_X
+
+volatile int calc_must_be_finished = 0;
+
+void live_lidar_calc_must_be_finished()
+{
+	calc_must_be_finished = 1;
+}
+
+int do_livelidar_corr()
+{
+	latest_corr.ang = 0;
+	latest_corr.x = 0;
+	latest_corr.y = 0;
+	calc_must_be_finished = 0;
+	// Require at least 15 valid samples on at least four of six segments.
+	int valid_segments_img1 = 0, valid_segments_img2 = 0;
+	for(int i = 0; i < 6; i++)
+	{
+		if(p_livelidar_num_samples_img1[i] > 15)
+			valid_segments_img1++;
+		if(p_livelidar_num_samples_img2[i] > 15)
+			valid_segments_img2++;
+	}
+
+	if(valid_segments_img1 < 4 || valid_segments_img2 < 4)
+		return 1;
+	
+
+	angle_optim = 0; // p_livelidar_img2->pos[45].ang - p_livelidar_img1->pos[45].ang;
+
+	// Run PASS 1
+
+	int biggest_lvl = 0;
+	int best1_a, best1_x, best1_y;
+	for(int a_corr = 0; a_corr < LIVE_PASS1_NUM_A; a_corr++)
+	{
+		for(int x_corr = 0; x_corr < LIVE_PASS1_NUM_X; x_corr++)
+		{
+			for(int y_corr = 0; y_corr < LIVE_PASS1_NUM_Y; y_corr++)
+			{
+				int a = LIVE_PASS1_A[a_corr];
+				int x = LIVE_PASS1_X[x_corr];
+				int y = LIVE_PASS1_Y[y_corr];
+				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+				lvl = lvl * LIVE_PASS1_A_WEIGH[a_corr] * LIVE_PASS1_X_WEIGH[x_corr] * LIVE_PASS1_Y_WEIGH[y_corr];
+
+				if(lvl > biggest_lvl)
+				{
+					biggest_lvl = lvl;
+					best1_a = a;
+					best1_x = x;
+					best1_y = y;
+				}
+			}
+			if(calc_must_be_finished) return 20+a_corr;
+		}
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 2;
+	}
+
+	// Run pass 2
+
+	biggest_lvl = 0;
+
+	int best2_a, best2_x, best2_y;
+	for(int a_corr = 0; a_corr < LIVE_PASS2_NUM_A; a_corr++)
+	{
+		for(int x_corr = 0; x_corr < LIVE_PASS2_NUM_X; x_corr++)
+		{
+			for(int y_corr = 0; y_corr < LIVE_PASS2_NUM_Y; y_corr++)
+			{
+				int a = best1_a + LIVE_PASS2_A[a_corr];
+				int x = best1_x + LIVE_PASS2_X[x_corr];
+				int y = best1_y + LIVE_PASS2_Y[y_corr];
+				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+
+				if(lvl > biggest_lvl)
+				{
+					biggest_lvl = lvl;
+					best2_a = a;
+					best2_x = x;
+					best2_y = y;
+				}
+			}
+			if(calc_must_be_finished) return 40+a_corr;
+		}
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 3;
+	}
+
+	// Run pass 3
+
+	biggest_lvl = 0;
+
+	int best3_a, best3_x, best3_y;
+	for(int a_corr = 0; a_corr < LIVE_PASS3_NUM_A; a_corr++)
+	{
+		for(int x_corr = 0; x_corr < LIVE_PASS3_NUM_X; x_corr++)
+		{
+			for(int y_corr = 0; y_corr < LIVE_PASS3_NUM_Y; y_corr++)
+			{
+				int a = best2_a + LIVE_PASS3_A[a_corr];
+				int x = best2_x + LIVE_PASS3_X[x_corr];
+				int y = best2_y + LIVE_PASS3_Y[y_corr];
+				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+
+				if(lvl > biggest_lvl)
+				{
+					biggest_lvl = lvl;
+					best3_a = a;
+					best3_x = x;
+					best3_y = y;
+				}
+			}
+			if(calc_must_be_finished) return 60+a_corr;
+		}
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 4;
+	}
+
+	latest_corr.ang = best3_a;
+	latest_corr.x = best3_x;
+	latest_corr.y = best3_y;	
+
+	// We apply the correction to img2, which will be img1 on the next round.
+	// In addition, we still need to apply the correction to the new lidar scan just being finished,
+	// and to the robot coordinates as well (just before starting a new lidar scan)
+	apply_corr_to_livelidar(p_livelidar_img2);
+
+	return 0;
+}
+
+// Run this continuosly on the main thread.
+void livelidar_fsm()
+{
+	if(live_lidar_calc_req)
+	{
+		live_lidar_calc_req = 0;
+		do_livelidar_corr();
+	}
+}
 
