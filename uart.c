@@ -1,3 +1,9 @@
+/*
+
+All uart-related message management thingies.
+
+*/
+
 #include <stdint.h>
 #include <string.h>
 
@@ -150,5 +156,46 @@ void uart_rx_handler()
 		if(rx_buf_loc >= RX_BUFFER_LEN)  // TODO: this is kind of an error condition, handle it better.
 			rx_buf_loc = 0;
 	}
+}
+
+
+void send_gyro()
+{
+	msg_gyro_t msg;
+	msg.status = 1;
+	msg.int_x = I16_I14(latest_gyro->x);
+	msg.int_y = I16_I14(latest_gyro->y);
+	msg.int_z = I16_I14(latest_gyro->z);
+	txbuf[0] = 128;
+	memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
+	usart_send(txbuf, sizeof(msg_gyro_t)+1);
+}
+
+/*
+	Figures out what to send.
+
+	Call this in the main thread during free time.
+
+	TX itself is interrupt-driven.
+*/
+
+void uart_send_fsm()
+{
+	static int send_count = 0;
+
+	send_count++;
+
+	switch(send_count)
+	{
+		case 0:
+		send_gyro();
+
+		break;
+
+		default:
+		send_count = 0;
+		break;
+	}
+
 }
 
