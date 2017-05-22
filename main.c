@@ -32,9 +32,6 @@
 
 volatile int dbg[10];
 
-//uint8_t txbuf[1024];
-uint8_t txbuf[2048];
-
 void delay_us(uint32_t i)
 {
 	if(i==0) return;
@@ -76,27 +73,6 @@ void adc_int_handler()
 {
 //	ADC1->ISR |= 1UL<<7;
 }
-
-void usart_print(const char *buf)
-{
-	while(buf[0] != 0)
-	{
-		while((USART3->SR & (1UL<<7)) == 0) ;
-		USART3->DR = buf[0];
-		buf++;
-	}
-}
-
-void usart_send(const uint8_t *buf, int len)
-{
-	while(len--)
-	{
-		while((USART3->SR & (1UL<<7)) == 0) ;
-		USART3->DR = buf[0];
-		buf++;
-	}
-}
-
 
 void run_flasher()
 {
@@ -389,134 +365,6 @@ void mc_flasher(int mcnum)
 }
 
 
-/*
-	Incoming UART messages are double-buffered;
-	handling needs to happen relatively fast so that reading the next command does not finish before the processing of the previous command.
-*/
-
-#define RX_BUFFER_LEN 128
-volatile uint8_t rx_buffers[2][RX_BUFFER_LEN];
-int rx_buf_loc = 0;
-
-volatile uint8_t* gather_rx_buf;
-volatile uint8_t* process_rx_buf;
-
-volatile int do_handle_message;
-
-
-void handle_maintenance_msg()
-{
-	switch(process_rx_buf[4])
-	{
-		case 0x52:
-		run_flasher();
-		break;
-
-		case 0x53:
-		mc_flasher(process_rx_buf[5]);
-		break;
-
-		default: break;
-	}
-
-}
-
-volatile int do_re_compass = 0;
-
-volatile int motcon_pi = 10;
-
-volatile int16_t dbg_timing_shift = 5000;
-
-void handle_message()
-{
-	switch(process_rx_buf[0])
-	{
-		case 0xfe:
-		if(process_rx_buf[1] == 0x42 && process_rx_buf[2] == 0x11 && process_rx_buf[3] == 0x7a)
-		{
-			handle_maintenance_msg();
-		}
-		break;
-
-		case 0x80:
-		host_alive();
-		move_arc_manual(((int16_t)(int8_t)(process_rx_buf[1]<<1)), ((int16_t)(int8_t)(process_rx_buf[2]<<1)));
-		break;
-
-		case 0x81:
-		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
-		break;
-
-		case 0x82:
-		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
-		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 1 /*auto decide reverse*/);
-		break;
-
-		case 0x8f:
-		host_alive();
-		break;
-
-		case 0x91:
-		do_re_compass = 1;
-		break;
-
-		case 0x92:
-		sync_to_compass();
-		break;
-
-		// debug/dev messages
-		case 0xd1:
-		zero_angle();
-		break;
-
-		case 0xd2:
-		zero_coords();
-		break;
-
-		case 0xd3:
-		break;
-
-		case 0xd4:
-		break;
-
-		default:
-		break;
-	}
-	do_handle_message = 0;
-}
-
-void uart_rx_handler()
-{
-	// This SR-then-DR read sequence clears error flags:
-	/*uint32_t flags = */USART3->SR;
-	uint8_t byte = USART3->DR;
-
-// TODO:
-//	if(flags & 0b1011)
-//	{
-//		// At error, drop the packet.
-//	}
-
-	if(byte == 255) // End-of-command delimiter
-	{
-		volatile uint8_t* tmp = gather_rx_buf;
-		gather_rx_buf = process_rx_buf;
-		process_rx_buf = tmp;
-		do_handle_message = rx_buf_loc-1;
-		rx_buf_loc = 0;
-	}
-	else
-	{
-		if(byte > 127) // Start of command delimiter
-			rx_buf_loc = 0;
-
-		gather_rx_buf[rx_buf_loc] = byte;
-		rx_buf_loc++;
-		if(rx_buf_loc >= RX_BUFFER_LEN)
-			rx_buf_loc = 0;
-	}
-}
-
 int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 volatile optflow_data_t latest_optflow;
@@ -530,6 +378,19 @@ volatile int new_gyro, new_xcel, new_compass;
 */
 
 volatile int int_x, int_y;
+
+int uart_sending;
+
+int send_uart(int len)
+{
+	if(uart_sending)
+		return -1;
+
+	uart_tx_loc = 0;
+	uart_tx_len = len;
+	uart_sending = 1;
+	return 0;
+}
 
 volatile int seconds;
 volatile int millisec;
@@ -547,6 +408,18 @@ void timebase_10k_handler()
 	// Things expecting 10kHz calls:
 	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
 	sonar_fsm();
+
+	// Send one more character through UART.
+	// With 115200 baud rate, this will produce 10 kbytes/s stream,
+	// meaning 11.52 bits/byte, hence, with 1 start and 1 stop bit, 1.52 extra idle bytes on average.
+	if(uart_sending && (USART3->SR & (1UL<<7)))
+	{
+		USART3->DR = uart_tx_buf[uart_tx_loc++];
+		if(uart_tx_loc > uart_tx_len)
+		{
+			uart_sending = 0;
+		}
+	}
 
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
@@ -570,12 +443,8 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 1)
 	{
-		if(do_handle_message)
-			handle_message();
-
+		handle_uart_message();
 		motcon_fsm();
-		compass_fsm(do_re_compass);
-		do_re_compass = 0;
 	}
 	else if(cnt_10k == 2)
 	{
@@ -610,7 +479,6 @@ void timebase_10k_handler()
 	{
 
 	}
-
 
 
 	cnt_10k++;
