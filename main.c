@@ -376,11 +376,15 @@ volatile int optflow_int_x, optflow_int_y;
 volatile int seconds;
 volatile int millisec;
 
+volatile int us100;
+
 void timebase_10k_handler()
 {
 	static int sec_gen = 0;
 	static int cnt_10k = 0;
 	static int gyro_xcel_compass_status;
+
+	us100++;
 
 	TIM6->SR = 0; // Clear interrupt flag
 

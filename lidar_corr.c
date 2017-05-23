@@ -921,6 +921,8 @@ void live_lidar_calc_must_be_finished()
 	calc_must_be_finished = 1;
 }
 
+extern volatile int us100;
+
 int do_livelidar_corr()
 {
 	latest_corr.ang = 0;
@@ -955,8 +957,11 @@ int do_livelidar_corr()
 				int a = LIVE_PASS1_A[a_corr];
 				int x = LIVE_PASS1_X[x_corr];
 				int y = LIVE_PASS1_Y[y_corr];
+				int time = us100;
 				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+				dbg[3] = us100-time;
 				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+				dbg[4] = us100-time;
 				lvl = lvl * LIVE_PASS1_A_WEIGH[a_corr] * LIVE_PASS1_X_WEIGH[x_corr] * LIVE_PASS1_Y_WEIGH[y_corr];
 
 				if(lvl > biggest_lvl)
