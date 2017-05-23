@@ -448,6 +448,10 @@ int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 	for(int i = 0; i < 360; i++)
 	{
 		if(!img1[i].valid) continue;
+		// GCC didn't figure out this trivial optimization.
+		// Only load img1[i].x and .y from memory when the i has changed.
+		register int i1x = img1[i].x;
+		register int i1y = img1[i].y;
 
 		int smallest = 500*500;
 		int o = i-SEARCH_RANGE+angle_optim;
@@ -462,8 +466,8 @@ int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 			for(; o < 360; o++)
 			{
 				if(!img2[o].valid) continue;
-				int dx = img2[o].x - img1[i].x;
-				int dy = img2[o].y - img1[i].y;
+				int dx = img2[o].x - i1x;
+				int dy = img2[o].y - i1y;
 				int dist = sq(dx) + sq(dy);
 				if(dist < smallest) smallest = dist;
 			}
@@ -473,8 +477,8 @@ int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 		for(; o < o_end; o++)
 		{
 			if(!img2[o].valid) continue;
-			int dx = img2[o].x - img1[i].x;
-			int dy = img2[o].y - img1[i].y;
+			int dx = img2[o].x - i1x;
+			int dy = img2[o].y - i1y;
 			int dist = sq(dx) + sq(dy);
 			if(dist < smallest) smallest = dist;
 		}
