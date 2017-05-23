@@ -440,7 +440,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 
 int angle_optim; // must be smaller than SEARCH_RANGE
 
-#define SEARCH_RANGE 16
+#define SEARCH_RANGE 12
 
 int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 {
@@ -877,16 +877,14 @@ static int LIVE_PASS2_A[LIVE_PASS2_NUM_A] =
 	2*ANG_0_5_DEG
 };
 
-#define LIVE_PASS2_NUM_X 7
+#define LIVE_PASS2_NUM_X 5
 static int LIVE_PASS2_X[LIVE_PASS2_NUM_X] =
 {
-	-30,
 	-20,
 	-10,
 	0,
 	10,
 	20,
-	30,
 };
 
 
@@ -952,32 +950,26 @@ int do_livelidar_corr()
 
 	int biggest_lvl = 0;
 	int best1_a, best1_x, best1_y;
-	for(int a_corr = 0; a_corr < LIVE_PASS1_NUM_A; a_corr++)
-	{
-		for(int x_corr = 0; x_corr < LIVE_PASS1_NUM_X; x_corr++)
-		{
-			for(int y_corr = 0; y_corr < LIVE_PASS1_NUM_Y; y_corr++)
-			{
-				int a = LIVE_PASS1_A[a_corr];
-				int x = LIVE_PASS1_X[x_corr];
-				int y = LIVE_PASS1_Y[y_corr];
-				int time = us100;
-				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
-				dbg[3] = us100-time;
-				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
-				dbg[4] = us100-time;
-				lvl = lvl * LIVE_PASS1_A_WEIGH[a_corr] * LIVE_PASS1_X_WEIGH[x_corr] * LIVE_PASS1_Y_WEIGH[y_corr];
 
-				if(lvl > biggest_lvl)
-				{
-					biggest_lvl = lvl;
-					best1_a = a;
-					best1_x = x;
-					best1_y = y;
-				}
+	for(int x_corr = 0; x_corr < LIVE_PASS1_NUM_X; x_corr++)
+	{
+		for(int y_corr = 0; y_corr < LIVE_PASS1_NUM_Y; y_corr++)
+		{
+			int a = 0;
+			int x = LIVE_PASS1_X[x_corr];
+			int y = LIVE_PASS1_Y[y_corr];
+			scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+			int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+			lvl = lvl * LIVE_PASS1_X_WEIGH[x_corr] * LIVE_PASS1_Y_WEIGH[y_corr];
+
+			if(lvl > biggest_lvl)
+			{
+				biggest_lvl = lvl;
+				best1_x = x;
+				best1_y = y;
 			}
-			if(calc_must_be_finished) return 20+a_corr;
 		}
+		if(calc_must_be_finished) return 20+x_corr;
 	}
 
 	if(biggest_lvl == 0)
@@ -985,39 +977,82 @@ int do_livelidar_corr()
 		return 2;
 	}
 
+	biggest_lvl = 0;
+
+	for(int a_corr = 0; a_corr < LIVE_PASS1_NUM_A; a_corr++)
+	{
+		int a = LIVE_PASS1_A[a_corr];
+		int x = best1_x;
+		int y = best1_y;
+		scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+		int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+		lvl = lvl * LIVE_PASS1_A_WEIGH[a_corr];
+
+		if(lvl > biggest_lvl)
+		{
+			biggest_lvl = lvl;
+			best1_a = a;
+		}
+
+		if(calc_must_be_finished) return 30+a_corr;
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 3;
+	}
+
 	// Run pass 2
 
 	biggest_lvl = 0;
 
 	int best2_a, best2_x, best2_y;
-	for(int a_corr = 0; a_corr < LIVE_PASS2_NUM_A; a_corr++)
+	for(int x_corr = 0; x_corr < LIVE_PASS2_NUM_X; x_corr++)
 	{
-		for(int x_corr = 0; x_corr < LIVE_PASS2_NUM_X; x_corr++)
+		for(int y_corr = 0; y_corr < LIVE_PASS2_NUM_Y; y_corr++)
 		{
-			for(int y_corr = 0; y_corr < LIVE_PASS2_NUM_Y; y_corr++)
+			int a = best1_a;
+			int x = best1_x + LIVE_PASS2_X[x_corr];
+			int y = best1_y + LIVE_PASS2_Y[y_corr];
+			scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+			int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+
+			if(lvl > biggest_lvl)
 			{
-				int a = best1_a + LIVE_PASS2_A[a_corr];
-				int x = best1_x + LIVE_PASS2_X[x_corr];
-				int y = best1_y + LIVE_PASS2_Y[y_corr];
-				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
-				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
-
-				if(lvl > biggest_lvl)
-				{
-					biggest_lvl = lvl;
-					best2_a = a;
-					best2_x = x;
-					best2_y = y;
-				}
+				biggest_lvl = lvl;
+				best2_x = x;
+				best2_y = y;
 			}
-			if(calc_must_be_finished) return 40+a_corr;
 		}
+		if(calc_must_be_finished) return 40+x_corr;
 	}
-
 
 	if(biggest_lvl == 0)
 	{
-		return 3;
+		return 4;
+	}
+
+	biggest_lvl = 0;
+
+	for(int a_corr = 0; a_corr < LIVE_PASS2_NUM_A; a_corr++)
+	{
+		int a = best1_a + LIVE_PASS2_A[a_corr];
+		int x = best2_x;
+		int y = best2_y;
+		scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+		int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+
+		if(lvl > biggest_lvl)
+		{
+			biggest_lvl = lvl;
+			best2_a = a;
+		}
+		if(calc_must_be_finished) return 50+a_corr;
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 5;
 	}
 
 	// Run pass 3
@@ -1025,28 +1060,47 @@ int do_livelidar_corr()
 	biggest_lvl = 0;
 
 	int best3_a, best3_x, best3_y;
+	for(int x_corr = 0; x_corr < LIVE_PASS3_NUM_X; x_corr++)
+	{
+		for(int y_corr = 0; y_corr < LIVE_PASS3_NUM_Y; y_corr++)
+		{
+			int a = best2_a;
+			int x = best2_x + LIVE_PASS3_X[x_corr];
+			int y = best2_y + LIVE_PASS3_Y[y_corr];
+			scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+			int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+
+			if(lvl > biggest_lvl)
+			{
+				biggest_lvl = lvl;
+				best3_x = x;
+				best3_y = y;
+			}
+		}
+		if(calc_must_be_finished) return 60+x_corr;
+	}
+
+	if(biggest_lvl == 0)
+	{
+		return 6;
+	}
+
+	biggest_lvl = 0;
+
 	for(int a_corr = 0; a_corr < LIVE_PASS3_NUM_A; a_corr++)
 	{
-		for(int x_corr = 0; x_corr < LIVE_PASS3_NUM_X; x_corr++)
-		{
-			for(int y_corr = 0; y_corr < LIVE_PASS3_NUM_Y; y_corr++)
-			{
-				int a = best2_a + LIVE_PASS3_A[a_corr];
-				int x = best2_x + LIVE_PASS3_X[x_corr];
-				int y = best2_y + LIVE_PASS3_Y[y_corr];
-				scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
-				int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
+		int a = best2_a + LIVE_PASS3_A[a_corr];
+		int x = best3_x;
+		int y = best3_y;
+		scan_to_2d_live(p_livelidar_img2, p_livelid2d_img2, a, x, y);
+		int lvl = calc_match_lvl_live(p_livelid2d_img1, p_livelid2d_img2);
 
-				if(lvl > biggest_lvl)
-				{
-					biggest_lvl = lvl;
-					best3_a = a;
-					best3_x = x;
-					best3_y = y;
-				}
-			}
-			if(calc_must_be_finished) return 60+a_corr;
+		if(lvl > biggest_lvl)
+		{
+			biggest_lvl = lvl;
+			best3_a = a;
 		}
+		if(calc_must_be_finished) return 70+a_corr;
 	}
 
 	if(biggest_lvl == 0)
