@@ -13,8 +13,14 @@
 #include <stdint.h>
 #include "lidar_corr.h"
 #include "sin_lut.h"
+#include "comm.h"
+#include "uart.h"
 
 extern volatile int dbg[10];
+extern volatile int dbg_error_num;
+
+int latest_corr_ret;
+pos_t latest_corr;
 
 
 #define LIDAR_RANGE 5000
@@ -173,7 +179,8 @@ static void scan_to_2d(lidar_scan_t* in, point_t* out)
 	}
 }
 
-// For moving lidar scans with 360 scan points, and 90 position points.
+// For lidar scans taken under robot movement, with 360 scan points, and 90 position points.
+// out should already contain valid fields set.
 static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out, int32_t corr_a, int32_t corr_x, int32_t corr_y)
 {
 	for(int i = 0; i < 360; i++)
@@ -185,6 +192,92 @@ static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out, int32_t corr_a,
 		out[i].x = corr_x + in->pos[pos_idx].x + (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15);
 		out[i].y = corr_y + in->pos[pos_idx].y + (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15);
 	}
+}
+
+/*
+ Lidar-based 2D MAP on uart:
+
+num_bytes
+ 1	uint8 start byte
+ 1	uint7 status
+ 2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
+ 5	int32 cur_x   ( " " )
+ 5	int32 cur_y   ( " " )
+ 1	int7  correction return value
+ 2	int14 ang_corr (for information only)
+ 2	int14 x_corr (for information only)
+ 2	int14 y_corr (for information only) 
+1440	360 * point
+	  2	int14  x referenced to cur_x
+	  2	int14  y referenced to cur_y
+
+	Total: 1461
+	Time to tx at 115200: ~130 ms
+
+*/
+
+static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for valid fields*/)
+{
+	uint8_t* buf = txbuf;
+
+	int a_mid = in->pos[45].ang>>16;
+	int x_mid = in->pos[45].x;
+	int y_mid = in->pos[45].y;
+
+	*(buf++) = 0x84;
+	*(buf++) = 1;
+
+	*(buf++) = I16_MS(a_mid);
+	*(buf++) = I16_LS(a_mid);
+	*(buf++) = I32_I7_4(x_mid);
+	*(buf++) = I32_I7_3(x_mid);
+	*(buf++) = I32_I7_2(x_mid);
+	*(buf++) = I32_I7_1(x_mid);
+	*(buf++) = I32_I7_0(x_mid);
+	*(buf++) = I32_I7_4(y_mid);
+	*(buf++) = I32_I7_3(y_mid);
+	*(buf++) = I32_I7_2(y_mid);
+	*(buf++) = I32_I7_1(y_mid);
+	*(buf++) = I32_I7_0(y_mid);
+
+	*(buf++) = latest_corr_ret;
+	int tmp = latest_corr.ang>>16;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+	tmp = latest_corr.x<<2;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+	tmp = latest_corr.y<<2;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+
+
+	for(int i = 0; i < 360; i++)
+	{
+		if(point2d[i].valid)
+		{
+			int pos_idx = i>>2;
+			uint32_t angle = (uint32_t)in->pos[pos_idx].ang + (uint32_t)i*(uint32_t)ANG_1_DEG;
+			int y_idx = (angle)>>SIN_LUT_SHIFT;
+			int x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
+			int x = in->pos[pos_idx].x + (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15)  - x_mid;
+			int y = in->pos[pos_idx].y + (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15)  - y_mid;
+
+			*(buf++) = I16_MS(x<<2);
+			*(buf++) = I16_LS(x<<2);
+			*(buf++) = I16_MS(y<<2);
+			*(buf++) = I16_LS(y<<2);
+		}
+		else
+		{
+			*(buf++) = 0;
+			*(buf++) = 0;
+			*(buf++) = 0;
+			*(buf++) = 0;
+		}
+	}
+
+	send_uart(1460);
 }
 
 
@@ -347,7 +440,7 @@ int32_t calc_match_lvl(point_t* img1, point_t* img2)
 
 int angle_optim; // must be smaller than SEARCH_RANGE
 
-#define SEARCH_RANGE 25
+#define SEARCH_RANGE 16
 
 int32_t calc_match_lvl_live(point_t* img1, point_t* img2)
 {
@@ -644,8 +737,6 @@ Apply correction to  :              3   1   2   3   1   2   3
 Apply corr to cur_pos:              x   x   x   x   x   x   x
 */
 
-pos_t latest_corr;
-
 void apply_corr_to_livelidar(live_lidar_scan_t* lid)
 {
 	for(int i = 0; i < 90; i++)
@@ -678,6 +769,7 @@ int* p_livelidar_num_samples_img1;
 int* p_livelidar_num_samples_img2;
 
 int live_lidar_calc_req;
+volatile int calc_must_be_finished = 0;
 
 void livelidar_storage_finished()
 {
@@ -726,6 +818,7 @@ void livelidar_storage_finished()
 		state = 0;
 	}
 
+	calc_must_be_finished = 0;
 	live_lidar_calc_req = 1;
 }
 
@@ -740,7 +833,7 @@ static int LIVE_PASS1_A[LIVE_PASS1_NUM_A] =
 	-1*ANG_1_DEG,
 	0,
 	1*ANG_1_DEG,
-	2*ANG_1_DEG,
+	2*ANG_1_DEG
 };
 static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
 {
@@ -748,29 +841,25 @@ static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
 	6,
 	6,
 	6,
-	5,
+	5
 };
 
-#define LIVE_PASS1_NUM_X 7
+#define LIVE_PASS1_NUM_X 5
 static int LIVE_PASS1_X[LIVE_PASS1_NUM_X] =
 {
-	-90,
 	-60,
 	-30,
 	0,
 	30,
-	60,
-	90,
+	60
 };
 static int LIVE_PASS1_X_WEIGH[LIVE_PASS1_NUM_X] =
 {
-	4,
 	5,
 	6,
 	6,
 	6,
-	5,
-	4,
+	5
 };
 
 
@@ -807,16 +896,14 @@ static int LIVE_PASS3_A[LIVE_PASS3_NUM_A] =
 	2*ANG_0_25_DEG
 };
 
-#define LIVE_PASS3_NUM_X 7
+#define LIVE_PASS3_NUM_X 5
 static int LIVE_PASS3_X[LIVE_PASS3_NUM_X] =
 {
-	-9,
-	-6,
-	-3,
+	-10,
+	-5,
 	0,
-	3,
-	6,
-	9
+	5,
+	10
 };
 
 
@@ -829,8 +916,6 @@ static int LIVE_PASS3_X[LIVE_PASS3_NUM_X] =
 #define LIVE_PASS3_NUM_Y LIVE_PASS3_NUM_X
 #define LIVE_PASS3_Y LIVE_PASS3_X
 
-volatile int calc_must_be_finished = 0;
-
 void live_lidar_calc_must_be_finished()
 {
 	calc_must_be_finished = 1;
@@ -841,7 +926,6 @@ int do_livelidar_corr()
 	latest_corr.ang = 0;
 	latest_corr.x = 0;
 	latest_corr.y = 0;
-	calc_must_be_finished = 0;
 	// Require at least 15 valid samples on at least four of six segments.
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
 	for(int i = 0; i < 6; i++)
@@ -921,6 +1005,7 @@ int do_livelidar_corr()
 		}
 	}
 
+
 	if(biggest_lvl == 0)
 	{
 		return 3;
@@ -973,12 +1058,26 @@ int do_livelidar_corr()
 }
 
 // Run this continuosly on the main thread.
-void livelidar_fsm()
+// if allowed_to_send_lidar, and the time is right to send the previous lidar image, it's sent, and 1 is returned.
+// if allowed_to_send_lidar == 0, sending is just skipped, and the image will be missed by the host.
+
+
+int livelidar_fsm(int allowed_to_send_lidar)
 {
+	int ret = 0;
 	if(live_lidar_calc_req)
 	{
 		live_lidar_calc_req = 0;
-		do_livelidar_corr();
+		// Before starting calculating the new images, copy the result of previous scan for sending, and send it.
+		if(allowed_to_send_lidar && !uart_busy())
+		{
+			send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1);
+			ret = 1;
+		}
+		// Start correcting img1,img2.
+		latest_corr_ret = do_livelidar_corr();
 	}
+
+	return ret;
 }
 

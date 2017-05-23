@@ -17,25 +17,16 @@
 #include "feedbacks.h"
 #include "navig.h"
 #include "lidar_corr.h"
-
-
-#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
-#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
-#define CHARGER_ENA() {GPIOA->BSRR = 1UL<<15;}
-#define CHARGER_DIS() {GPIOA->BSRR = 1UL<<(15+16);}
-#define PSU5V_ENA() {GPIOE->BSRR = 1UL<<15;}
-#define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
-#define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
-#define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
-#define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
-#define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
+#include "uart.h"
 
 volatile int dbg[10];
+
+volatile int dbg_error_num = 1;
 
 void delay_us(uint32_t i)
 {
 	if(i==0) return;
-	i *= 20;
+	i *= 25;
 	i -= 7;
 	while(i--)
 		__asm__ __volatile__ ("nop");
@@ -49,9 +40,9 @@ void delay_ms(uint32_t i)
 	}
 }
 
-
 void error(int code)
 {
+	code = dbg_error_num;
 	__disable_irq();
 	int i = 0;
 	while(1)
@@ -77,6 +68,9 @@ void adc_int_handler()
 void run_flasher()
 {
 	__disable_irq();
+
+	FLASH->ACR = 0UL<<10 /* Data cache disable */ | 0UL<<9 /* Instr cache disable */ | 1UL<<8 /*prefetch enable*/ | 3UL /*3 wait states*/;
+
 	/*
 		Reconfigure UART to 115200, no interrupts. Flasher uses polling, and we want to make sure it
 		starts from a clean table.
@@ -377,20 +371,7 @@ volatile int new_gyro, new_xcel, new_compass;
 	Most of the stuff are ran at 1kHz, different things on each cycle.
 */
 
-volatile int int_x, int_y;
-
-int uart_sending;
-
-int send_uart(int len)
-{
-	if(uart_sending)
-		return -1;
-
-	uart_tx_loc = 0;
-	uart_tx_len = len;
-	uart_sending = 1;
-	return 0;
-}
+volatile int optflow_int_x, optflow_int_y;
 
 volatile int seconds;
 volatile int millisec;
@@ -412,14 +393,7 @@ void timebase_10k_handler()
 	// Send one more character through UART.
 	// With 115200 baud rate, this will produce 10 kbytes/s stream,
 	// meaning 11.52 bits/byte, hence, with 1 start and 1 stop bit, 1.52 extra idle bytes on average.
-	if(uart_sending && (USART3->SR & (1UL<<7)))
-	{
-		USART3->DR = uart_tx_buf[uart_tx_loc++];
-		if(uart_tx_loc > uart_tx_len)
-		{
-			uart_sending = 0;
-		}
-	}
+	uart_10k_fsm();
 
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
@@ -437,8 +411,8 @@ void timebase_10k_handler()
 		int dy = 0;
 		optflow_fsm(&dx, &dy);
 
-		int_x += dx;
-		int_y += dy;
+		optflow_int_x += dx;
+		optflow_int_y += dy;
 
 	}
 	else if(cnt_10k == 1)
@@ -513,131 +487,16 @@ typedef struct  __attribute__ ((__packed__))
 
 volatile adc_data_t adc_data[ADC_SAMPLES];
 
+int get_bat_v()
+{
+	return (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
+}
+
 extern pos_t cur_pos;
 extern volatile int ang_idle;
 
-volatile int lidar_calc_req;
-
-
-void dev_send_jutsk(point_t* img, int id)
-{
-	txbuf[0] = 0x98;
-	txbuf[1] = id;
-
-	for(int i = 0; i < 128; i++)
-	{
-		int valid = img[i].valid;
-		int x = img[i].x;
-		int y = img[i].y;
-		txbuf[2+5*i+0] = valid?1:0;
-		txbuf[2+5*i+1] = I16_MS(x);
-		txbuf[2+5*i+2] = I16_LS(x);
-		txbuf[2+5*i+3] = I16_MS(y);
-		txbuf[2+5*i+4] = I16_LS(y);
-	}
-
-	usart_send(txbuf, 5*128+2);
-
-	txbuf[0] = 0x99;
-	txbuf[1] = id;
-
-	for(int i = 0; i < 128; i++)
-	{
-		int valid = img[i+128].valid;
-		int x = img[i+128].x;
-		int y = img[i+128].y;
-		txbuf[2+5*i+0] = valid?1:0;
-		txbuf[2+5*i+1] = I16_MS(x);
-		txbuf[2+5*i+2] = I16_LS(x);
-		txbuf[2+5*i+3] = I16_MS(y);
-		txbuf[2+5*i+4] = I16_LS(y);
-	}
-
-	usart_send(txbuf, 5*128+2);
-}
-
-
-void dev_send_hommel(lidar_scan_t* p1, lidar_scan_t* p2, int bonus)
-{
-	pos_t posi;
-
-	txbuf[0] = 0x84;
-	txbuf[1] = 0b1011;
-	COPY_POS(posi, p1->pos);
-	for(int i = 0; i < 360; i++)
-	{
-		int v=p1->scan[i];
-		txbuf[14+i*2] = v&0x7f;
-		txbuf[14+i*2+1] = (v>>7)&0x7f;
-	}
-	int a_t = posi.ang>>16;
-	txbuf[2] = I16_MS(a_t);
-	txbuf[3] = I16_LS(a_t);
-	int x_t = posi.x;
-	txbuf[4] = I32_I7_4(x_t);
-	txbuf[5] = I32_I7_3(x_t);
-	txbuf[6] = I32_I7_2(x_t);
-	txbuf[7] = I32_I7_1(x_t);
-	txbuf[8] = I32_I7_0(x_t);
-	int y_t = posi.y;
-	txbuf[9] = I32_I7_4(y_t);
-	txbuf[10] = I32_I7_3(y_t);
-	txbuf[11] = I32_I7_2(y_t);
-	txbuf[12] = I32_I7_1(y_t);
-	txbuf[13] = I32_I7_0(y_t);
-
-	txbuf[360*2+14] = I32_I7_4(bonus);
-	txbuf[360*2+15] = I32_I7_3(bonus);
-	txbuf[360*2+16] = I32_I7_2(bonus);
-	txbuf[360*2+17] = I32_I7_1(bonus);
-	txbuf[360*2+18] = I32_I7_0(bonus);
-
-	usart_send(txbuf, 360*2+19);
-
-
-	txbuf[0] = 0x84;
-	txbuf[1] = 0b1111;
-	COPY_POS(posi, p2->pos);
-	for(int i = 0; i < 360; i++)
-	{
-		int v=p2->scan[i];
-		txbuf[14+i*2] = v&0x7f;
-		txbuf[14+i*2+1] = (v>>7)&0x7f;
-	}
-	a_t = posi.ang>>16;
-	txbuf[2] = I16_MS(a_t);
-	txbuf[3] = I16_LS(a_t);
-	x_t = posi.x;
-	txbuf[4] = I32_I7_4(x_t);
-	txbuf[5] = I32_I7_3(x_t);
-	txbuf[6] = I32_I7_2(x_t);
-	txbuf[7] = I32_I7_1(x_t);
-	txbuf[8] = I32_I7_0(x_t);
-	y_t = posi.y;
-	txbuf[9] = I32_I7_4(y_t);
-	txbuf[10] = I32_I7_3(y_t);
-	txbuf[11] = I32_I7_2(y_t);
-	txbuf[12] = I32_I7_1(y_t);
-	txbuf[13] = I32_I7_0(y_t);
-
-	txbuf[360*2+14] = I32_I7_4(bonus);
-	txbuf[360*2+15] = I32_I7_3(bonus);
-	txbuf[360*2+16] = I32_I7_2(bonus);
-	txbuf[360*2+17] = I32_I7_1(bonus);
-	txbuf[360*2+18] = I32_I7_0(bonus);
-
-	usart_send(txbuf, 360*2+19);
-
-	delay_ms(100);
-}
-
-
 int main()
 {
-	int i;
-	gather_rx_buf = rx_buffers[0];
-	process_rx_buf = rx_buffers[1];
-
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -662,6 +521,8 @@ int main()
 		Caches are totally unspecified, but it is highly likely that the "data cache" does not refer to SRAM, but data stored in flash.
 		Hence, it's probably safe to turn it on.
 	*/
+
+	// delay loop: 13 sec -> 8 sec, when caches turned on.
 
 	// 3 wait states for 120MHz and Vcc over 2.7V
 	FLASH->ACR = 1UL<<10 /* Data cache enable */ | 1UL<<9 /* Instr cache enable */ | 1UL<<8 /*prefetch enable*/ | 3UL /*3 wait states*/;
@@ -731,20 +592,13 @@ int main()
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
 
+	init_uart();
+
 	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
 	MC4_CS1();
 	MC3_CS1();
 	MC2_CS1();
 	MC1_CS1();
-
-	while(1)
-	{
-		LED_ON();
-		delay_ms(500);
-		LED_OFF();
-		delay_ms(500);		
-	}
-
 
 	/*
 		Interrupts will have 4 levels of pre-emptive priority, and 4 levels of sub-priority.
@@ -790,8 +644,6 @@ int main()
 	NVIC_EnableIRQ(USART3_IRQn);
 
 	delay_ms(100);
-
-	GPIOE->BSRR = 1UL<<7; // DBG IO1
 
 	int tries = 5+1;
 	while(--tries && init_gyro_xcel_compass()) delay_ms(50);
@@ -850,293 +702,56 @@ int main()
 
 	sync_lidar();
 
-	GPIOE->BSRR = 1UL<<14; // DBG IO8
-
-
 	int cnt = 0;
-	int lidar_resynced = 0;
-	int do_generate_lidar_ignore = 0;
+
+	int lidar_ready = 0;
 
 	while(1)
 	{
 		cnt++;
 
-		int corr_ret = 99;
-		int calc_req = lidar_calc_req;
-		if(calc_req)
+		if(!lidar_ready)
 		{
-			pos_t lid_corr;
-			lidar_scan_t* sca = move_get_lidar(calc_req-1);
-			lidar_scan_t* scb = move_get_lidar(calc_req);
-
-//			lidar_scan_t sca_copy, scb_copy;
-//			memcpy(&sca_copy, sca, sizeof(lidar_scan_t));
-//			memcpy(&scb_copy, scb, sizeof(lidar_scan_t));
-
-			corr_ret = do_lidar_corr(sca, scb, &lid_corr);
-
-			if(corr_ret < 0 || corr_ret > 99) corr_ret = 98;
-
-/*			if(calc_req == 1)
+			if(lidar_initialized && lidar_speed_in_spec)
 			{
-				dbg[4] = lid_corr.ang / 1193046; // to 0.1 degs
+				resync_lidar();
+				lidar_reset_flags();
+				while(!lidar_is_complete());
+				lidar_reset_flags();
+				while(!lidar_is_complete());
+				generate_lidar_ignore();
+				lidar_ready = 1;
+				dbg[0] = 0;
 			}
-			if(calc_req == 2)
-			{
-				dbg[5] = lid_corr.ang / 1193046; // to 0.1 degs
-			}
-*/
-
-			correct_location_without_moving(lid_corr);
-			// correct the image, too
-			scb->pos.ang += lid_corr.ang;
-			scb->pos.x += lid_corr.x;
-			scb->pos.y += lid_corr.y;
-			lidar_calc_req = 0;
-			move_mark_lidar_nonread(calc_req);
-
-			if(corr_ret == 0) delay_ms(100);
 		}
 		else
 		{
-			delay_ms(180); // Don't produce too much data now, for network reasons. WAS 100
+			/*
+				livelidar_fsm(1) will check if there is a pending calculation request. If there is, it
+				sends the previous image to uart (only if the uart is free; if it isn't, the image will
+				be skipped and lost). Then it starts processing the latest two images, to calculate
+				the corrections. These corrections are automatically applied in the 1k ISR lidar_fsm().
+			*/
+
+			int starttime = millisec;
+
+			dbg_error_num = 1;
+			livelidar_fsm(1);
+			int tooktime = millisec - starttime;
+			dbg[1] = tooktime;
+			if(tooktime > dbg[2]) dbg[2] = tooktime;
+			if(tooktime < 30) delay_ms(30); // temporary shit
+
+			uart_send_fsm(); // send something else.
+			while(uart_busy());
 		}
 
-		
-
-
-		if(lidar_initialized && lidar_speed_in_spec && !lidar_resynced)
-		{
-			resync_lidar();
-			lidar_resynced = 1;
-			do_generate_lidar_ignore = 10;
-			dbg[0] = 0;
-		}
-
-
-		if(do_generate_lidar_ignore)
-		{
-			do_generate_lidar_ignore--;
-			if(do_generate_lidar_ignore == 0)
-				generate_lidar_ignore();
-		}
-
-
-//#define SEND_OPTFLOW
-
-		if(!(cnt&7))
-		{
-			msg_gyro_t msg;
-			msg.status = 1;
-			msg.int_x = I16_I14(latest_gyro->x);
-			msg.int_y = I16_I14(latest_gyro->y);
-			msg.int_z = I16_I14(latest_gyro->z);
-			txbuf[0] = 128;
-			memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
-			usart_send(txbuf, sizeof(msg_gyro_t)+1);
-		}
-
-/*
-		msg_xcel_t msgx;
-		msgx.status = 1;
-		msgx.int_x = I16_I14(latest_xcel->x);
-		msgx.int_y = I16_I14(latest_xcel->y);
-		msgx.int_z = I16_I14(latest_xcel->z);
-		txbuf[0] = 129;
-		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
-		usart_send(txbuf, sizeof(msg_xcel_t)+1);
-
-		msg_compass_t msgc;
-		msgc.status = 1;
-		msgc.x = I16_I14(latest_compass->x);
-		msgc.y = I16_I14(latest_compass->y);
-		msgc.z = I16_I14(latest_compass->z);
-		txbuf[0] = 0x82;
-		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
-		usart_send(txbuf, sizeof(msg_compass_t)+1);
-*/
-
-		int send_lidar = 0;
-		if(!(cnt&7)) send_lidar = 1;
-
-		{
-			txbuf[0] = 0x84;
-			txbuf[1] = (lidar_initialized) | (lidar_speed_in_spec<<1);
-
-			lidar_scan_t* p;
-
-			pos_t pos;
-
-			// If synced (correlated to moves) images are available, send them. Else, just send the latest image.
-			if( (p = move_get_valid_lidar(0)) )
-			{
-				send_lidar=1;
-				txbuf[1] |= 0b01<<2;
-				COPY_POS(pos, p->pos);
-				for(i = 0; i < 360; i++)
-				{
-					int v=p->scan[i];
-					txbuf[14+i*2] = v&0x7f;
-					txbuf[14+i*2+1] = (v>>7)&0x7f;
-				}
-			}
-			else if( (p = move_get_valid_lidar(1)) )
-			{
-				send_lidar=1;
-				txbuf[1] |= 0b10<<2;
-				COPY_POS(pos, p->pos);
-				for(i = 0; i < 360; i++)
-				{
-					int v=p->scan[i];
-					txbuf[14+i*2] = v&0x7f;
-					txbuf[14+i*2+1] = (v>>7)&0x7f;
-				}
-			}
-			else if( (p = move_get_valid_lidar(2)) )
-			{
-				send_lidar=1;
-				txbuf[1] |= 0b11<<2;
-				COPY_POS(pos, p->pos);
-				for(i = 0; i < 360; i++)
-				{
-					int v=p->scan[i];
-					txbuf[14+i*2] = v&0x7f;
-					txbuf[14+i*2+1] = (v>>7)&0x7f;
-				}
-			}
-			else if(send_lidar)
-			{
-				COPY_POS(pos, cur_pos);
-
-				int16_t basic_scan[360];
-				copy_lidar_full(basic_scan);
-				for(i = 0; i < 360; i++)
-				{
-					int v=basic_scan[i];
-					txbuf[14+i*2] = v&0x7f;
-					txbuf[14+i*2+1] = (v>>7)&0x7f;
-				}
-			}
-
-			if(send_lidar)
-			{
-				int a_t = pos.ang>>16;
-				txbuf[2] = I16_MS(a_t);
-				txbuf[3] = I16_LS(a_t);
-				int x_t = pos.x;
-				txbuf[4] = I32_I7_4(x_t);
-				txbuf[5] = I32_I7_3(x_t);
-				txbuf[6] = I32_I7_2(x_t);
-				txbuf[7] = I32_I7_1(x_t);
-				txbuf[8] = I32_I7_0(x_t);
-				int y_t = pos.y;
-				txbuf[9] = I32_I7_4(y_t);
-				txbuf[10] = I32_I7_3(y_t);
-				txbuf[11] = I32_I7_2(y_t);
-				txbuf[12] = I32_I7_1(y_t);
-				txbuf[13] = I32_I7_0(y_t);
-
-				usart_send(txbuf, 360*2+14);
-			}
-		}
-
-		int16_t cur_ang_t = cur_pos.ang>>16;
-		int16_t cur_c_ang_t = cur_compass_angle>>16;
-
-		txbuf[0] = 0xa0;
-		txbuf[1] = 1;
-		txbuf[2] = I16_MS(cur_ang_t);
-		txbuf[3] = I16_LS(cur_ang_t);
-		txbuf[4] = 0;
-		txbuf[5] = 0;
-		txbuf[6] = I16_MS(cur_c_ang_t);
-		txbuf[7] = I16_LS(cur_c_ang_t);
-		int tm = cur_pos.x;
-		txbuf[8] = I32_I7_4(tm);
-		txbuf[9] = I32_I7_3(tm);
-		txbuf[10] = I32_I7_2(tm);
-		txbuf[11] = I32_I7_1(tm);
-		txbuf[12] = I32_I7_0(tm);
-		tm = cur_pos.y;
-		txbuf[13] = I32_I7_4(tm);
-		txbuf[14] = I32_I7_3(tm);
-		txbuf[15] = I32_I7_2(tm);
-		txbuf[16] = I32_I7_1(tm);
-		txbuf[17] = I32_I7_0(tm);
-
-		usart_send(txbuf, 18);
-
-#ifdef SEND_OPTFLOW
-		txbuf[0] = 0xa1;
-		txbuf[1] = 1;
-		txbuf[2] = I16_MS(int_x);
-		txbuf[3] = I16_LS(int_x);
-		txbuf[4] = I16_MS(int_y);
-		txbuf[5] = I16_LS(int_y);
-		txbuf[6] = latest_optflow.squal>>1;
-		txbuf[7] = latest_optflow.dx&0x7f;
-		txbuf[8] = latest_optflow.dy&0x7f;
-		txbuf[9] = latest_optflow.max_pixel>>1;
-		txbuf[10] = latest_optflow.dummy>>1;
-		txbuf[11] = latest_optflow.motion>>1;
-
-		usart_send(txbuf, 12);
-#endif
-
-
-		if(!(cnt&15))
-		{
-			int bat_v = (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
-			txbuf[0] = 0xa2;
-			txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
-			txbuf[2] = I16_MS(bat_v);
-			txbuf[3] = I16_LS(bat_v);
-			usart_send(txbuf, 4);
-		}
-
-
-		if(!(cnt&3))
-		{
-			txbuf[0] = 0x85;
-			txbuf[1] = 0b111;
-			int ts = latest_sonars[0]*10;
-			txbuf[2] = ts&0x7f;
-			txbuf[3] = (ts&(0x7f<<7)) >> 7;
-			ts = latest_sonars[1]*10;
-			txbuf[4] = ts&0x7f;
-			txbuf[5] = (ts&(0x7f<<7)) >> 7;
-			ts = latest_sonars[2]*10;
-			txbuf[6] = ts&0x7f;
-			txbuf[7] = (ts&(0x7f<<7)) >> 7;
-			usart_send(txbuf, 8);
-		}
 
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
 		// to mm/sec: / 16.72 = *245 / 4094.183
 //		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 //		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
-
-/*		dbg[0] = motcon_rx[2].status;
-		dbg[1] = motcon_rx[2].speed;
-		dbg[2] = motcon_rx[2].current;
-		dbg[3] = motcon_rx[2].pos;
-		dbg[4] = motcon_rx[2].res4;
-		dbg[5] = motcon_rx[2].res5;
-		dbg[6] = motcon_rx[2].res6;
-		dbg[7] = motcon_rx[2].crc;
-*/
-		txbuf[0] = 0xd2;
-		for(i=0; i<10; i++)
-		{
-			tm = dbg[i];
-			txbuf[5*i+1] = I32_I7_4(tm);
-			txbuf[5*i+2] = I32_I7_3(tm);
-			txbuf[5*i+3] = I32_I7_2(tm);
-			txbuf[5*i+4] = I32_I7_1(tm);
-			txbuf[5*i+5] = I32_I7_0(tm);
-		}
-		usart_send(txbuf, 51);
 
 
 		if(seconds > 130)

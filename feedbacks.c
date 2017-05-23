@@ -211,8 +211,6 @@ void zero_angle()
 
 void zero_coords()
 {
-	dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
-
 	cur_x = cur_y = 0;
 }
 
@@ -594,20 +592,6 @@ void run_feedbacks(int sens_status)
 			gyro_long_integrals[i] += latest[i];
 			gyro_short_integrals[i] += latest[i];
 		}
-
-/*		dbg[2] = gyro_dc_corrs[2]>>15;
-
-		if(robot_nonmoving)
-		{
-			if(latest[2] < dbg[4]) dbg[4] = latest[2];
-			if(latest[2] > dbg[5]) dbg[5] = latest[2];
-		}
-		else
-		{
-			if(latest[2] < dbg[6]) dbg[6] = latest[2];
-			if(latest[2] > dbg[7]) dbg[7] = latest[2];
-		}
-*/
 
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
 		// Correct ratio = (7.8125*10^-6)/(360/(2^32)) = 93.2067555555589653990

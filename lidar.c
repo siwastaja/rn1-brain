@@ -13,6 +13,8 @@ Full revolution = 1980 bytes
 #include "lidar.h"
 #include "lidar_corr.h" // for point_t
 
+extern int dbg[10];
+
 extern void delay_us(uint32_t i);
 extern void delay_ms(uint32_t i);
 
@@ -96,6 +98,7 @@ extern int* p_livelidar_num_samples_store; // For counting validness of data for
 	As lidar produces full revolutions at 5Hz, packets are generated at 450Hz.
 	Data is prepared and stored with location info (cur_pos from feedbacks.c) on each sample.
 */
+
 void lidar_fsm()
 {
 	static int prev_cur_packet;
@@ -131,7 +134,7 @@ void lidar_fsm()
 		p_livelidar_store->scan[odx*4+1] = lidar_full_rev[idx].d[2].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+0] = lidar_full_rev[idx].d[3].flags_distance&0x3fff;
 
-		if(prev_cur_packet == 79)
+		if(prev_cur_packet == 69)
 		{
 			// Time is running out: tell lidar_corr that calculation must be finished ASAP, or terminated.
 			// It won't be terminated right away; the termination condition is not checked too frequently as
@@ -140,7 +143,7 @@ void lidar_fsm()
 		}
 
 		if(prev_cur_packet == 89)
-		{
+		{	
 			// We just got the full round.
 
 			// Now processing the two previous lidar images is (must be) finished, and the correction

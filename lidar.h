@@ -77,13 +77,17 @@ num_bytes
  1	uint7 status
  2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
  5	int32 cur_x   ( " " )
- 5	int32 cur_y   ( " " ) 
+ 5	int32 cur_y   ( " " )
+ 1	int7  correction return value
+ 2	int14 ang_corr (for information only)
+ 2	int14 x_corr (for information only)
+ 2	int14 y_corr (for information only) 
 1440	360 * point
 	  2	int14  x referenced to cur_x
 	  2	int14  y referenced to cur_y
 
-	Total: 1454
-	Time to tx at 115200: 126 ms
+	Total: 1461
+	Time to tx at 115200: ~130 ms
 
 */
 

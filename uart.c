@@ -9,8 +9,17 @@ All uart-related message management thingies.
 
 #include "ext_include/stm32f2xx.h"
 
-#define TX_BUFFER_LEN 2048
+#include "main.h"
+#include "feedbacks.h"
+#include "navig.h"
+#include "comm.h"
+#include "gyro_xcel_compass.h"
+#include "optflow.h"
+#include "uart.h"
+
 uint8_t txbuf[TX_BUFFER_LEN];
+
+extern int dbg[10];
 
 void uart_print_string_blocking(const char *buf)
 {
@@ -98,7 +107,7 @@ void handle_uart_message()
 		break;
 
 		case 0x91:
-		do_re_compass = 1;
+		//do_re_compass = 1;
 		break;
 
 		case 0x92:
@@ -158,40 +167,179 @@ void uart_rx_handler()
 	}
 }
 
+int uart_sending;
+int uart_tx_loc;
+int uart_tx_len;
 
-void send_gyro()
+void uart_10k_fsm()
 {
-	msg_gyro_t msg;
-	msg.status = 1;
-	msg.int_x = I16_I14(latest_gyro->x);
-	msg.int_y = I16_I14(latest_gyro->y);
-	msg.int_z = I16_I14(latest_gyro->z);
-	txbuf[0] = 128;
-	memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
-	usart_send(txbuf, sizeof(msg_gyro_t)+1);
+	if(uart_sending && (USART3->SR & (1UL<<7)))
+	{
+		USART3->DR = txbuf[uart_tx_loc++];
+		if(uart_tx_loc > uart_tx_len)
+		{
+			uart_sending = 0;
+		}
+	}
 }
 
+int send_uart(int len)
+{
+	if(uart_sending)
+		return -1;
+
+	uart_tx_loc = 0;
+	uart_tx_len = len;
+	uart_sending = 1;
+	return 0;
+}
+
+int uart_busy()
+{
+	return uart_sending;
+}
+
+
 /*
-	Figures out what to send.
+	Figures out what to send, and sends it if the uart is free.
 
 	Call this in the main thread during free time.
 
 	TX itself is interrupt-driven.
 */
 
+/*
+		msg_xcel_t msgx;
+		msgx.status = 1;
+		msgx.int_x = I16_I14(latest_xcel->x);
+		msgx.int_y = I16_I14(latest_xcel->y);
+		msgx.int_z = I16_I14(latest_xcel->z);
+		txbuf[0] = 129;
+		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
+		usart_send(txbuf, sizeof(msg_xcel_t)+1);
+
+		msg_compass_t msgc;
+		msgc.status = 1;
+		msgc.x = I16_I14(latest_compass->x);
+		msgc.y = I16_I14(latest_compass->y);
+		msgc.z = I16_I14(latest_compass->z);
+		txbuf[0] = 0x82;
+		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
+		usart_send(txbuf, sizeof(msg_compass_t)+1);
+*/
+
 void uart_send_fsm()
 {
 	static int send_count = 0;
+
+	if(uart_busy())
+		return;
 
 	send_count++;
 
 	switch(send_count)
 	{
 		case 0:
-		send_gyro();
-
+		{
+			msg_gyro_t msg;
+			msg.status = 1;
+			msg.int_x = I16_I14(latest_gyro->x);
+			msg.int_y = I16_I14(latest_gyro->y);
+			msg.int_z = I16_I14(latest_gyro->z);
+			txbuf[0] = 128;
+			memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
+			send_uart(sizeof(msg_gyro_t)+1);
+		}
 		break;
 
+		case 1:
+		{
+			txbuf[0] = 0xa1;
+			txbuf[1] = 1;
+			txbuf[2] = I16_MS(optflow_int_x);
+			txbuf[3] = I16_LS(optflow_int_x);
+			txbuf[4] = I16_MS(optflow_int_y);
+			txbuf[5] = I16_LS(optflow_int_y);
+			txbuf[6] = latest_optflow.squal>>1;
+			txbuf[7] = latest_optflow.dx&0x7f;
+			txbuf[8] = latest_optflow.dy&0x7f;
+			txbuf[9] = latest_optflow.max_pixel>>1;
+			txbuf[10] = latest_optflow.dummy>>1;
+			txbuf[11] = latest_optflow.motion>>1;
+			send_uart(12);
+		}
+		break;
+
+		case 2:
+		{
+			int bat_v = get_bat_v();
+			txbuf[0] = 0xa2;
+			txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
+			txbuf[2] = I16_MS(bat_v);
+			txbuf[3] = I16_LS(bat_v);
+			send_uart(4);
+		}
+		break;
+
+		case 3:
+		{
+			txbuf[0] = 0x85;
+			txbuf[1] = 0b111;
+			int ts = latest_sonars[0]*10;
+			txbuf[2] = ts&0x7f;
+			txbuf[3] = (ts&(0x7f<<7)) >> 7;
+			ts = latest_sonars[1]*10;
+			txbuf[4] = ts&0x7f;
+			txbuf[5] = (ts&(0x7f<<7)) >> 7;
+			ts = latest_sonars[2]*10;
+			txbuf[6] = ts&0x7f;
+			txbuf[7] = (ts&(0x7f<<7)) >> 7;
+			send_uart(8);
+		}
+		break;
+
+		case 4:
+		{
+			txbuf[0] = 0xd2;
+			for(int i=0; i<10; i++)
+			{
+				int tm = dbg[i];
+				txbuf[5*i+1] = I32_I7_4(tm);
+				txbuf[5*i+2] = I32_I7_3(tm);
+				txbuf[5*i+3] = I32_I7_2(tm);
+				txbuf[5*i+4] = I32_I7_1(tm);
+				txbuf[5*i+5] = I32_I7_0(tm);
+			}
+			send_uart(51);
+		}
+		break;
+
+		case 5:
+		{
+			txbuf[0] = 0xa0;
+			txbuf[1] = 1;
+			int tm = cur_pos.ang>>16;
+			txbuf[2] = I16_MS(tm);
+			txbuf[3] = I16_LS(tm);
+			txbuf[4] = 0;
+			txbuf[5] = 0;
+			txbuf[6] = 0;
+			txbuf[7] = 0;
+			tm = cur_pos.x;
+			txbuf[8] = I32_I7_4(tm);
+			txbuf[9] = I32_I7_3(tm);
+			txbuf[10] = I32_I7_2(tm);
+			txbuf[11] = I32_I7_1(tm);
+			txbuf[12] = I32_I7_0(tm);
+			tm = cur_pos.y;
+			txbuf[13] = I32_I7_4(tm);
+			txbuf[14] = I32_I7_3(tm);
+			txbuf[15] = I32_I7_2(tm);
+			txbuf[16] = I32_I7_1(tm);
+			txbuf[17] = I32_I7_0(tm);
+
+			send_uart(18);
+		}
 		default:
 		send_count = 0;
 		break;
@@ -199,3 +347,8 @@ void uart_send_fsm()
 
 }
 
+void init_uart()
+{
+	gather_rx_buf = rx_buffers[0];
+	process_rx_buf = rx_buffers[1];
+}
