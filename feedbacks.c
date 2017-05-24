@@ -120,7 +120,7 @@ void rotate_rel(int angle)
 	aim_angle += angle;
 
 	speed_limit_lowered = 0;
-	ang_top_speed = 300000; // was 220000
+	ang_top_speed = 170000;
 	manual_control = 0;
 	robot_moves();
 }
@@ -130,7 +130,7 @@ void rotate_abs(int angle)
 	aim_angle = angle;
 
 	speed_limit_lowered = 0;
-	ang_top_speed = 220000; // 150000
+	ang_top_speed = 170000;
 	manual_control = 0;
 	robot_moves();
 }
@@ -146,7 +146,7 @@ void straight_rel(int fwd /*in mm*/)
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
 	aim_fwd = fwd<<16;
-	fwd_top_speed = 800000; // was 600000
+	fwd_top_speed = 600000;
 	manual_control = 0;
 	robot_moves();
 }
@@ -580,6 +580,9 @@ void run_feedbacks(int sens_status)
 		{
 			robot_moves();
 		}
+
+		if(latest[2] < dbg[7]) dbg[7] = latest[2];
+		if(latest[2] > dbg[8]) dbg[8] = latest[2];
 
 		if(robot_nonmoving)
 		{
