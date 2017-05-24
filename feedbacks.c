@@ -214,12 +214,25 @@ void zero_coords()
 	cur_x = cur_y = 0;
 }
 
+int64_t gyro_mul_neg = 763300LL<<16;
+int64_t gyro_mul_pos = 763300LL<<16;
+
+int gyro_avgd = 0;
+
 void correct_location_without_moving(pos_t corr)
 {
 	cur_x += corr.x<<16;
 	cur_y += corr.y<<16;
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
+
+	if(gyro_avgd < -100)
+		gyro_mul_neg += corr.ang;
+	else if(gyro_avgd > 100)
+		gyro_mul_pos += corr.ang;
+
+	dbg[5] = gyro_mul_neg>>16;
+	dbg[6] = gyro_mul_pos>>16;
 }
 
 
@@ -602,10 +615,12 @@ void run_feedbacks(int sens_status)
 
 		int gyro_blank = robot_nonmoving?(100*5):(50*5); // Prevent slow gyro drifting during no operation
 
+		gyro_avgd = ((latest[2]<<8) + 3*gyro_avgd)>>2;
+
 		if(latest[2] < -1*gyro_blank)  // Negative = left
-			cur_pos.ang += ((int64_t)latest[2]*(int64_t)763300)>>13;
+			cur_pos.ang += ((int64_t)latest[2]*(int64_t)(gyro_mul_neg>>16))>>13;
 		else if(latest[2] > gyro_blank) // Positive = right
-			cur_pos.ang += ((int64_t)latest[2]*(int64_t)763300)>>13;
+			cur_pos.ang += ((int64_t)latest[2]*(int64_t)(gyro_mul_pos>>16))>>13;
 	}
 
 

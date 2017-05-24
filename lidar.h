@@ -68,6 +68,8 @@ int lidar_is_half();
 
 void lidar_fsm();
 
+void lidar_corr_on();
+void lidar_corr_off();
 
 /*
  Lidar-based 2D MAP on uart:

@@ -217,12 +217,8 @@ num_bytes
 
 */
 
-static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for valid fields*/)
+static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for valid fields*/, int significant_for_mapping)
 {
-	static int cnt = 0;
-
-	cnt++; if(cnt > 127) cnt = 0;
-
 	uint8_t* buf = txbuf;
 
 	int a_mid = in->pos[45].ang>>16;
@@ -230,7 +226,7 @@ static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for v
 	int y_mid = in->pos[45].y;
 
 	*(buf++) = 0x84;
-	*(buf++) = cnt;
+	*(buf++) = significant_for_mapping;
 
 	*(buf++) = I16_MS(a_mid);
 	*(buf++) = I16_LS(a_mid);
@@ -1033,13 +1029,13 @@ int do_livelidar_corr()
 	latest_corr.ang = 0;
 	latest_corr.x = 0;
 	latest_corr.y = 0;
-	// Require at least 15 valid samples on at least four of six segments.
+	// Require enough valid samples on at least four of six 60deg segments.
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
 	for(int i = 0; i < 6; i++)
 	{
-		if(p_livelidar_num_samples_img1[i] > 15)
+		if(p_livelidar_num_samples_img1[i] > 20)
 			valid_segments_img1++;
-		if(p_livelidar_num_samples_img2[i] > 15)
+		if(p_livelidar_num_samples_img2[i] > 20)
 			valid_segments_img2++;
 	}
 
@@ -1055,7 +1051,7 @@ int do_livelidar_corr()
 
 
 	int high_movement_mode = 0;
-	int (*p_calc_f)(point_t*, point_t*) = &calc_match_lvl_live;
+	int32_t (*p_calc_f)(point_t*, point_t*) = &calc_match_lvl_live;
 
 	if(supposed_a_diff < -9*ANG_1_DEG || supposed_a_diff > 9*ANG_1_DEG ||
 	   supposed_x_diff < -150 || supposed_x_diff > 150 ||
@@ -1063,10 +1059,7 @@ int do_livelidar_corr()
 	{
 		high_movement_mode = 1;
 		p_calc_f = &calc_match_lvl_live_high_movement;
-		dbg[8]++;
 	}
-	else
-		dbg[7]++;
 
 	angle_optim = supposed_a_diff/-ANG_1_DEG;
 
@@ -1366,9 +1359,9 @@ int livelidar_fsm(int allowed_to_send_lidar)
 		if(allowed_to_send_lidar && !uart_busy())
 		{
 			if(skip)
-				send_2d_live_to_uart(p_livelidar_img2, p_livelid2d_img2);
+				send_2d_live_to_uart(p_livelidar_img2, p_livelid2d_img2, 0);
 			else
-				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1);
+				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1, 1);
 			ret = 1;
 		}
 		// Start correcting img1,img2.

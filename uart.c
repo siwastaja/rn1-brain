@@ -124,9 +124,11 @@ void handle_uart_message()
 		break;
 
 		case 0xd3:
+		lidar_corr_on();
 		break;
 
 		case 0xd4:
+		lidar_corr_off();
 		break;
 
 		default:

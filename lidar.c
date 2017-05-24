@@ -88,6 +88,16 @@ void copy_lidar_full(int16_t* dst_start)
 
 }
 
+int corr_on = 1;
+
+void lidar_corr_on()
+{
+	corr_on = 1;
+}
+void lidar_corr_off()
+{
+	corr_on = 0;
+}
 
 extern live_lidar_scan_t* p_livelidar_store;
 extern point_t* p_livelid2d_store;
@@ -164,7 +174,7 @@ void lidar_fsm()
 			// One more thing, we need to apply the correction to the robot coordinates right here,
 			// so that we get the new coords applied to the new lidar scan from the start:
 			extern pos_t latest_corr; // from lidar_corr.c
-			if(!skip)
+			if(!skip && corr_on)
 				correct_location_without_moving(latest_corr);
 		}
 	}
