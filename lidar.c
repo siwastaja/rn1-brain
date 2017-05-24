@@ -134,7 +134,7 @@ void lidar_fsm()
 		p_livelidar_store->scan[odx*4+1] = lidar_full_rev[idx].d[2].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+0] = lidar_full_rev[idx].d[3].flags_distance&0x3fff;
 
-		if(prev_cur_packet == 69)
+		if(prev_cur_packet == 81)
 		{
 			// Time is running out: tell lidar_corr that calculation must be finished ASAP, or terminated.
 			// It won't be terminated right away; the termination condition is not checked too frequently as
@@ -146,19 +146,26 @@ void lidar_fsm()
 		{	
 			// We just got the full round.
 
+
+			int skip = livelidar_skip();
+
+
 			// Now processing the two previous lidar images is (must be) finished, and the correction
 			// has already been applied to the latter one. We still need to apply the same correction
 			// to this new image we just finished storing:
-			apply_corr_to_livelidar(p_livelidar_store);
 
-			// Now, correction is applied to both images: the previous one, and the one just finished.
+			if(!skip)
+				apply_corr_to_livelidar(p_livelidar_store);
+
+			// Now, correction has been applied to both images: the previous one, and the one just finished.
 			// We can swap the buffers to start gathering the new image, and start processing the latest scan:
 			livelidar_storage_finished();
 
 			// One more thing, we need to apply the correction to the robot coordinates right here,
 			// so that we get the new coords applied to the new lidar scan from the start:
 			extern pos_t latest_corr; // from lidar_corr.c
-			correct_location_without_moving(latest_corr);
+			if(!skip)
+				correct_location_without_moving(latest_corr);
 		}
 	}
 	prev_cur_packet = cur_packet;

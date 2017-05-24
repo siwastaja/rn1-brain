@@ -17,5 +17,7 @@ void apply_corr_to_livelidar(live_lidar_scan_t* lid);
 void livelidar_storage_finished();
 int livelidar_fsm(int allowed_to_send_lidar);
 
+int livelidar_skip();
+
 
 #endif

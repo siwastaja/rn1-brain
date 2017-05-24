@@ -29,6 +29,7 @@ void lower_speed_limit();
 #define ANG_0_25_DEG   2982616
 #define ANG_0_125_DEG  1491308
 #define ANG_0_1_DEG    1193047
+#define ANG_0_05_DEG    596523
 
 
 typedef struct
