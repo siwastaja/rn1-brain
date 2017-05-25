@@ -1069,7 +1069,7 @@ int do_livelidar_corr()
 	// Run PASS 1
 
 	int biggest_lvl = 0;
-	int best1_a, best1_x, best1_y;
+	int best1_a=0, best1_x=0, best1_y=0;
 
 	for(int x_corr = 0; x_corr < LIVE_PASS1_NUM_X; x_corr++)
 	{
@@ -1126,7 +1126,7 @@ int do_livelidar_corr()
 
 	biggest_lvl = 0;
 
-	int best2_a, best2_x, best2_y;
+	int best2_a=0, best2_x=0, best2_y=0;
 	for(int x_corr = 0; x_corr < LIVE_PASS2_NUM_X; x_corr++)
 	{
 		for(int y_corr = 0; y_corr < LIVE_PASS2_NUM_Y; y_corr++)
@@ -1179,7 +1179,7 @@ int do_livelidar_corr()
 	// Run pass 3
 	biggest_lvl = 0;
 
-	int best3_a, best3_x, best3_y;
+	int best3_a=0, best3_x=0, best3_y=0;
 	for(int x_corr = 0; x_corr < LIVE_PASS3_NUM_X; x_corr++)
 	{
 		for(int y_corr = 0; y_corr < LIVE_PASS3_NUM_Y; y_corr++)
@@ -1230,7 +1230,7 @@ int do_livelidar_corr()
 
 	// Run pass 4, which goes x,y,a instead of (x,y),a
 
-	int best4_a, best4_x, best4_y;
+	int best4_a=0, best4_x=0, best4_y=0;
 	if(!high_movement_mode)
 	{
 
