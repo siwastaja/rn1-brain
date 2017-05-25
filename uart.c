@@ -16,6 +16,7 @@ All uart-related message management thingies.
 #include "gyro_xcel_compass.h"
 #include "optflow.h"
 #include "uart.h"
+#include "sonar.h"
 
 uint8_t txbuf[TX_BUFFER_LEN];
 
@@ -285,18 +286,30 @@ void uart_send_fsm()
 
 		case 3:
 		{
+			point_t sons[NUM_SONARS];
+			get_sonars(sons);
+
 			txbuf[0] = 0x85;
-			txbuf[1] = 0b111;
-			int ts = latest_sonars[0]*10;
-			txbuf[2] = ts&0x7f;
-			txbuf[3] = (ts&(0x7f<<7)) >> 7;
-			ts = latest_sonars[1]*10;
-			txbuf[4] = ts&0x7f;
-			txbuf[5] = (ts&(0x7f<<7)) >> 7;
-			ts = latest_sonars[2]*10;
-			txbuf[6] = ts&0x7f;
-			txbuf[7] = (ts&(0x7f<<7)) >> 7;
-			send_uart(8);
+			txbuf[1] = (sons[2].valid<<2) | (sons[1].valid<<1) | (sons[0].valid);
+
+			for(int i=0; i<3; i++)
+			{
+				int tm = sons[i].x;
+				txbuf[10*i+2] = I32_I7_4(tm);
+				txbuf[10*i+3] = I32_I7_3(tm);
+				txbuf[10*i+4] = I32_I7_2(tm);
+				txbuf[10*i+5] = I32_I7_1(tm);
+				txbuf[10*i+6] = I32_I7_0(tm);
+				tm = sons[i].y;
+				txbuf[10*i+7] = I32_I7_4(tm);
+				txbuf[10*i+8] = I32_I7_3(tm);
+				txbuf[10*i+9] = I32_I7_2(tm);
+				txbuf[10*i+10] = I32_I7_1(tm);
+				txbuf[10*i+11] = I32_I7_0(tm);
+			}
+
+			send_uart(32);
+
 		}
 		break;
 

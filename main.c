@@ -358,9 +358,6 @@ void mc_flasher(int mcnum)
 	}
 }
 
-
-int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
-
 volatile optflow_data_t latest_optflow;
 volatile int optflow_errors;
 
@@ -392,7 +389,7 @@ void timebase_10k_handler()
 
 	// Things expecting 10kHz calls:
 	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
-	sonar_fsm();
+	sonar_fsm_10k();
 
 	// Send one more character through UART.
 	// With 115200 baud rate, this will produce 10 kbytes/s stream,
@@ -595,7 +592,7 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
-
+	init_sonars();
 	init_uart();
 
 	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
@@ -719,6 +716,7 @@ int main()
 			if(lidar_initialized && lidar_speed_in_spec)
 			{
 				resync_lidar();
+				delay_ms(300);
 				lidar_reset_flags();
 				while(!lidar_is_complete());
 				lidar_reset_flags();
