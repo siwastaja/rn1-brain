@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include "feedbacks.h" // for pos_t
 
-#define LIDAR_IGNORE_LEN 380 // mm
+#define LIDAR_IGNORE_LEN 380 // mm, everything below this is marked in ignore list during ignore scan.
+#define LIDAR_LIVE_IGNORE_LEN 300 // mm, everything below this is always ignored, during normal operation
 
 #define DEFAULT_LIDAR_RPM 300
 // For determining whether the lidar is turning within the specs, so that the data flow can be synchronized:
@@ -68,8 +69,8 @@ int lidar_is_half();
 
 void lidar_fsm();
 
-void lidar_corr_on();
-void lidar_corr_off();
+void reset_livelidar_images();
+
 
 /*
  Lidar-based 2D MAP on uart:

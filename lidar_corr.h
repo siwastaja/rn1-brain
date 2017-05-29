@@ -19,5 +19,7 @@ int livelidar_fsm(int allowed_to_send_lidar);
 
 int livelidar_skip();
 
+void reset_lidar_corr_images();
+
 
 #endif

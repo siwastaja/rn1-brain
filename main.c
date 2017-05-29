@@ -396,6 +396,9 @@ void timebase_10k_handler()
 	// meaning 11.52 bits/byte, hence, with 1 start and 1 stop bit, 1.52 extra idle bytes on average.
 	uart_10k_fsm();
 
+	// needs to happen at at least 3.33 kHz.
+	handle_uart_message();
+
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
 	{
@@ -418,7 +421,6 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 1)
 	{
-		handle_uart_message();
 		motcon_fsm();
 	}
 	else if(cnt_10k == 2)

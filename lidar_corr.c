@@ -842,6 +842,14 @@ int skip;
 
 volatile int calc_must_be_finished = 0;
 
+void reset_lidar_corr_images()
+{
+	// This prevents the running of the algorithm:
+	for(int i=0; i<6; i++) num_samples1[i] = 0;
+	for(int i=0; i<6; i++) num_samples2[i] = 0;
+	for(int i=0; i<6; i++) num_samples3[i] = 0;
+}
+
 void livelidar_storage_finished()
 {
 	static int state = 0;
@@ -1307,7 +1315,7 @@ int do_livelidar_corr()
 	if(best4_a > -2*ANG_1_DEG && best4_a < 2*ANG_1_DEG &&
 	   best4_x > -30  &&  best4_x < 30  &&
 	   best4_y > -30  &&  best4_y < 30  &&
-	   supposed_a_diff > -24*ANG_1_DEG && supposed_a_diff < 24*ANG_1_DEG &&
+	   supposed_a_diff > -45*ANG_1_DEG && supposed_a_diff < 45*ANG_1_DEG &&
 	   supposed_x_diff > -160 && supposed_x_diff < 160 &&
 	   supposed_y_diff > -160 && supposed_y_diff < 160)
 	{

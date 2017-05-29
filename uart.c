@@ -103,6 +103,18 @@ void handle_uart_message()
 		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 1 /*auto decide reverse*/);
 		break;
 
+		case 0x89:
+		{
+			pos_t corr;
+			corr.ang = I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]);
+			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]);
+			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6]);
+			correct_location_without_moving_external(corr);
+			reset_livelidar_images();
+		}
+
+		break;
+
 		case 0x8f:
 		host_alive();
 		break;
@@ -125,11 +137,9 @@ void handle_uart_message()
 		break;
 
 		case 0xd3:
-		lidar_corr_on();
 		break;
 
 		case 0xd4:
-		lidar_corr_off();
 		break;
 
 		default:

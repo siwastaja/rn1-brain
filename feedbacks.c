@@ -231,10 +231,17 @@ void correct_location_without_moving(pos_t corr)
 	else if(gyro_avgd > 100)
 		gyro_mul_pos += corr.ang;
 
-	dbg[5] = gyro_mul_neg>>16;
-	dbg[6] = gyro_mul_pos>>16;
+//	dbg[5] = gyro_mul_neg>>16;
+//	dbg[6] = gyro_mul_pos>>16;
 }
 
+void correct_location_without_moving_external(pos_t corr)
+{
+	cur_x += corr.x<<16;
+	cur_y += corr.y<<16;
+	cur_pos.ang += corr.ang;
+	aim_angle += corr.ang;
+}
 
 void compass_fsm(int cmd)
 {
@@ -581,8 +588,8 @@ void run_feedbacks(int sens_status)
 			robot_moves();
 		}
 
-		if(latest[2] < dbg[7]) dbg[7] = latest[2];
-		if(latest[2] > dbg[8]) dbg[8] = latest[2];
+//		if(latest[2] < dbg[7]) dbg[7] = latest[2];
+//		if(latest[2] > dbg[8]) dbg[8] = latest[2];
 
 		if(robot_nonmoving)
 		{
