@@ -1315,9 +1315,9 @@ int do_livelidar_corr()
 	if(best4_a > -2*ANG_1_DEG && best4_a < 2*ANG_1_DEG &&
 	   best4_x > -30  &&  best4_x < 30  &&
 	   best4_y > -30  &&  best4_y < 30  &&
-	   supposed_a_diff > -45*ANG_1_DEG && supposed_a_diff < 45*ANG_1_DEG &&
-	   supposed_x_diff > -160 && supposed_x_diff < 160 &&
-	   supposed_y_diff > -160 && supposed_y_diff < 160)
+	   supposed_a_diff > -60*ANG_1_DEG && supposed_a_diff < 60*ANG_1_DEG &&
+	   supposed_x_diff > -120 && supposed_x_diff < 120 &&
+	   supposed_y_diff > -120 && supposed_y_diff < 120)
 	{
 		/*
 			Based on both information provided by feedback.c, and our lidar_corr,

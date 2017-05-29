@@ -106,7 +106,7 @@ void handle_uart_message()
 		case 0x89:
 		{
 			pos_t corr;
-			corr.ang = I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]);
+			corr.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
 			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]);
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6]);
 			correct_location_without_moving_external(corr);
