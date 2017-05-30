@@ -396,9 +396,6 @@ void timebase_10k_handler()
 	// meaning 11.52 bits/byte, hence, with 1 start and 1 stop bit, 1.52 extra idle bytes on average.
 	uart_10k_fsm();
 
-	// needs to happen at at least 3.33 kHz.
-	handle_uart_message();
-
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
 	{
@@ -421,6 +418,8 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 1)
 	{
+		handle_uart_message(); // 3.33 kHz min
+
 		motcon_fsm();
 	}
 	else if(cnt_10k == 2)
@@ -433,20 +432,21 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 4)
 	{
+		handle_uart_message(); // 3.33 kHz min
+	}
+	else if(cnt_10k == 5)
+	{
 		run_feedbacks(gyro_xcel_compass_status);
 		gyro_xcel_compass_status = 0;
 	}
-	else if(cnt_10k == 5)
+	else if(cnt_10k == 6)
 	{
 		lidar_fsm();
 		motcon_fsm();
 	}
-	else if(cnt_10k == 6)
-	{
-		motcon_fsm();
-	}
 	else if(cnt_10k == 7)
 	{
+		handle_uart_message(); // 3.33 kHz min
 	}
 	else if(cnt_10k == 8)
 	{
@@ -454,6 +454,8 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 9)
 	{
+		motcon_fsm();
+		handle_uart_message(); // 3.33 kHz min
 
 	}
 
