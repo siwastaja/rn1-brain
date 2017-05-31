@@ -22,6 +22,8 @@ void take_control();
 void reset_movement();
 int speed_limit_status();
 void lower_speed_limit();
+void enable_collision_detection();
+
 
 #define ANG_2_5_DEG   29826162
 #define ANG_1_DEG     11930465
@@ -30,6 +32,23 @@ void lower_speed_limit();
 #define ANG_0_125_DEG  1491308
 #define ANG_0_1_DEG    1193047
 #define ANG_0_05_DEG    596523
+
+
+// Measured min/max during peaceful operation
+#define XCEL_X_NEG_NOTE (int)(-8875.0*1.1)
+#define XCEL_X_POS_NOTE (int)(24535.0)
+#define XCEL_Y_NEG_NOTE (int)(-16500.0)
+#define XCEL_Y_POS_NOTE (int)(20625.0)
+
+#define XCEL_X_NEG_WARN (int)(-8875.0*1.8)
+#define XCEL_X_POS_WARN (int)(24535.0*1.5)
+#define XCEL_Y_NEG_WARN (int)(-16500.0*1.5)
+#define XCEL_Y_POS_WARN (int)(20625.0*1.5)
+
+#define XCEL_X_NEG_COLL (int)(-8875.0*3.0)
+#define XCEL_X_POS_COLL (int)(24535.0*2.5)
+#define XCEL_Y_NEG_COLL (int)(-16500.0*2.5)
+#define XCEL_Y_POS_COLL (int)(20625.0*2.5)
 
 
 typedef struct

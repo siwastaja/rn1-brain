@@ -492,9 +492,9 @@ typedef struct  __attribute__ ((__packed__))
 
 volatile adc_data_t adc_data[ADC_SAMPLES];
 
-int get_bat_v()
+int get_bat_v() // in mv
 {
-	return (adc_data[0].bat_v + adc_data[1].bat_v)<<2;
+	return (((adc_data[0].bat_v + adc_data[1].bat_v))*70920 / 22200);
 }
 
 extern pos_t cur_pos;
@@ -760,10 +760,11 @@ int main()
 
 
 		static int sensors_stabilized = 0;
-		if(!sensors_stabilized && seconds > 20)
+		if(!sensors_stabilized && seconds > 10)
 		{
-			dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
+//			dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
 			sensors_stabilized = 1;
+			enable_collision_detection();
 		}
 
 		if(seconds > 130)

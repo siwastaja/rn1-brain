@@ -380,6 +380,24 @@ void move_arc_manual(int comm, int ang)
 extern volatile int test_seq;
 extern volatile int16_t dbg_timing_shift;
 
+void unexpected_acceleration_detected()
+{
+	dbg[2]++;
+}
+
+void collision_detected()
+{
+	reset_movement();
+	stop_navig_fsms();
+	dbg[3]++;
+}
+
+int coll_det_on;
+void enable_collision_detection()
+{
+	coll_det_on = 1;
+}
+
 
 #define ANG_1_DEG 11930465
 #define ANG_01_DEG 1193047
@@ -665,14 +683,39 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
+		static int note_cnt = 0;
 
-		if(latest[0] < dbg[2]) dbg[2] = latest[0];
+		if(coll_det_on && (latest[0] < XCEL_X_NEG_NOTE || latest[0] > XCEL_X_POS_NOTE ||
+		   latest[1] < XCEL_Y_NEG_NOTE || latest[1] > XCEL_Y_POS_NOTE))
+		{
+			note_cnt++;
+
+			if(note_cnt > 2)
+			{
+				unexpected_acceleration_detected();
+				note_cnt = 0;
+			}
+		}
+		else
+			note_cnt = 0;
+
+
+		if(coll_det_on && (latest[0] < XCEL_X_NEG_WARN || latest[0] > XCEL_X_POS_WARN ||
+		   latest[1] < XCEL_Y_NEG_WARN || latest[1] > XCEL_Y_POS_WARN))
+			unexpected_acceleration_detected();
+
+		if(coll_det_on && (latest[0] < XCEL_X_NEG_COLL || latest[0] > XCEL_X_POS_COLL ||
+		   latest[1] < XCEL_Y_NEG_COLL || latest[1] > XCEL_Y_POS_COLL))
+			collision_detected();
+
+
+/*		if(latest[0] < dbg[2]) dbg[2] = latest[0];
 		if(latest[0] > dbg[3]) dbg[3] = latest[0];
 		if(latest[1] < dbg[4]) dbg[4] = latest[1];
 		if(latest[1] > dbg[5]) dbg[5] = latest[1];
 		if(latest[2] < dbg[6]) dbg[6] = latest[2];
 		if(latest[2] > dbg[7]) dbg[7] = latest[2];
-
+*/
 		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 
 

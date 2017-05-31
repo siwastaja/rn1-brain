@@ -285,11 +285,16 @@ void uart_send_fsm()
 		case 2:
 		{
 			int bat_v = get_bat_v();
+			int bat_percentage = (100*(bat_v-15500))/(21000-15500);
+			if(bat_percentage < 0) bat_percentage = 0;
+			if(bat_percentage > 127) bat_percentage = 127;
+
 			txbuf[0] = 0xa2;
 			txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
 			txbuf[2] = I16_MS(bat_v);
 			txbuf[3] = I16_LS(bat_v);
-			send_uart(4);
+			txbuf[4] = bat_percentage;
+			send_uart(5);
 		}
 		break;
 
