@@ -35,20 +35,20 @@ void enable_collision_detection();
 
 
 // Measured min/max during peaceful operation
-#define XCEL_X_NEG_NOTE (int)(-8875.0*1.1)
-#define XCEL_X_POS_NOTE (int)(24535.0)
-#define XCEL_Y_NEG_NOTE (int)(-16500.0)
-#define XCEL_Y_POS_NOTE (int)(20625.0)
+#define XCEL_X_NEG_NOTE (int)(-8875.0*1.4)
+#define XCEL_X_POS_NOTE (int)(24535.0*1.2)
+#define XCEL_Y_NEG_NOTE (int)(-16500.0*1.2)
+#define XCEL_Y_POS_NOTE (int)(20625.0*1.2)
 
-#define XCEL_X_NEG_WARN (int)(-8875.0*1.8)
-#define XCEL_X_POS_WARN (int)(24535.0*1.5)
-#define XCEL_Y_NEG_WARN (int)(-16500.0*1.5)
-#define XCEL_Y_POS_WARN (int)(20625.0*1.5)
+#define XCEL_X_NEG_WARN (int)(-8875.0*2.3)
+#define XCEL_X_POS_WARN (int)(24535.0*2.0)
+#define XCEL_Y_NEG_WARN (int)(-16500.0*2.0)
+#define XCEL_Y_POS_WARN (int)(20625.0*2.0)
 
-#define XCEL_X_NEG_COLL (int)(-8875.0*3.0)
-#define XCEL_X_POS_COLL (int)(24535.0*2.5)
-#define XCEL_Y_NEG_COLL (int)(-16500.0*2.5)
-#define XCEL_Y_POS_COLL (int)(20625.0*2.5)
+#define XCEL_X_NEG_COLL (int)(-8875.0*4.0)
+#define XCEL_X_POS_COLL (int)(24535.0*3.5)
+#define XCEL_Y_NEG_COLL (int)(-16500.0*3.5)
+#define XCEL_Y_POS_COLL (int)(20625.0*3.5)
 
 
 typedef struct

@@ -382,11 +382,13 @@ extern volatile int16_t dbg_timing_shift;
 
 void unexpected_acceleration_detected()
 {
+	lidar_mark_invalid();
 	dbg[2]++;
 }
 
 void collision_detected()
 {
+	lidar_mark_invalid();
 	reset_movement();
 	stop_navig_fsms();
 	dbg[3]++;

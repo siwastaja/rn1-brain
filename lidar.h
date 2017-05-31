@@ -42,8 +42,11 @@ typedef struct
 	int16_t scan[360];
 } lidar_scan_t;
 
+#define LIVELIDAR_INVALID 1
+
 typedef struct
 {
+	int status;
 	pos_t pos[90]; // Each four points share the same position.
 	int16_t scan[360];
 } live_lidar_scan_t;
@@ -70,6 +73,8 @@ int lidar_is_half();
 void lidar_fsm();
 
 void reset_livelidar_images();
+
+void lidar_mark_invalid();
 
 
 /*

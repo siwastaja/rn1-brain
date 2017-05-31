@@ -226,7 +226,7 @@ static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for v
 	int y_mid = in->pos[45].y;
 
 	*(buf++) = 0x84;
-	*(buf++) = significant_for_mapping;
+	*(buf++) = ((in->status&LIVELIDAR_INVALID)?2:0) | (significant_for_mapping?1:0);
 
 	*(buf++) = I16_MS(a_mid);
 	*(buf++) = I16_LS(a_mid);
@@ -849,6 +849,10 @@ void reset_lidar_corr_images()
 	for(int i=0; i<6; i++) num_samples2[i] = 0;
 	for(int i=0; i<6; i++) num_samples3[i] = 0;
 
+	lidlive1.status = 0;
+	lidlive2.status = 0;
+	lidlive3.status = 0;
+
 	skip = 1;
 }
 
@@ -859,6 +863,7 @@ void livelidar_storage_finished()
 	if(state == 0)
 	{
 		for(int i=0; i<6; i++) num_samples2[i] = 0;
+		lidlive2.status = 0;
 		p_livelidar_store = &lidlive2;
 		p_livelid2d_store = l2dlive2;
 		p_livelidar_num_samples_store = num_samples2;
@@ -873,6 +878,7 @@ void livelidar_storage_finished()
 	else if(state == 1)
 	{
 		for(int i=0; i<6; i++) num_samples3[i] = 0;
+		lidlive3.status = 0;
 		p_livelidar_store = &lidlive3;
 		p_livelid2d_store = l2dlive3;
 		p_livelidar_num_samples_store = num_samples3;
@@ -887,6 +893,7 @@ void livelidar_storage_finished()
 	else // state == 2
 	{
 		for(int i=0; i<6; i++) num_samples1[i] = 0;
+		lidlive1.status = 0;
 		p_livelidar_store = &lidlive1;
 		p_livelid2d_store = l2dlive1;
 		p_livelidar_num_samples_store = num_samples1;

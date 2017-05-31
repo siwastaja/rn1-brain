@@ -105,6 +105,11 @@ void reset_livelidar_images()
 	reset = 3; // to skip doing anything with the image being acquired right now.
 }
 
+void lidar_mark_invalid()
+{
+	p_livelidar_store->status |= LIVELIDAR_INVALID;
+}
+
 void lidar_fsm()
 {
 	static int prev_cur_packet;
