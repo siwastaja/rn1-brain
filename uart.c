@@ -110,7 +110,6 @@ void handle_uart_message()
 			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]);
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6]);
 			correct_location_without_moving_external(corr);
-			reset_livelidar_images();
 		}
 
 		break;

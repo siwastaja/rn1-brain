@@ -102,9 +102,7 @@ int reset = 0;
 
 void reset_livelidar_images()
 {
-	reset = 2; // to skip doing anything with the image being acquired right now.
-
-	reset_lidar_corr_images();
+	reset = 3; // to skip doing anything with the image being acquired right now.
 }
 
 void lidar_fsm()
@@ -159,7 +157,7 @@ void lidar_fsm()
 		{	
 			// We just got the full round.
 
-			if(!reset)
+			if(reset == 0)
 			{
 
 				int skip = livelidar_skip();
@@ -183,7 +181,13 @@ void lidar_fsm()
 					correct_location_without_moving(latest_corr);
 			}
 			else
+			{
 				reset--;
+				reset_lidar_corr_images();
+
+				if(reset == 0)
+					livelidar_storage_finished();
+			}
 		}
 	}
 	prev_cur_packet = cur_packet;

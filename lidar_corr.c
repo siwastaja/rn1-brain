@@ -848,6 +848,8 @@ void reset_lidar_corr_images()
 	for(int i=0; i<6; i++) num_samples1[i] = 0;
 	for(int i=0; i<6; i++) num_samples2[i] = 0;
 	for(int i=0; i<6; i++) num_samples3[i] = 0;
+
+	skip = 1;
 }
 
 void livelidar_storage_finished()

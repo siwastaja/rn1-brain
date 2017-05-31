@@ -243,9 +243,9 @@ void navig_fsm2()
 	{
 		int son = nearest_sonar();
 		int limit_status = speed_limit_status();
-		if((limit_status == 0 && son < 50) ||
-		   (limit_status == 1 && son < 35) ||
-		   (limit_status == 2 && son < 20))
+		if((limit_status == 0 && son < 47) ||
+		   (limit_status == 1 && son < 33) ||
+		   (limit_status == 2 && son < 18))
 		{
 			lower_speed_limit();
 		}

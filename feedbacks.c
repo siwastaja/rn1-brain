@@ -110,9 +110,10 @@ int speed_limit_status()
 
 void lower_speed_limit()
 {
-	speed_limit_lowered++;
-	ang_top_speed >>= 1;
+	if(!speed_limit_lowered)
+		ang_top_speed >>= 1;  // Lower angular speed limit once only.
 	fwd_top_speed >>= 1;
+	speed_limit_lowered++;
 }
 
 void rotate_rel(int angle)
@@ -664,6 +665,13 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
+
+		if(latest[0] < dbg[2]) dbg[2] = latest[0];
+		if(latest[0] > dbg[3]) dbg[3] = latest[0];
+		if(latest[1] < dbg[4]) dbg[4] = latest[1];
+		if(latest[1] > dbg[5]) dbg[5] = latest[1];
+		if(latest[2] < dbg[6]) dbg[6] = latest[2];
+		if(latest[2] > dbg[7]) dbg[7] = latest[2];
 
 		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 

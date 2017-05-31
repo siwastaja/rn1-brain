@@ -744,8 +744,7 @@ int main()
 			dbg_error_num = 1;
 			livelidar_fsm(1);
 			int tooktime = millisec - starttime;
-			dbg[1] = tooktime;
-			if(tooktime > dbg[2]) dbg[2] = tooktime;
+			if(tooktime > dbg[1]) dbg[1] = tooktime;
 			if(tooktime < 30) delay_ms(30); // temporary shit
 
 			uart_send_fsm(); // send something else.
@@ -759,6 +758,13 @@ int main()
 //		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 //		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
+
+		static int sensors_stabilized = 0;
+		if(!sensors_stabilized && seconds > 20)
+		{
+			dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
+			sensors_stabilized = 1;
+		}
 
 		if(seconds > 130)
 		{
