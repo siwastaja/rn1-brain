@@ -212,12 +212,14 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode)
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
 
-	if(back_mode == 2) // Force backwards
+	// back_mode == 0 = always go forward.
+
+	if(back_mode == 1) // Force backwards
 	{
 		new_fwd *= -1;
 		new_ang = (uint32_t)new_ang + 2147483648UL;
 	}
-	else if(back_mode == 1) // Auto decision
+	else if(back_mode == 2) // Auto decision
 	{
 		int ang_err = cur_pos.ang - new_ang;
 		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg

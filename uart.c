@@ -100,7 +100,7 @@ void handle_uart_message()
 
 		case 0x82:
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
-		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), 1 /*auto decide reverse*/);
+		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), process_rx_buf[11]);
 		break;
 
 		case 0x89:
