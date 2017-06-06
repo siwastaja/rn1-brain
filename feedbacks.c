@@ -658,6 +658,7 @@ void run_feedbacks(int sens_status)
 	if(sens_status & XCEL_NEW_DATA)
 	{
 		int latest[3] = {latest_xcel->x, latest_xcel->y, latest_xcel->z};
+		static int xcel_flt[2];
 
 		if(robot_nonmoving)
 		{
@@ -665,6 +666,11 @@ void run_feedbacks(int sens_status)
 			xcel_dc_corrs[1] = ((latest[1]<<15) + 255*xcel_dc_corrs[1])>>8;
 			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
 		}
+
+		// Moving average 7/8
+		xcel_flt[0] = ((latest[0]<<8) + 7*xcel_flt[0])>>3;
+		xcel_flt[1] = ((latest[1]<<8) + 7*xcel_flt[1])>>3;
+
 
 		int xcel_dt = cnt - prev_xcel_cnt;
 		prev_xcel_cnt = cnt;
@@ -685,29 +691,13 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
-		static int note_cnt = 0;
 
-		if(coll_det_on && (latest[0] < XCEL_X_NEG_NOTE || latest[0] > XCEL_X_POS_NOTE ||
-		   latest[1] < XCEL_Y_NEG_NOTE || latest[1] > XCEL_Y_POS_NOTE))
-		{
-			note_cnt++;
-
-			if(note_cnt > 2)
-			{
-				unexpected_acceleration_detected();
-				note_cnt = 0;
-			}
-		}
-		else
-			note_cnt = 0;
-
-
-		if(coll_det_on && (latest[0] < XCEL_X_NEG_WARN || latest[0] > XCEL_X_POS_WARN ||
-		   latest[1] < XCEL_Y_NEG_WARN || latest[1] > XCEL_Y_POS_WARN))
+		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_WARN || xcel_flt[0] > XCEL_X_POS_WARN ||
+		   xcel_flt[1] < XCEL_Y_NEG_WARN || xcel_flt[1] > XCEL_Y_POS_WARN))
 			unexpected_acceleration_detected();
 
-		if(coll_det_on && (latest[0] < XCEL_X_NEG_COLL || latest[0] > XCEL_X_POS_COLL ||
-		   latest[1] < XCEL_Y_NEG_COLL || latest[1] > XCEL_Y_POS_COLL))
+		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_COLL || xcel_flt[0] > XCEL_X_POS_COLL ||
+		   xcel_flt[1] < XCEL_Y_NEG_COLL || xcel_flt[1] > XCEL_Y_POS_COLL))
 			collision_detected();
 
 
