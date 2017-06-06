@@ -47,6 +47,41 @@ int lidar_is_half()
 }
 
 uint8_t lidar_ignore[360];
+const int lidar_ignore_len[32] =
+{
+100,
+(100+170)/2,
+170,
+(170+200)/2,
+200,
+(200+220)/2,
+220,
+(220+200)/2,
+200,
+(200+250)/2,
+250,
+(250+300)/2,
+300,
+(300+390)/2,
+390,
+(390+350)/2,
+350,
+(350+390)/2,
+390,
+(390+300)/2,
+300,
+(300+250)/2,
+250,
+(250+200)/2,
+200,
+(200+220)/2,
+220,
+(220+200)/2,
+200,
+(200+170)/2,
+170,
+(170+100)/2
+};
 
 // Process the data so that datapoints either in the ignore list, or having the "error" flag set, are set as 0, and copy to a continuous int16_t table.
 // Data is always positive and 14 bits long.
@@ -123,29 +158,30 @@ void lidar_fsm()
 		int idx = prev_cur_packet; // We read from previous packet, since writing it is finished.
 		int odx = 89-idx; // We write starting from the end to mirror the lidar image.
 		int valid_tbl_odx = odx/15; // Validness table includes total counts of valid points divided in six 60 degree segments.
+		int ignore_len_tbl_odx = (odx*32+16)/90;
 		COPY_POS(p_livelidar_store->pos[odx], cur_pos);
 
 		dist = lidar_full_rev[idx].d[0].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+3] = dist;
-		valid = !((lidar_ignore[idx*4+0]) || (lidar_full_rev[idx].d[0].flags_distance&(1<<15)) || dist < LIDAR_LIVE_IGNORE_LEN);
+		valid = !((lidar_ignore[idx*4+0]) || (lidar_full_rev[idx].d[0].flags_distance&(1<<15)) || dist < lidar_ignore_len[ignore_len_tbl_odx]);
 		p_livelid2d_store[odx*4+3].valid = valid;
 		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
 
 		dist = lidar_full_rev[idx].d[1].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+2] = dist;
-		valid = !((lidar_ignore[idx*4+1]) || (lidar_full_rev[idx].d[1].flags_distance&(1<<15)) || dist < LIDAR_LIVE_IGNORE_LEN);
+		valid = !((lidar_ignore[idx*4+1]) || (lidar_full_rev[idx].d[1].flags_distance&(1<<15)) || dist < lidar_ignore_len[ignore_len_tbl_odx]);
 		p_livelid2d_store[odx*4+2].valid = valid;
 		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
 
 		dist = lidar_full_rev[idx].d[2].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+1] = dist;
-		valid = !((lidar_ignore[idx*4+2]) || (lidar_full_rev[idx].d[2].flags_distance&(1<<15)) || dist < LIDAR_LIVE_IGNORE_LEN);
+		valid = !((lidar_ignore[idx*4+2]) || (lidar_full_rev[idx].d[2].flags_distance&(1<<15)) || dist < lidar_ignore_len[ignore_len_tbl_odx]);
 		p_livelid2d_store[odx*4+1].valid = valid;
 		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
 
 		dist = lidar_full_rev[idx].d[3].flags_distance&0x3fff;
 		p_livelidar_store->scan[odx*4+0] = dist;
-		valid = !((lidar_ignore[idx*4+3]) || (lidar_full_rev[idx].d[3].flags_distance&(1<<15)) || dist < LIDAR_LIVE_IGNORE_LEN);
+		valid = !((lidar_ignore[idx*4+3]) || (lidar_full_rev[idx].d[3].flags_distance&(1<<15)) || dist < lidar_ignore_len[ignore_len_tbl_odx]);
 		p_livelid2d_store[odx*4+0].valid = valid;
 		if(valid) p_livelidar_num_samples_store[valid_tbl_odx]++;
 
