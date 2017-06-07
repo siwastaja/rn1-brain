@@ -21,8 +21,6 @@ extern volatile int dbg[10];
 #define XY_DONT_AT_END_LEN 300 /*don't recalculate ang,straight at this many last millimeters to (x,y) dstination*/
 
 
-// State machine for lidar-synced turn-then-straight segment.
-// Lidar data is obtained when the robot is not moving for non-distorted image.
 typedef enum {
 	MOVE_IDLE 		= 0, 
 	MOVE_START          	= 1,
@@ -37,8 +35,6 @@ typedef struct
 	move_state_t state;
 	int abs_ang;
 	int rel_fwd;
-	int lidar_nonread[3];
-	lidar_scan_t lidars[3]; // Before turning; after turning; after straight segment. Including the assumed (ang,x,y).
 } move_t;
 
 static move_t cur_move;
@@ -53,34 +49,6 @@ int nearest_sonar()
 	if(latest_sonars[2] && latest_sonars[2] < n) n = latest_sonars[2];
 	return n;
 }
-
-lidar_scan_t* move_get_valid_lidar(int idx)
-{
-	if(idx < 0 || idx > 2)
-		return 0;
-
-	if(cur_move.lidar_nonread[idx])
-	{
-		cur_move.lidar_nonread[idx] = 0;
-		return &cur_move.lidars[idx];
-	}
-	return 0;
-}
-
-void move_mark_lidar_nonread(int idx)
-{
-	cur_move.lidar_nonread[idx] = 1;
-}
-
-lidar_scan_t* move_get_lidar(int idx)
-{
-	if(idx < 0 || idx > 2)
-		return 0;
-
-	return &cur_move.lidars[idx];
-}
-
-extern volatile int lidar_calc_req;
 
 void move_fsm()
 {
@@ -146,9 +114,6 @@ void move_rel_twostep(int angle16, int fwd /*in mm*/)
 	cur_move.abs_ang = cur_pos.ang + (angle16<<16);
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
-	cur_move.lidar_nonread[0] = 0;
-	cur_move.lidar_nonread[1] = 0;
-	cur_move.lidar_nonread[2] = 0;
 }
 
 void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
@@ -160,9 +125,6 @@ void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
 	cur_move.abs_ang = angle32;
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
-	cur_move.lidar_nonread[0] = 0;
-	cur_move.lidar_nonread[1] = 0;
-	cur_move.lidar_nonread[2] = 0;
 }
 
 static int back_mode_hommel = 0;
@@ -245,14 +207,14 @@ void navig_fsm2()
 	{
 		int son = nearest_sonar();
 		int limit_status = speed_limit_status();
-		if((limit_status == 0 && son < 47) ||
-		   (limit_status == 1 && son < 33) ||
-		   (limit_status == 2 && son < 18))
+		if((limit_status == 0 && son < 50) ||
+		   (limit_status == 1 && son < 35) ||
+		   (limit_status == 2 && son < 15))
 		{
 			lower_speed_limit();
 		}
 
-		if(son < 12)
+		if(son < 10)
 		{
 			reset_movement();
 			cur_move.state = 0;
