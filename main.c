@@ -374,6 +374,7 @@ volatile int seconds;
 volatile int millisec;
 
 volatile int us100;
+extern volatile int do_compass_round;
 
 void timebase_10k_handler()
 {
@@ -450,7 +451,8 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 8)
 	{
-
+		compass_fsm(do_compass_round);
+		if(do_compass_round) do_compass_round = 0;
 	}
 	else if(cnt_10k == 9)
 	{

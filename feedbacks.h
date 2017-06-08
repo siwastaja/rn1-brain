@@ -15,6 +15,7 @@ void rotate_rel(int angle);
 void rotate_abs(int angle);
 void straight_rel(int fwd /*in mm*/);
 int correcting_angle();
+int angle_almost_corrected();
 int correcting_straight();
 int correcting_either();
 int robot_moving();
@@ -74,6 +75,7 @@ void auto_disallow(int yes);
 
 void correct_location_without_moving(pos_t corr);
 void correct_location_without_moving_external(pos_t corr);
+void set_location_without_moving_external(pos_t new_pos);
 
 void change_angle_abs(int angle);
 void change_angle_rel(int angle);

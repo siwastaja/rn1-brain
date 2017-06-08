@@ -224,6 +224,15 @@ int correcting_angle()
 	return do_correct_angle || (ang_idle < 700);
 }
 
+int angle_almost_corrected()
+{
+	int ang_err = cur_pos.ang - aim_angle;
+	if(ang_err > (-5*ANG_1_DEG) && ang_err < (5*ANG_1_DEG))
+		return 1;
+
+	return 0;
+}
+
 int correcting_straight()
 {
 	return do_correct_fwd || (fwd_idle < 700);
@@ -273,6 +282,15 @@ void correct_location_without_moving_external(pos_t corr)
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
 }
+
+void set_location_without_moving_external(pos_t new_pos)
+{
+	cur_x = new_pos.x<<16;
+	cur_y = new_pos.y<<16;
+	cur_pos.ang = new_pos.ang;
+	aim_angle = new_pos.ang;
+}
+
 
 void compass_fsm(int cmd)
 {
@@ -705,10 +723,6 @@ void run_feedbacks(int sens_status)
 			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
 		}
 
-		// Moving average 7/8
-		xcel_flt[0] = ((latest[0]<<8) + 7*xcel_flt[0])>>3;
-		xcel_flt[1] = ((latest[1]<<8) + 7*xcel_flt[1])>>3;
-
 
 		int xcel_dt = cnt - prev_xcel_cnt;
 		prev_xcel_cnt = cnt;
@@ -729,6 +743,9 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
+		// Moving average 7/8
+		xcel_flt[0] = ((latest[0]<<8) + 7*xcel_flt[0])>>3;
+		xcel_flt[1] = ((latest[1]<<8) + 7*xcel_flt[1])>>3;
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_WARN || xcel_flt[0] > XCEL_X_POS_WARN ||
 		   xcel_flt[1] < XCEL_Y_NEG_WARN || xcel_flt[1] > XCEL_Y_POS_WARN))

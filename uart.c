@@ -75,6 +75,8 @@ static void handle_maintenance_msg()
 	}
 }
 
+volatile int do_compass_round;
+
 void handle_uart_message()
 {
 	if(!do_handle_message)
@@ -104,14 +106,17 @@ void handle_uart_message()
 		break;
 
 		case 0x89:
+		case 0x8a:
 		{
 			pos_t corr;
 			corr.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
 			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]);
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6]);
-			correct_location_without_moving_external(corr);
+			if(process_rx_buf[0] == 0x89)
+				correct_location_without_moving_external(corr);
+			else
+				set_location_without_moving_external(corr);
 		}
-
 		break;
 
 		case 0x8f:
@@ -119,7 +124,7 @@ void handle_uart_message()
 		break;
 
 		case 0x91:
-		//do_re_compass = 1;
+		do_compass_round = 1;
 		break;
 
 		case 0x92:
