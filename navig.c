@@ -265,8 +265,6 @@ void navig_fsm2()
 
 */
 
-		// Check the right side:
-
 		int limited = 0;
 		int stop = 0;
 		int turn[2] = {0, 0}; // to left, right
@@ -303,17 +301,17 @@ void navig_fsm2()
 					else if(dist_to_front < 110)
 					{
 						speed_limit(2);
-						if(ang > 45) {turn[d] = 4;} else {dbg[5]++;stop = 1; break;}
+						if(ang > 40) {turn[d] = 4;} else {dbg[5]++;stop = 1; break;}
 					}
 					else if(dist_to_front < 140)
 					{
 						speed_limit(2);
-						if(ang > 35) {turn[d] = 4;} else {dbg[5]++;stop = 1; break;}
+						if(ang > 32) {turn[d] = 4;} else {dbg[5]++;stop = 1; break;}
 					}
 					else if(dist_to_front < 170)
 					{
 						speed_limit(2);
-						if(ang > 25) {turn[d] = 4;} else {dbg[6]++;stop = 1; break;}
+						if(ang > 24) {turn[d] = 4;} else {dbg[6]++;stop = 1; break;}
 					}
 					else if(dist_to_front < 320)
 					{
@@ -342,8 +340,8 @@ void navig_fsm2()
 					}
 				}
 				else 
-				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+70) ||
-				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+70)))
+				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+100) ||
+				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+100)))
 				{
 					if(dist_to_front < 450)
 					{
@@ -361,7 +359,7 @@ void navig_fsm2()
 						limited = 1;
 					}
 
-					if(dist_to_front < 250 && dist_to_front > -190)
+					if(dist_to_front < 450 && dist_to_front > -190)
 					{
 						do_not_turn[d] = 1;
 					}
@@ -382,31 +380,39 @@ void navig_fsm2()
 						limited = 1;
 					}
 
+					if(dist_to_front < 450 && dist_to_front > 50)
+					{
+						do_not_turn[d] = 1;
+					}
+
+
 				}
 
 			}
 
-/*
+
 			// Check the arse, to avoid hitting when turning.
 			for(int i = (d?(90-1):(180+35)); i < (d?(90+35):(180+90+1)); i++)
 			{
 				if(!lidar_collision_avoidance[i].valid) continue;
 
-				int ang = d?(360-i):(i);
+				//int ang = d?(360-i):(i);
 
-				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+50) ||
-				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+50)))
+				if((!d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+50)) ||
+				   ( d && lidar_collision_avoidance[i].y < ROBOT_YS/2+50))
 				{
 					if(lidar_collision_avoidance[i].x < 50 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
 					{
+						speed_limit(1);
 						do_not_turn[d] = 1;
+						dbg[7]++;
+						break;
 					}
 
 				}
 
 
 			}
-*/
 
 			for(int i = (d?340:0); i < (d?360:20); i++)
 			{
@@ -441,6 +447,13 @@ void navig_fsm2()
 
 		if(turn[0] && turn[1])
 		{
+			stop = 1;
+		}
+
+		if((turn[0] && do_not_turn[1]) || (turn[1] && do_not_turn[0]))
+		{
+			dbg[8]++;
+
 			stop = 1;
 		}
 
