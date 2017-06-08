@@ -652,6 +652,8 @@ int main()
 
 	int tries = 5+1;
 	while(--tries && init_gyro_xcel_compass()) delay_ms(50);
+	if(tries < 1) DO_KILL_PWR();
+
 	init_optflow();
 	init_motcons();
 	init_lidar();

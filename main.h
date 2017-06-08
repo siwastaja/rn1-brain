@@ -15,6 +15,8 @@
 #define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
 #define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
 
+#define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
+
 
 void error(int code);
 void run_flasher();

@@ -195,6 +195,20 @@ static void scan_to_2d_live(live_lidar_scan_t* in, point_t* out, int32_t corr_a,
 	}
 }
 
+// Same, but within the robot coordinate frame for obstacle avoidance.
+static void scan_to_2d_live_robot_coord_frame(live_lidar_scan_t* in, point_t* out)
+{
+	for(int i = 0; i < 360; i++)
+	{
+		uint32_t angle = (uint32_t)i*(uint32_t)ANG_1_DEG;
+		int y_idx = (angle)>>SIN_LUT_SHIFT;
+		int x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
+		out[i].x = (((int32_t)sin_lut[x_idx] * (int32_t)in->scan[i])>>15);
+		out[i].y = (((int32_t)sin_lut[y_idx] * (int32_t)in->scan[i])>>15);
+	}
+}
+
+
 /*
  Lidar-based 2D MAP on uart:
 
@@ -815,6 +829,9 @@ void apply_corr_to_livelidar(live_lidar_scan_t* lid)
 live_lidar_scan_t lidlive1, lidlive2, lidlive3;
 point_t l2dlive1[360], l2dlive2[360], l2dlive3[360];
 
+point_t lidar_collision_avoidance[360];
+extern volatile int lidar_collision_avoidance_new;
+
 live_lidar_scan_t* p_livelidar_store;
 point_t*           p_livelid2d_store;
 
@@ -1080,7 +1097,12 @@ int do_livelidar_corr()
 
 	angle_optim = supposed_a_diff/-ANG_1_DEG;
 
+	// Do a copy for collision avoidance:
+	for(int i = 0; i < 360; i++) lidar_collision_avoidance[i].valid = p_livelid2d_img2[i].valid;
+	scan_to_2d_live_robot_coord_frame(p_livelidar_img2, lidar_collision_avoidance);
+	lidar_collision_avoidance_new = 1;
 
+	// Convert img1, which stays fixed during the tests.
 	scan_to_2d_live(p_livelidar_img1, p_livelid2d_img1, 0, 0, 0);
 
 	// Run PASS 1

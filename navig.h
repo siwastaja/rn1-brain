@@ -14,4 +14,8 @@ void move_mark_lidar_nonread(int idx);
 
 void stop_navig_fsms();
 
+int get_xy_left();
+int get_xy_id();
+
+
 #endif

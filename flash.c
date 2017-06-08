@@ -4,6 +4,7 @@
 
 #include "ext_include/stm32f2xx.h"
 
+#include "main.h" // for DO_KILL_PWR
 #include "flash.h"
 
 extern unsigned int _SETTINGS_BEGIN;
@@ -146,9 +147,6 @@ Reset:
 	Soft CPU reset is done.
 
 */
-
-#define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
-
 void flasher() __attribute__((section(".flasher")));
 void flasher()
 {

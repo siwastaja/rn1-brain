@@ -47,7 +47,7 @@ int aim_fwd;
 int final_fwd_accel = 400;
 int fwd_accel = 350; // was 250, kinda sluggish
 int fwd_top_speed;
-int fwd_p = 2200; // 3100 gives rather strong deceleration; 1600 feels sluggish
+int fwd_p = 1600; // 3100 gives rather strong deceleration; 1600 feels sluggish. 2200 oscillates sometimes.
 
 volatile int manual_control;
 volatile int manual_common_speed;
@@ -116,6 +116,25 @@ void lower_speed_limit()
 	speed_limit_lowered++;
 }
 
+void speed_limit(int new_status)
+{
+	if(new_status < 0 || new_status > 4) return;
+
+	while(new_status > speed_limit_lowered)
+		lower_speed_limit();
+}
+
+void reset_speed_limits()
+{
+	ang_top_speed = 170000;
+	fwd_top_speed = 600000;
+}
+
+void set_ang_top_speed(int speed)
+{
+	ang_top_speed = speed;
+}
+
 void rotate_rel(int angle)
 {
 	aim_angle += angle;
@@ -141,6 +160,12 @@ void change_angle_abs(int angle)
 	aim_angle = angle;
 }
 
+void change_angle_rel(int angle)
+{
+	aim_angle += angle;
+}
+
+
 void straight_rel(int fwd /*in mm*/)
 {
 	speed_limit_lowered = 0;
@@ -150,6 +175,11 @@ void straight_rel(int fwd /*in mm*/)
 	fwd_top_speed = 600000;
 	manual_control = 0;
 	robot_moves();
+}
+
+int get_fwd()
+{
+	return (aim_fwd>>16);
 }
 
 void change_straight_rel(int fwd /*in mm*/)
@@ -440,11 +470,15 @@ void run_feedbacks(int sens_status)
 	int ang_err = cur_pos.ang - aim_angle;
 	int fwd_err = aim_fwd;
 
-	if(straight_allowed && (fwd_err < -15*65536 || fwd_err > 15*65536))
+	if(straight_allowed && (fwd_err < -40*65536 || fwd_err > 40*65536))
 	{
-		do_correct_fwd = 1;
+		if(ang_err > (-8*ANG_1_DEG) && ang_err < (8*ANG_1_DEG))
+			do_correct_fwd = 1;
+		else if(ang_err < (-12*ANG_1_DEG) && ang_err > (12*ANG_1_DEG))
+			do_correct_fwd = 0;
+		
 	}
-	if(!straight_allowed || (fwd_err > -8*65536 && fwd_err < 8*65536))
+	if(!straight_allowed || (fwd_err > -15*65536 && fwd_err < 15*65536))
 	{
 		do_correct_fwd = 0;
 	}
@@ -462,14 +496,14 @@ void run_feedbacks(int sens_status)
 
 	if(angular_allowed && 
 		(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
-		 || (                    (ang_err < (3*-ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
+		 || (                    (ang_err < (-3*ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
 	{
 		do_correct_angle = 1;
 	}
 
 	if(!angular_allowed || 
 		    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
-		|| (                    (ang_err > (2*-ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
+		|| (                    (ang_err > (-2*ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
 	{
 		do_correct_angle = 0;
 	}
@@ -583,7 +617,11 @@ void run_feedbacks(int sens_status)
 	{
 		if(fwd_idle < 10000) fwd_idle++;
 		fwd_nonidle = 0;
-		fwd_speed = 0;
+		if(fwd_speed)
+		{
+			fwd_speed -= 2*fwd_accel;
+			if(fwd_speed < 0) fwd_speed = 0;
+		}
 	}
 
 	if(ang_speed != 0 || fwd_speed != 0) robot_moves();

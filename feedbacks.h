@@ -21,9 +21,17 @@ int robot_moving();
 void take_control();
 void reset_movement();
 int speed_limit_status();
+void speed_limit(int new_status);
 void lower_speed_limit();
+void reset_speed_limits();
+
 void enable_collision_detection();
 
+void set_ang_top_speed(int speed);
+
+
+
+int get_fwd();
 
 #define ANG_2_5_DEG   29826162
 #define ANG_1_DEG     11930465
@@ -68,6 +76,7 @@ void correct_location_without_moving(pos_t corr);
 void correct_location_without_moving_external(pos_t corr);
 
 void change_angle_abs(int angle);
+void change_angle_rel(int angle);
 void change_straight_rel(int fwd /*in mm*/);
 
 

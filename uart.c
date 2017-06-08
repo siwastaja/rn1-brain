@@ -264,7 +264,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 1:
+		case 2:
 		{
 			txbuf[0] = 0xa1;
 			txbuf[1] = 1;
@@ -282,7 +282,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 2:
+		case 4:
 		{
 			int bat_v = get_bat_v();
 			int bat_percentage = (100*(bat_v-15500))/(21000-15500);
@@ -298,7 +298,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 3:
+		case 6:
 		{
 			point_t sons[NUM_SONARS];
 			get_sonars(sons);
@@ -327,7 +327,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 4:
+		case 8:
 		{
 			txbuf[0] = 0xd2;
 			for(int i=0; i<10; i++)
@@ -343,7 +343,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 5:
+		case 10:
 		{
 			txbuf[0] = 0xa0;
 			txbuf[1] = 1;
@@ -369,6 +369,27 @@ void uart_send_fsm()
 
 			send_uart(18);
 		}
+
+		case 1:
+		case 3:
+		case 5:
+		case 7:
+		case 9:
+		case 11:
+		{
+			txbuf[0] = 0xa5;
+			txbuf[1] = 1;
+			txbuf[2] = get_xy_id();
+			int tm = get_xy_left();
+			if(tm < 0) tm*=-1;
+			else if(tm > 30000) tm = 30000;
+			txbuf[3] = I16_MS(tm);
+			txbuf[4] = I16_LS(tm);
+			send_uart(5);
+
+		}
+		break;		
+
 		default:
 		send_count = 0;
 		break;
