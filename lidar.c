@@ -246,7 +246,7 @@ void generate_lidar_ignore()
 		{
 			if(!(lidar_full_rev[i].d[o].flags_distance&(1<<15)))
 			{
-				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < LIDAR_IGNORE_LEN)
+				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < ((i<12||i>=78)?LIDAR_IGNORE_LEN_FRONT:LIDAR_IGNORE_LEN))
 				{
 					int cur = i*4+o;
 					int next = cur+1; if(next > 359) next = 0;

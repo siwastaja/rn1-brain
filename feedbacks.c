@@ -73,6 +73,12 @@ void host_alive()
 	host_alive_watchdog = 5000;
 }
 
+void host_dead()
+{
+	host_alive_watchdog = 0;
+}
+
+
 void zero_gyro_short_integrals()
 {
 	gyro_short_integrals[0] = 0;
@@ -222,6 +228,11 @@ static int fwd_idle = 1;
 int correcting_angle()
 {
 	return do_correct_angle || (ang_idle < 700);
+}
+
+int get_ang_err()
+{
+	return cur_pos.ang - aim_angle;
 }
 
 int angle_almost_corrected()
@@ -618,12 +629,19 @@ void run_feedbacks(int sens_status)
 		}
 		fwd_nonidle++;
 
+		int top_speed = fwd_top_speed;
+		if(ang_err < -30*ANG_1_DEG || ang_err > 30*ANG_1_DEG) { top_speed = 0;}
+		else if(ang_err < -25*ANG_1_DEG || ang_err > 25*ANG_1_DEG) { if(top_speed > 30000) top_speed = 30000;}
+		else if(ang_err < -20*ANG_1_DEG || ang_err > 20*ANG_1_DEG) { if(top_speed > 60000) top_speed = 60000;}
+		else if(ang_err < -15*ANG_1_DEG || ang_err > 15*ANG_1_DEG) { if(top_speed > 150000) top_speed = 150000;}
+		else if(ang_err < -10*ANG_1_DEG || ang_err > 10*ANG_1_DEG) { if(top_speed > 300000) top_speed = 300000;}
+
 		// Calculate linear speed with P loop from position error.
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
-		if(fwd_speed_limit < fwd_top_speed) fwd_speed_limit += fwd_accel;
-		else if(fwd_speed_limit > fwd_top_speed+fwd_accel+1) fwd_speed_limit -= 2*fwd_accel;
-		else fwd_speed_limit = fwd_top_speed;
+		if(fwd_speed_limit < top_speed) fwd_speed_limit += fwd_accel;
+		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= 2*fwd_accel;
+		else fwd_speed_limit = top_speed;
 
 		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
 		if(new_fwd_speed < 0 && new_fwd_speed < -1*fwd_speed_limit) new_fwd_speed = -1*fwd_speed_limit;

@@ -64,10 +64,12 @@ static void handle_maintenance_msg()
 	switch(process_rx_buf[4])
 	{
 		case 0x52:
+		host_dead();
 		run_flasher();
 		break;
 
 		case 0x53:
+		host_dead();
 		mc_flasher(process_rx_buf[5]);
 		break;
 
@@ -102,7 +104,13 @@ void handle_uart_message()
 
 		case 0x82:
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
-		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]), process_rx_buf[11]);
+		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]),
+		            process_rx_buf[11], process_rx_buf[12]);
+		break;
+
+		case 0x88:
+		set_obstacle_avoidance_margin(process_rx_buf[1]);
+
 		break;
 
 		case 0x89:
@@ -390,7 +398,24 @@ void uart_send_fsm()
 			else if(tm > 30000) tm = 30000;
 			txbuf[3] = I16_MS(tm);
 			txbuf[4] = I16_LS(tm);
-			send_uart(5);
+
+			uint32_t t = get_obstacle_avoidance_stop_flags();
+
+			txbuf[5] = I32_I7_4(t);
+			txbuf[6] = I32_I7_3(t);
+			txbuf[7] = I32_I7_2(t);
+			txbuf[8] = I32_I7_1(t);
+			txbuf[9] = I32_I7_0(t);
+
+			t = get_obstacle_avoidance_action_flags();
+
+			txbuf[10] = I32_I7_4(t);
+			txbuf[11] = I32_I7_3(t);
+			txbuf[12] = I32_I7_2(t);
+			txbuf[13] = I32_I7_1(t);
+			txbuf[14] = I32_I7_0(t);
+
+			send_uart(15);
 
 		}
 		break;		
