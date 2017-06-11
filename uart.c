@@ -114,17 +114,26 @@ void handle_uart_message()
 		break;
 
 		case 0x89:
-		case 0x8a:
 		{
 			pos_t corr;
 			corr.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
-			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]);
-			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6]);
-			if(process_rx_buf[0] == 0x89)
-				correct_location_without_moving_external(corr);
-			else
-				set_location_without_moving_external(corr);
+			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4])>>2;
+			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6])>>2;
+			correct_location_without_moving_external(corr);
 		}
+		break;
+
+		case 0x8a:
+		{
+			pos_t new_pos;
+			new_pos.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
+			new_pos.x = I7x5_I32(process_rx_buf[3],process_rx_buf[4],process_rx_buf[5],process_rx_buf[6],process_rx_buf[7]);
+			new_pos.y = I7x5_I32(process_rx_buf[8],process_rx_buf[9],process_rx_buf[10],process_rx_buf[11],process_rx_buf[12]);
+			set_location_without_moving_external(new_pos);
+		}
+		break;
+
+
 		break;
 
 		case 0x8f:
@@ -415,7 +424,10 @@ void uart_send_fsm()
 			txbuf[13] = I32_I7_1(t);
 			txbuf[14] = I32_I7_0(t);
 
-			send_uart(15);
+			extern uint8_t feedback_stop_flags;
+			txbuf[15] = feedback_stop_flags&0x7f;
+
+			send_uart(16);
 
 		}
 		break;		

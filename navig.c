@@ -353,19 +353,19 @@ void navig_fsm2()
 					else if(dist_to_front < 110)
 					{
 						speed_limit(2);
-						if(ang > 40) {action_flags |= 1UL<<(1+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(1+(d?16:0)); stop = 1; break;}
+						if(ang > 38) {action_flags |= 1UL<<(1+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(1+(d?16:0)); stop = 1; break;}
 					}
 					else if(dist_to_front < 140)
 					{
 						speed_limit(2);
-						if(ang > 32) {action_flags |= 1UL<<(2+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(2+(d?16:0)); stop = 1; break;}
+						if(ang > 30) {action_flags |= 1UL<<(2+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(2+(d?16:0)); stop = 1; break;}
 					}
 					else if(dist_to_front < 170)
 					{
 						speed_limit(2);
-						if(ang > 24) {action_flags |= 1UL<<(3+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(3+(d?16:0)); stop = 1; break;}
+						if(ang > 22) {action_flags |= 1UL<<(3+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(3+(d?16:0)); stop = 1; break;}
 					}
-					else if(dist_to_front < 320)
+					else if(dist_to_front < 300)
 					{
 						speed_limit(2);
 						action_flags |= 1UL<<(4+(d?16:0)); 
@@ -468,19 +468,6 @@ void navig_fsm2()
 
 				//int ang = d?(360-i):(i);
 
-				if((!d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+25)) ||
-				   ( d && lidar_collision_avoidance[i].y < ROBOT_YS/2+25))
-				{
-					if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
-					{
-						speed_limit(1);
-						do_not_turn[d] |= 2;
-						action_flags |= 1UL<<(9+(d?16:0)); 
-						break;
-					}
-
-				}
-				else  // TODO: this is identical to the previous right now. remove.
 				if((!d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+60)) ||
 				   ( d && lidar_collision_avoidance[i].y < ROBOT_YS/2+60))
 				{
@@ -488,7 +475,7 @@ void navig_fsm2()
 					{
 						speed_limit(1);
 						do_not_turn[d] |= 2;
-						action_flags |= 1UL<<(10+(d?16:0)); 
+						action_flags |= 1UL<<(9+(d?16:0)); 
 						break;
 					}
 
@@ -521,10 +508,15 @@ void navig_fsm2()
 
 					if(fwd_remain > dist_to_front)
 					{
-						if(dist_to_front < 120)
+						if(dist_to_front < 100)
 						{
 							stop_flags |= 1UL<<(4+(d?16:0));
 							stop = 1;
+						}
+						else if(dist_to_front < 150)
+						{
+							speed_limit(3);
+							limited = 1;
 						}
 						else if(dist_to_front < 500)
 						{

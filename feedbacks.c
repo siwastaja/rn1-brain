@@ -19,6 +19,8 @@ Keeps track of position & angle, controls the motors.
 
 extern volatile int dbg[10];
 
+uint8_t feedback_stop_flags;
+
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
 
@@ -143,6 +145,8 @@ void set_ang_top_speed(int speed)
 
 void rotate_rel(int angle)
 {
+	feedback_stop_flags = 0;
+
 	aim_angle += angle;
 
 	speed_limit_lowered = 0;
@@ -153,6 +157,7 @@ void rotate_rel(int angle)
 
 void rotate_abs(int angle)
 {
+	feedback_stop_flags = 0;
 	aim_angle = angle;
 
 	speed_limit_lowered = 0;
@@ -174,6 +179,7 @@ void change_angle_rel(int angle)
 
 void straight_rel(int fwd /*in mm*/)
 {
+	feedback_stop_flags = 0;
 	speed_limit_lowered = 0;
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
@@ -302,7 +308,6 @@ void set_location_without_moving_external(pos_t new_pos)
 	aim_angle = new_pos.ang;
 }
 
-
 void compass_fsm(int cmd)
 {
 	static int compass_x_min = 0;
@@ -312,7 +317,7 @@ void compass_fsm(int cmd)
 
 	static int state = 0;
 
-	if(cmd == 1)
+	if(cmd == 1 && state == 0)
 		state = 1;
 
 	int cx = latest_compass->x;
@@ -324,64 +329,23 @@ void compass_fsm(int cmd)
 		compass_x_min = compass_x_max = cx;
 		compass_y_min = compass_y_max = cy;
 
-//		aim_angle += (65536/3)<<16; // instruct 120 deg turn
-		aim_angle += 1431655765;
+		aim_angle += 120*ANG_1_DEG;
 		ang_top_speed = 100000;
 		manual_control = 0;
 		state = 2;
 	}
-	else if(state == 2)
+	else if(state > 2 && state < 7)
 	{
-//		if(ang_err < (65536/6)<<16 && ang_err > (-65536/6)<<16); // when 60 deg remaining, instruct 120 deg more.
-		if(ang_err < 60000000 && ang_err > -60000000)
+		if(ang_err > -60*ANG_1_DEG && ang_err < 60*ANG_1_DEG)
 		{
-//			aim_angle += (65536/3)<<16;
-			aim_angle += 1431655765;
-			state = 3;
+			aim_angle += 120*ANG_1_DEG;
+			state++;
 		}
 	}
-	else if(state == 3)
+	else if(state == 7)
 	{
-//		if(ang_err < (65536/6)<<16 && ang_err > (-65536/6)<<16); // when 60 deg remaining, instruct 120 deg more.
-		if(ang_err < 60000000 && ang_err > -60000000)
-		{
-//			aim_angle += (65536/3)<<16;
-			aim_angle += 1431655765;
-			state = 4;
-		}
+		state = 0;
 	}
-	else if(state == 4)
-	{
-//		if(ang_err < (65536/6)<<16 && ang_err > (-65536/6)<<16); // when 60 deg remaining, instruct 120 deg more.
-		if(ang_err < 60000000 && ang_err > -60000000)
-		{
-//			aim_angle += (65536/3)<<16;
-			aim_angle += 1431655765;
-			state = 5;
-		}
-	}
-	else if(state == 5)
-	{
-//		if(ang_err < (65536/6)<<16 && ang_err > (-65536/6)<<16); // when 60 deg remaining, instruct 120 deg more.
-		if(ang_err < 60000000 && ang_err > -60000000)
-		{
-//			aim_angle += (65536/3)<<16;
-			aim_angle += 1431655765;
-			state = 6;
-		}
-	}
-	else if(state == 6)
-	{
-//		if(ang_err < (65536/6)<<16 && ang_err > (-65536/6)<<16); // when 60 deg remaining, instruct 120 deg more.
-		if(ang_err < 60000000 && ang_err > -60000000)
-		{
-//			aim_angle += (65536/3)<<16;
-			aim_angle += 1431655765;
-			state = 0;
-		}
-	}
-
-//	dbg4 = state;
 
 	/*
 		Compass algorithm
@@ -416,10 +380,8 @@ void compass_fsm(int cmd)
 		double heading = atan2(cx, cy);
 		heading /= (2.0*M_PI);
 		heading *= -65536.0*65536.0;
-		cur_compass_angle = (int)heading;// + 2147483648 /*180 deg*/;
+		cur_compass_angle = (int)heading;
 	}
-
-
 
 }
 
@@ -436,9 +398,6 @@ void move_arc_manual(int comm, int ang)
 	robot_moves();
 }
 
-extern volatile int test_seq;
-extern volatile int16_t dbg_timing_shift;
-
 void unexpected_acceleration_detected()
 {
 	lidar_mark_invalid();
@@ -447,6 +406,7 @@ void unexpected_acceleration_detected()
 
 void collision_detected()
 {
+	feedback_stop_flags = 1;
 	lidar_mark_invalid();
 	reset_movement();
 	stop_navig_fsms();
@@ -458,10 +418,6 @@ void enable_collision_detection()
 {
 	coll_det_on = 1;
 }
-
-
-#define ANG_1_DEG 11930465
-#define ANG_01_DEG 1193047
 
 // Run this at 1 kHz
 void run_feedbacks(int sens_status)
