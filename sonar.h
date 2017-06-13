@@ -19,7 +19,7 @@ extern int latest_sonars[MAX_NUM_SONARS];
 void sonar_fsm_10k();
 void init_sonars();
 
-void get_sonars(point_t* out); // outputs NUM_SONARS point_ts.
+void get_sonars(point_t* out, pos_t *robot_pos); // outputs NUM_SONARS point_ts.
 
 
 #endif

@@ -99,14 +99,22 @@ void handle_uart_message()
 		break;
 
 		case 0x81:
+		host_alive();
 		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
 		break;
 
 		case 0x82:
+		host_alive();
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
 		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]),
-		            process_rx_buf[11], process_rx_buf[12]);
+		            process_rx_buf[11], process_rx_buf[12], process_rx_buf[13]);
 		break;
+
+		case 0x87:
+		find_charger();
+
+		break;
+
 
 		case 0x88:
 		set_obstacle_avoidance_margin(process_rx_buf[1]);
@@ -323,28 +331,42 @@ void uart_send_fsm()
 		case 6:
 		{
 			point_t sons[NUM_SONARS];
-			get_sonars(sons);
+			pos_t rpos;
+			get_sonars(sons, &rpos);
 
 			txbuf[0] = 0x85;
 			txbuf[1] = (sons[2].valid<<2) | (sons[1].valid<<1) | (sons[0].valid);
 
+			int tm = rpos.x;
+			txbuf[2] = I32_I7_4(tm);
+			txbuf[3] = I32_I7_3(tm);
+			txbuf[4] = I32_I7_2(tm);
+			txbuf[5] = I32_I7_1(tm);
+			txbuf[6] = I32_I7_0(tm);
+			tm = rpos.y;
+			txbuf[7] = I32_I7_4(tm);
+			txbuf[8] = I32_I7_3(tm);
+			txbuf[9] = I32_I7_2(tm);
+			txbuf[10] = I32_I7_1(tm);
+			txbuf[11] = I32_I7_0(tm);
+
 			for(int i=0; i<3; i++)
 			{
-				int tm = sons[i].x;
-				txbuf[10*i+2] = I32_I7_4(tm);
-				txbuf[10*i+3] = I32_I7_3(tm);
-				txbuf[10*i+4] = I32_I7_2(tm);
-				txbuf[10*i+5] = I32_I7_1(tm);
-				txbuf[10*i+6] = I32_I7_0(tm);
+				tm = sons[i].x;
+				txbuf[10*i+12] = I32_I7_4(tm);
+				txbuf[10*i+13] = I32_I7_3(tm);
+				txbuf[10*i+14] = I32_I7_2(tm);
+				txbuf[10*i+15] = I32_I7_1(tm);
+				txbuf[10*i+16] = I32_I7_0(tm);
 				tm = sons[i].y;
-				txbuf[10*i+7] = I32_I7_4(tm);
-				txbuf[10*i+8] = I32_I7_3(tm);
-				txbuf[10*i+9] = I32_I7_2(tm);
-				txbuf[10*i+10] = I32_I7_1(tm);
-				txbuf[10*i+11] = I32_I7_0(tm);
+				txbuf[10*i+17] = I32_I7_4(tm);
+				txbuf[10*i+18] = I32_I7_3(tm);
+				txbuf[10*i+19] = I32_I7_2(tm);
+				txbuf[10*i+20] = I32_I7_1(tm);
+				txbuf[10*i+21] = I32_I7_0(tm);
 			}
 
-			send_uart(32);
+			send_uart(42);
 
 		}
 		break;
@@ -391,6 +413,19 @@ void uart_send_fsm()
 
 			send_uart(18);
 		}
+		break;
+
+		case 12:
+		{
+			extern int cur_compass_angle;
+			txbuf[0] = 0xa3;
+			txbuf[1] = 1;
+			int tm = cur_compass_angle>>16;
+			txbuf[2] = I16_MS(tm);
+			txbuf[3] = I16_LS(tm);
+			send_uart(4);
+		}
+		break;
 
 		case 1:
 		case 3:
@@ -398,6 +433,7 @@ void uart_send_fsm()
 		case 7:
 		case 9:
 		case 11:
+		case 13:
 		{
 			txbuf[0] = 0xa5;
 			txbuf[1] = 1;

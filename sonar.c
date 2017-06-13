@@ -27,12 +27,14 @@ void init_sonars()
 	sonar_rd = &sonars[1];
 }
 
-void get_sonars(point_t* out) // outputs NUM_SONARS point_ts.
+void get_sonars(point_t* out, pos_t *robot_pos) // outputs NUM_SONARS point_ts.
 {
 	sonar_data_t* s = sonar_rd;
 
 	uint32_t angle;
 	int x_idx, y_idx, x, y;
+
+	COPY_POS(*robot_pos, s->robot_pos);
 
 	// Middle sonar is 145mm forward from the robot origin
 	if(s->mm[1])

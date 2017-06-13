@@ -329,16 +329,17 @@ void compass_fsm(int cmd)
 		compass_x_min = compass_x_max = cx;
 		compass_y_min = compass_y_max = cy;
 
-		aim_angle += 120*ANG_1_DEG;
+		rotate_rel(120*ANG_1_DEG);
 		ang_top_speed = 100000;
-		manual_control = 0;
+
 		state = 2;
 	}
-	else if(state > 2 && state < 7)
+	else if(state >= 2 && state < 7)
 	{
 		if(ang_err > -60*ANG_1_DEG && ang_err < 60*ANG_1_DEG)
 		{
-			aim_angle += 120*ANG_1_DEG;
+			rotate_rel(120*ANG_1_DEG);
+			ang_top_speed = 100000;
 			state++;
 		}
 	}
@@ -346,6 +347,9 @@ void compass_fsm(int cmd)
 	{
 		state = 0;
 	}
+
+	dbg[2] = state;
+	if(state != 0) dbg[3]++;
 
 	/*
 		Compass algorithm
@@ -377,7 +381,9 @@ void compass_fsm(int cmd)
 		cx = cx - dx2/2;
 		cy = cy - dy2/2;
 
-		double heading = atan2(cx, cy);
+		double heading = atan2(cx, cy) + M_PI;
+		if(heading < -1.0*M_PI) heading += 2.0*M_PI;
+		else if(heading > 1.0*M_PI) heading -= 2.0*M_PI;
 		heading /= (2.0*M_PI);
 		heading *= -65536.0*65536.0;
 		cur_compass_angle = (int)heading;
@@ -401,7 +407,7 @@ void move_arc_manual(int comm, int ang)
 void unexpected_acceleration_detected()
 {
 	lidar_mark_invalid();
-	dbg[2]++;
+//	dbg[2]++;
 }
 
 void collision_detected()
@@ -410,7 +416,7 @@ void collision_detected()
 	lidar_mark_invalid();
 	reset_movement();
 	stop_navig_fsms();
-	dbg[3]++;
+//	dbg[3]++;
 }
 
 int coll_det_on;
@@ -729,15 +735,7 @@ void run_feedbacks(int sens_status)
 		   xcel_flt[1] < XCEL_Y_NEG_COLL || xcel_flt[1] > XCEL_Y_POS_COLL))
 			collision_detected();
 
-
-/*		if(latest[0] < dbg[2]) dbg[2] = latest[0];
-		if(latest[0] > dbg[3]) dbg[3] = latest[0];
-		if(latest[1] < dbg[4]) dbg[4] = latest[1];
-		if(latest[1] > dbg[5]) dbg[5] = latest[1];
-		if(latest[2] < dbg[6]) dbg[6] = latest[2];
-		if(latest[2] > dbg[7]) dbg[7] = latest[2];
-*/
-		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
+//		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 1kHz timesteps, 1 unit = 0.59841 mm/s

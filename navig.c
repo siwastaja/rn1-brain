@@ -64,6 +64,9 @@ int nearest_sonar()
 	return n;
 }
 
+static int back_mode_hommel = 0;
+static int speedlim_hommel = 0;
+
 void move_fsm()
 {
 	switch(cur_move.state)
@@ -77,6 +80,7 @@ void move_fsm()
 			allow_angular(1);
 			auto_disallow(1);
 			rotate_abs(cur_move.abs_ang);
+			speed_limit(speedlim_hommel);
 			cur_move.state++;
 		}
 		break;
@@ -86,6 +90,7 @@ void move_fsm()
 			if(angle_almost_corrected())
 			{
 				straight_rel(cur_move.rel_fwd);
+				speed_limit(speedlim_hommel);
 				allow_straight(1);
 				cur_move.state++;
 			}
@@ -98,6 +103,7 @@ void move_fsm()
 		{
 			change_angle_abs(cur_move.abs_ang);
 			change_straight_rel(cur_move.rel_fwd);
+			speed_limit(speedlim_hommel);
 		}
 
 		if(!correcting_either())
@@ -155,8 +161,6 @@ void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
 	cur_move.valid = 1;
 }
 
-static int back_mode_hommel = 0;
-
 int get_xy_left()
 {
 	return xy_left;
@@ -202,9 +206,10 @@ void xy_fsm()
 }
 
 
-void move_xy_abs(int32_t x, int32_t y, int back_mode, int id)
+void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 {
 	back_mode_hommel = back_mode;
+	speedlim_hommel = speedlim;
 	dest_x = x;
 	dest_y = y;
 
@@ -234,6 +239,7 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode, int id)
 	xy_left = new_fwd;
 
 	move_absa_rels_twostep(new_ang, new_fwd);
+	speed_limit(speedlim);
 	was_correcting_xy = 1;
 	correct_xy = 1;
 	xy_id = id;
@@ -269,8 +275,485 @@ uint32_t get_obstacle_avoidance_action_flags()
 	return store_action_flags;
 }
 
+void stop_navig_fsms()
+{
+	cur_move.state = 0;
+}
+
+
+int lr_diff, y_diff, x_dist_to_charger;
+
+// -100: no lidar image, try again
+// -99: Mark not found.
+int chafind_middle_mark()
+{
+	int nearest_ang = -100;
+	if(lidar_collision_avoidance_new)
+	{
+		lidar_collision_avoidance_new = 0;
+
+		int nearest_x = 400;
+		int y_at_nearest_x = 0;
+//		int avg_x = 0;
+//		int avg_cnt = 0;
+		for(int i = 0; i < 80; i++)
+		{
+			int ang = i-40;
+			int ang_minus2 = i-40-2;
+			if(ang < 0) ang += 360;
+			if(ang_minus2 < 0) ang_minus2 += 360;
+
+			if(!lidar_collision_avoidance[ang].valid) continue;
+
+//			avg_x += lidar_collision_avoidance[ang].x;
+//			avg_cnt++;
+
+			if(lidar_collision_avoidance[ang].x < nearest_x)
+			{
+				// nearest point (the mark) must have clearly farther away points before it. If it's invalid, skip the test.
+				if(!lidar_collision_avoidance[ang_minus2].valid || lidar_collision_avoidance[ang_minus2].x > (lidar_collision_avoidance[ang].x+7))
+				{
+					nearest_x = lidar_collision_avoidance[ang].x;
+					y_at_nearest_x = lidar_collision_avoidance[ang].y;
+					nearest_ang = ang;
+				}
+			}
+		}
+
+//		avg_x /= avg_cnt;
+
+		if(nearest_x == 400 || (nearest_ang > 30 && nearest_ang < 330))
+			return -1;
+
+		int widen = 15;
+		if(nearest_x < 200) widen = 30;
+		else if(nearest_x < 280) widen = 22;
+		else widen = 19;
+
+		int x_right_avg = 0;
+		int x_right_avg_cnt = 0;
+		for(int find = -3; find <=3; find++)
+		{
+			int idx = nearest_ang + widen + find;
+			if(idx > 359) idx-= 360;
+			else if(idx < 0) idx += 360;
+
+			if(!lidar_collision_avoidance[idx].valid) continue;
+			x_right_avg += lidar_collision_avoidance[idx].x;
+			x_right_avg_cnt++;
+		}
+
+
+		if(x_right_avg_cnt < 2)
+		{
+			return -1;	
+		}
+		x_right_avg /= x_right_avg_cnt;
+
+		int x_left_avg = 0;
+		int x_left_avg_cnt = 0;
+		for(int find = -3; find <=3; find++)
+		{
+			int idx = nearest_ang - widen + find;
+			if(idx > 359) idx-= 360;
+			else if(idx < 0) idx += 360;
+
+			if(!lidar_collision_avoidance[idx].valid) continue;
+			x_left_avg += lidar_collision_avoidance[idx].x;
+			x_left_avg_cnt++;
+		}
+
+		if(x_left_avg_cnt < 2)
+		{
+			return -1;	
+		}
+		x_left_avg /= x_left_avg_cnt;
+
+		x_dist_to_charger = (x_left_avg + x_right_avg)/2;
+
+		lr_diff = x_left_avg - x_right_avg;  // Defines angle to be turned
+
+		if(lr_diff < -80 || lr_diff > 80)
+		{
+			return -1;
+		}
+
+		y_diff = y_at_nearest_x; // Defines distance to go sideways.
+
+		if(y_diff < -150 || y_diff > 150)
+			return -1;
+
+		return 0;
+	}
+
+	return -2;
+}
+
+
+typedef enum {
+	CHAFIND_IDLE 		= 0, 
+	CHAFIND_START          	= 1,
+	CHAFIND_WAIT_ROTATED	= 2,
+	CHAFIND_WAIT_BACK	= 3,
+	CHAFIND_WAIT_FWD	= 4,
+	CHAFIND_PUSH		= 5,
+	CHAFIND_WAIT_PUSH	= 6,
+	CHAFIND_FINISH		= 7,
+	CHAFIND_FAIL		= 8
+} chafind_state_t;
+
+chafind_state_t chafind_state;
+
+volatile int start_charger = 0;
+
+
+void navig_fsm2_for_charger()
+{
+	static int rot_dir;
+	static int back_amount;
+	switch(chafind_state)
+	{
+		case CHAFIND_START:
+		{
+			speed_limit(1);
+
+			int ret = chafind_middle_mark();
+			if(ret == 0)
+			{
+				auto_disallow(0);
+				allow_angular(1);
+				allow_straight(1);
+				rotate_rel(lr_diff*2*ANG_0_1_DEG);
+				chafind_state++;
+			}
+			else if(ret==-1)
+				chafind_state = CHAFIND_FAIL;
+
+		}
+		break;
+
+		case CHAFIND_WAIT_ROTATED:
+		{
+			if(!correcting_angle())
+			{
+				int ret = chafind_middle_mark();
+				if(ret == 0)
+				{
+					if(y_diff > 15)
+					{
+						rot_dir = 0;
+						// if we were to turn 45 deg, we would need to back off 1mm for each 1mm error.
+						auto_disallow(0);
+						allow_angular(1);
+						allow_straight(1);
+						rotate_rel(-10*ANG_1_DEG);
+
+						int amount_fwd = -6*y_diff;
+						if(amount_fwd < -500) amount_fwd = -500;
+						back_amount = amount_fwd;
+						straight_rel(amount_fwd);
+						chafind_state++;
+					}
+					else if(y_diff < -15)
+					{
+						rot_dir = 1;
+						auto_disallow(0);
+						allow_angular(1);
+						allow_straight(1);
+						rotate_rel(10*ANG_1_DEG);
+
+						int amount_fwd = 6*y_diff;
+						if(amount_fwd < -500) amount_fwd = -500;
+						back_amount = amount_fwd;
+						straight_rel(amount_fwd);
+						chafind_state++;
+					}
+					else
+						chafind_state = CHAFIND_PUSH;
+				}
+				else if(ret == -1)
+				{
+					chafind_state = CHAFIND_FAIL;
+				}
+
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_BACK:
+		{
+			if(!correcting_either())
+			{
+				chafind_state++;
+
+				// Rotate back to where we were before backing.
+				if(rot_dir == 0)
+					rotate_rel(10*ANG_1_DEG);
+				else
+					rotate_rel(-10*ANG_1_DEG);
+
+				straight_rel((-1*back_amount));
+
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD:
+		{
+			if(!correcting_either())
+			{
+				int ret = chafind_middle_mark();
+				if(ret == 0)
+				{
+					if(y_diff < -20 || y_diff > 20 || lr_diff < -10 || lr_diff > 10)
+					{
+						// Try again.
+						chafind_state = CHAFIND_START;
+					}
+					else
+						chafind_state++;
+				}
+				else if(ret == -1)
+				{
+					chafind_state = CHAFIND_FAIL;
+				}
+			}
+		}
+		break;
+
+		case CHAFIND_PUSH:
+		{
+			if(!correcting_either())
+			{
+				speed_limit(2);
+				straight_rel(x_dist_to_charger-140);
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_PUSH:
+		{
+			if(!correcting_either())
+			{
+				chafind_state++;
+
+			}
+		}
+		break;
+
+		default:
+		case CHAFIND_FINISH:
+		{
+			reset_movement();
+			start_charger = 1;
+			chafind_state = 0;
+		}
+		break;
+
+		case CHAFIND_FAIL:
+		{
+			reset_movement();
+			chafind_state = 0;
+		}
+		break;
+
+	}
+
+}
+
+void find_charger()
+{
+	chafind_state = CHAFIND_START;
+}
+
+#define GO_FWD 0
+#define GO_BACK 1
+#define TURN_LEFT 2
+#define TURN_RIGHT 3
+
+void daiju_meininki_fsm()
+{
+	extern uint32_t random;
+
+	static int cnt = 0;
+
+	static int was_doing[4];
+
+	if(lidar_collision_avoidance_new)
+	{
+		lidar_collision_avoidance_new = 0;
+
+/*		if(cnt < 10)
+		{
+			cnt++;
+			return;
+		}
+
+		cnt = 0;
+*/
+		int nearest_colliding_front = 9999;
+		int nearest_colliding_back = 9999;
+
+		int can_do[4] = {0,0,1,1};
+		int should_do = 0;
+
+		for(int i = (360-60); i < 360; i+=2)
+		{
+			if(!lidar_collision_avoidance[i].valid) continue;
+
+			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
+
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			{
+				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
+			}
+		}
+		for(int i = 0; i < 60; i+=2)
+		{
+			if(!lidar_collision_avoidance[i].valid) continue;
+
+			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
+
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			{
+				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
+			}
+		}
+		for(int i = 180-60; i < 180+60; i+=2)
+		{
+			if(!lidar_collision_avoidance[i].valid) continue;
+
+			int dist_to_back  = -1*lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_BACK;
+
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			{
+				if(dist_to_back  < nearest_colliding_back) nearest_colliding_back = dist_to_back;
+			}
+		}
+
+		if(nearest_colliding_front > 80)
+			can_do[GO_FWD] = 1;
+
+		if(nearest_colliding_back > 80)
+			can_do[GO_BACK] = 1;
+
+		dbg[4] = nearest_colliding_front;
+		dbg[5] = nearest_colliding_back;
+
+
+		// Check the arse, to avoid hitting when turning.
+		for(int i = 90-1; i < 90+35; i+=2)
+		{
+			if(!lidar_collision_avoidance[i].valid) continue;
+
+			if(lidar_collision_avoidance[i].y < ROBOT_YS/2+40)
+			{
+				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
+				{
+					can_do[TURN_LEFT] = 0;
+					break;
+				}
+			}
+		}
+
+
+		// Check the arse, to avoid hitting when turning.
+		for(int i = 180+35; i < 180+90+1; i+=2)
+		{
+			if(!lidar_collision_avoidance[i].valid) continue;
+
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+40))
+			{
+				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
+				{
+					can_do[TURN_RIGHT] = 0;
+					break;
+				}
+
+			}
+		}
+
+		dbg[6] = (can_do[TURN_RIGHT]<<3) | (can_do[TURN_LEFT]<<2) | (can_do[GO_BACK]<<1) | can_do[GO_FWD];
+
+		int can_do_cnt = can_do[0]+can_do[1]+can_do[2]+can_do[3];
+
+		should_do = random&0b11;
+		for(int i = 0; i < 4; i++)
+		{
+			if(was_doing[i] > 0 && was_doing[i] < 10 && can_do[i]) should_do = i;
+		}
+
+		if(can_do_cnt != 0)
+		{
+			while(!can_do[should_do])
+			{
+				should_do++;
+				if(should_do > 3) should_do = 0;
+			}
+		}
+
+		// If totally cornered, just does a random thing.
+
+		if((should_do == GO_FWD))
+		{
+			was_doing[GO_BACK] = was_doing[TURN_LEFT] = was_doing[TURN_RIGHT] = 0;
+			was_doing[GO_FWD]++;
+			int amount = nearest_colliding_front;
+			if(amount > 200) amount = 200;
+			straight_rel(amount);
+		}
+		else if((should_do == GO_BACK))
+		{
+			was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[TURN_RIGHT] = 0;
+			was_doing[GO_BACK]++;
+			int amount = nearest_colliding_back;
+			if(amount > 200) amount = 200;
+			straight_rel(-1*amount);
+		}
+		else if((should_do == TURN_LEFT))
+		{
+			was_doing[GO_FWD] = was_doing[GO_BACK] = was_doing[TURN_RIGHT] = 0;
+
+			was_doing[TURN_LEFT]++;
+
+			rotate_rel(-8*ANG_1_DEG);
+		}
+		else if((should_do == TURN_RIGHT))
+		{
+			was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[GO_BACK] = 0;
+
+			was_doing[TURN_RIGHT]++;
+
+			rotate_rel(8*ANG_1_DEG);
+		}
+		else
+		{
+			was_doing[TURN_RIGHT] = was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[GO_BACK] = 0;
+		}
+
+
+		speed_limit(2);
+	}
+}
+
+int daiju_meininki = 1;
+
 void navig_fsm2()
 {
+
+	if(daiju_meininki)
+	{
+		daiju_meininki_fsm();
+		return;
+	}
+
+	if(chafind_state)
+	{
+		navig_fsm2_for_charger();
+		return;
+	}
+
 	move_fsm();
 
 	if(!collision_avoidance_on)
@@ -323,7 +806,7 @@ void navig_fsm2()
 		int do_not_turn[2] = {0, 0};   // to right, left
 		for(int d = 0; d < 2; d++)
 		{
-			for(int i = (d?295:15); i < (d?345:65); i++)
+			for(int i = (d?295:15); i < (d?345:65); i+=2)
 			{
 				int ang = d?(360-i):(i);
 
@@ -394,8 +877,8 @@ void navig_fsm2()
 					}
 				}
 				else 
-				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+80) ||
-				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+80)))
+				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+60) ||
+				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+60)))
 				{
 					if(dist_to_front < 450)
 					{
@@ -422,8 +905,8 @@ void navig_fsm2()
 
 				}
 				else 
-				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+120) ||
-				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+120)))
+				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+90) ||
+				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+90)))
 				{
 					if(dist_to_front < 500)
 					{
@@ -462,7 +945,7 @@ void navig_fsm2()
 
 
 			// Check the arse, to avoid hitting when turning.
-			for(int i = (d?(90-1):(180+35)); i < (d?(90+35):(180+90+1)); i++)
+			for(int i = (d?(90-1):(180+35)); i < (d?(90+35):(180+90+1)); i+=2)
 			{
 				if(!lidar_collision_avoidance[i].valid) continue;
 
@@ -488,7 +971,6 @@ void navig_fsm2()
 					{
 						speed_limit(1);
 						limited = 1;
-						break;
 					}
 
 				}
@@ -497,7 +979,7 @@ void navig_fsm2()
 
 			}
 
-			for(int i = (d?345:0); i < (d?360:15); i++)
+			for(int i = (d?345:0); i < (d?360:15); i+=2)
 			{
 				if(!lidar_collision_avoidance[i].valid) continue;
 
@@ -512,11 +994,6 @@ void navig_fsm2()
 						{
 							stop_flags |= 1UL<<(4+(d?16:0));
 							stop = 1;
-						}
-						else if(dist_to_front < 150)
-						{
-							speed_limit(3);
-							limited = 1;
 						}
 						else if(dist_to_front < 500)
 						{
@@ -642,8 +1119,8 @@ void navig_fsm2()
 
 		if(cur_move.state && stop)
 		{
-			dbg[8] = store_stop_flags = stop_flags;
-			dbg[9] = store_action_flags = action_flags;
+			store_stop_flags = stop_flags;
+			store_action_flags = action_flags;
 		}
 
 		if(stop)
@@ -684,14 +1161,11 @@ void navig_fsm2()
 			reset_speed_limits();
 		}
 
+		speed_limit(speedlim_hommel);
+
 		SKIP_COLL_AVOID:;
 
 	}
-
-
 }
 
-void stop_navig_fsms()
-{
-	cur_move.state = 0;
-}
+

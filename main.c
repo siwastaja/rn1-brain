@@ -451,8 +451,13 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 8)
 	{
-		compass_fsm(do_compass_round);
-		if(do_compass_round) do_compass_round = 0;
+		if(do_compass_round)
+		{
+			do_compass_round = 0;
+			compass_fsm(1);
+		}
+		else
+			compass_fsm(0);
 	}
 	else if(cnt_10k == 9)
 	{
@@ -465,7 +470,11 @@ void timebase_10k_handler()
 	cnt_10k++;
 	if(cnt_10k > 9) cnt_10k = 0;
 	int tooktime = TIM6->CNT - starttime;
-	if(tooktime > dbg[0]) dbg[0] = tooktime;
+	if(tooktime > dbg[0])
+	{
+		dbg[0] = tooktime;
+		dbg[1] = cnt_10k; // which takes longest.
+	}
 }
 
 extern volatile lidar_datum_t lidar_full_rev[90];
@@ -501,6 +510,8 @@ int get_bat_v() // in mv
 
 extern pos_t cur_pos;
 extern volatile int ang_idle;
+
+volatile uint32_t random = 123;
 
 int main()
 {
@@ -719,6 +730,7 @@ int main()
 
 	while(1)
 	{
+		random++;
 		cnt++;
 
 		if(!lidar_ready)
@@ -750,7 +762,7 @@ int main()
 			dbg_error_num = 1;
 			livelidar_fsm(1);
 			int tooktime = millisec - starttime;
-			if(tooktime > dbg[1]) dbg[1] = tooktime;
+//			if(tooktime > dbg[1]) dbg[1] = tooktime;
 			if(tooktime < 30) delay_ms(30); // temporary shit
 
 			uart_send_fsm(); // send something else.
@@ -773,12 +785,15 @@ int main()
 			enable_collision_detection();
 		}
 
-		if(seconds > 130)
+		extern volatile int start_charger;
+
+		if(seconds > 60 || start_charger)
 		{
 			CHARGER_ENA();
 			seconds = 0;
+			start_charger = 0;
 		}
-		else if(seconds > 120)
+		else if(seconds > 40)
 		{
 			CHARGER_DIS();
 		}
