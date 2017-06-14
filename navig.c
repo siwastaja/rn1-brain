@@ -275,11 +275,6 @@ uint32_t get_obstacle_avoidance_action_flags()
 	return store_action_flags;
 }
 
-void stop_navig_fsms()
-{
-	cur_move.state = 0;
-}
-
 
 int lr_diff, y_diff, x_dist_to_charger;
 
@@ -567,36 +562,33 @@ void find_charger()
 	chafind_state = CHAFIND_START;
 }
 
+void stop_navig_fsms()
+{
+	cur_move.state = 0;
+	chafind_state = 0;
+}
+
+
 #define GO_FWD 0
 #define GO_BACK 1
 #define TURN_LEFT 2
 #define TURN_RIGHT 3
+#define DO_NOTHING 4
 
 void daiju_meininki_fsm()
 {
 	extern uint32_t random;
 
-	static int cnt = 0;
-
-	static int was_doing[4];
+	static int state = 4;
 
 	if(lidar_collision_avoidance_new)
 	{
 		lidar_collision_avoidance_new = 0;
 
-/*		if(cnt < 10)
-		{
-			cnt++;
-			return;
-		}
-
-		cnt = 0;
-*/
 		int nearest_colliding_front = 9999;
 		int nearest_colliding_back = 9999;
 
-		int can_do[4] = {0,0,1,1};
-		int should_do = 0;
+		int can_do[5] = {0,0,1,1,1};
 
 		for(int i = (360-60); i < 360; i+=2)
 		{
@@ -626,7 +618,7 @@ void daiju_meininki_fsm()
 
 			int dist_to_back  = -1*lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_BACK;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+0))
 			{
 				if(dist_to_back  < nearest_colliding_back) nearest_colliding_back = dist_to_back;
 			}
@@ -637,10 +629,6 @@ void daiju_meininki_fsm()
 
 		if(nearest_colliding_back > 80)
 			can_do[GO_BACK] = 1;
-
-		dbg[4] = nearest_colliding_front;
-		dbg[5] = nearest_colliding_back;
-
 
 		// Check the arse, to avoid hitting when turning.
 		for(int i = 90-1; i < 90+35; i+=2)
@@ -665,7 +653,7 @@ void daiju_meininki_fsm()
 
 			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+40))
 			{
-				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
+				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -(ROBOT_ORIGIN_TO_BACK+10))
 				{
 					can_do[TURN_RIGHT] = 0;
 					break;
@@ -674,70 +662,91 @@ void daiju_meininki_fsm()
 			}
 		}
 
-		dbg[6] = (can_do[TURN_RIGHT]<<3) | (can_do[TURN_LEFT]<<2) | (can_do[GO_BACK]<<1) | can_do[GO_FWD];
+		if((latest_sonars[0] && latest_sonars[0] < 7) || (latest_sonars[2] && latest_sonars[2] < 7) ||
+		   (latest_sonars[1] && latest_sonars[1] < 10))
+			can_do[GO_FWD] = 0;
 
 		int can_do_cnt = can_do[0]+can_do[1]+can_do[2]+can_do[3];
 
-		should_do = random&0b11;
-		for(int i = 0; i < 4; i++)
-		{
-			if(was_doing[i] > 0 && was_doing[i] < 10 && can_do[i]) should_do = i;
-		}
+		int instruct_movement = 0;
 
-		if(can_do_cnt != 0)
+		static int state_cnt = 0;
+		static int nothing_cnt = 0;
+		state_cnt++;
+		if(!can_do[state] || state_cnt > 10)
 		{
-			while(!can_do[should_do])
+			state = random&0b11;
+			if(can_do_cnt != 0)
 			{
-				should_do++;
-				if(should_do > 3) should_do = 0;
+				nothing_cnt = 0;
+				while(!can_do[state]) // find a state we can do.
+				{
+					state++;
+					if(state > 3) state = 0;
+				}
 			}
+			else
+			{
+				state = DO_NOTHING;
+				nothing_cnt++;
+				if(nothing_cnt > 5)
+				{
+					nothing_cnt = 0;
+					state = random&0b11;
+				}
+			}
+			instruct_movement = 1;
+			state_cnt = 0;
 		}
+		
 
-		// If totally cornered, just does a random thing.
-
-		if((should_do == GO_FWD))
+		if(instruct_movement)
 		{
-			was_doing[GO_BACK] = was_doing[TURN_LEFT] = was_doing[TURN_RIGHT] = 0;
-			was_doing[GO_FWD]++;
-			int amount = nearest_colliding_front;
-			if(amount > 200) amount = 200;
-			straight_rel(amount);
+			switch(state)
+			{
+				case GO_FWD:
+				{
+					int amount = nearest_colliding_front;
+					if(amount > 300) amount = 300;
+					straight_rel(amount);
+				}
+				break;
+				case GO_BACK:
+				{
+					int amount = nearest_colliding_back;
+					if(amount > 300) amount = 300;
+					straight_rel(-1*amount);
+				}
+				case TURN_LEFT:
+				{
+					rotate_rel(-8*ANG_1_DEG);
+				}
+				break;
+
+				case TURN_RIGHT:
+				{
+					rotate_rel(8*ANG_1_DEG);
+				}
+			}
+
+			speed_limit(2);
 		}
-		else if((should_do == GO_BACK))
-		{
-			was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[TURN_RIGHT] = 0;
-			was_doing[GO_BACK]++;
-			int amount = nearest_colliding_back;
-			if(amount > 200) amount = 200;
-			straight_rel(-1*amount);
-		}
-		else if((should_do == TURN_LEFT))
-		{
-			was_doing[GO_FWD] = was_doing[GO_BACK] = was_doing[TURN_RIGHT] = 0;
-
-			was_doing[TURN_LEFT]++;
-
-			rotate_rel(-8*ANG_1_DEG);
-		}
-		else if((should_do == TURN_RIGHT))
-		{
-			was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[GO_BACK] = 0;
-
-			was_doing[TURN_RIGHT]++;
-
-			rotate_rel(8*ANG_1_DEG);
-		}
-		else
-		{
-			was_doing[TURN_RIGHT] = was_doing[GO_FWD] = was_doing[TURN_LEFT] = was_doing[GO_BACK] = 0;
-		}
-
-
-		speed_limit(2);
 	}
 }
 
-int daiju_meininki = 1;
+int daiju_meininki = 0;
+
+void daiju_mode_on()
+{
+	daiju_meininki = 1;
+	stop_navig_fsms();
+}
+
+void daiju_mode_off()
+{
+	daiju_meininki = 0;
+	stop_navig_fsms();
+}
 
 void navig_fsm2()
 {

@@ -288,8 +288,6 @@ void correct_location_without_moving(pos_t corr)
 	else if(gyro_avgd > 100)
 		gyro_mul_pos += corr.ang;
 
-//	dbg[5] = gyro_mul_neg>>16;
-//	dbg[6] = gyro_mul_pos>>16;
 }
 
 void correct_location_without_moving_external(pos_t corr)
@@ -348,9 +346,6 @@ void compass_fsm(int cmd)
 		state = 0;
 	}
 
-	dbg[2] = state;
-	if(state != 0) dbg[3]++;
-
 	/*
 		Compass algorithm
 
@@ -404,19 +399,17 @@ void move_arc_manual(int comm, int ang)
 	robot_moves();
 }
 
-void unexpected_acceleration_detected()
+void unexpected_movement_detected()
 {
 	lidar_mark_invalid();
-//	dbg[2]++;
 }
 
-void collision_detected()
+void collision_detected(int reason)
 {
-	feedback_stop_flags = 1;
+	feedback_stop_flags = reason;
 	lidar_mark_invalid();
 	reset_movement();
 	stop_navig_fsms();
-//	dbg[3]++;
 }
 
 int coll_det_on;
@@ -546,6 +539,10 @@ void run_feedbacks(int sens_status)
 		ang_speed = 0;
 	}
 
+	static int32_t prev_cur_ang = 0;
+	static int32_t turned_by_wheels_integral = 0;
+	static int32_t turned_by_gyro_integral;
+
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[2].pos;
 	wheel_counts[1] = -1*motcon_rx[3].pos;
@@ -554,6 +551,8 @@ void run_feedbacks(int sens_status)
 		first--;
 		prev_wheel_counts[0] = wheel_counts[0];
 		prev_wheel_counts[1] = wheel_counts[1];
+		prev_cur_ang = cur_pos.ang;
+		turned_by_wheels_integral = 0;
 	}
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
 	prev_wheel_counts[0] = wheel_counts[0];
@@ -563,6 +562,25 @@ void run_feedbacks(int sens_status)
 		robot_moves();
 
 	int movement = (wheel_deltas[0] + wheel_deltas[1])*278528; // in 1mm/65536
+	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*15500000;
+	turned_by_wheels_integral += turned_by_wheels;
+
+	turned_by_gyro_integral += cur_pos.ang - prev_cur_ang;
+	prev_cur_ang = cur_pos.ang;
+	if(turned_by_wheels_integral < -10*ANG_1_DEG || turned_by_wheels_integral > 10*ANG_1_DEG)
+	{
+		int err = turned_by_wheels_integral - turned_by_gyro_integral;
+		if(err < -5*ANG_1_DEG || err > 5*ANG_1_DEG)
+		{
+			collision_detected(2);
+		}
+		else if(err < -3*ANG_1_DEG || err > 3*ANG_1_DEG)
+		{
+			unexpected_movement_detected();
+		}
+
+		turned_by_wheels_integral = turned_by_gyro_integral = 0;
+	}
 
 	aim_fwd -= movement;
 
@@ -645,9 +663,6 @@ void run_feedbacks(int sens_status)
 			robot_moves();
 		}
 
-//		if(latest[2] < dbg[7]) dbg[7] = latest[2];
-//		if(latest[2] > dbg[8]) dbg[8] = latest[2];
-
 		if(robot_nonmoving)
 		{
 			gyro_dc_corrs[0] = ((latest[0]<<15) + 255*gyro_dc_corrs[0])>>8;
@@ -729,11 +744,11 @@ void run_feedbacks(int sens_status)
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_WARN || xcel_flt[0] > XCEL_X_POS_WARN ||
 		   xcel_flt[1] < XCEL_Y_NEG_WARN || xcel_flt[1] > XCEL_Y_POS_WARN))
-			unexpected_acceleration_detected();
+			unexpected_movement_detected();
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_COLL || xcel_flt[0] > XCEL_X_POS_COLL ||
 		   xcel_flt[1] < XCEL_Y_NEG_COLL || xcel_flt[1] > XCEL_Y_POS_COLL))
-			collision_detected();
+			collision_detected(1);
 
 //		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 

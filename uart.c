@@ -110,6 +110,15 @@ void handle_uart_message()
 		            process_rx_buf[11], process_rx_buf[12], process_rx_buf[13]);
 		break;
 
+
+		case 0x86:
+		if(process_rx_buf[1] == 5)
+			daiju_mode_on();
+		else
+			daiju_mode_off();
+
+		break;
+
 		case 0x87:
 		find_charger();
 

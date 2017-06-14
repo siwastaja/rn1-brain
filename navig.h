@@ -25,6 +25,8 @@ void set_obstacle_avoidance_margin(int cm);
 
 void find_charger();
 
+void daiju_mode_on();
+void daiju_mode_off();
 
 
 #endif
