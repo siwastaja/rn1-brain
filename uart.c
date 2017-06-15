@@ -154,7 +154,10 @@ void handle_uart_message()
 		break;
 
 		case 0x8f:
-		host_alive();
+		if(process_rx_buf[1] == 42)
+			host_alive();
+		else
+			host_dead();
 		break;
 
 		case 0x91:
@@ -428,7 +431,8 @@ void uart_send_fsm()
 		{
 			extern int cur_compass_angle;
 			txbuf[0] = 0xa3;
-			txbuf[1] = 1;
+			extern volatile int compass_round_on;
+			txbuf[1] = compass_round_on;
 			int tm = cur_compass_angle>>16;
 			txbuf[2] = I16_MS(tm);
 			txbuf[3] = I16_LS(tm);

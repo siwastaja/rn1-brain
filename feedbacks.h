@@ -23,15 +23,21 @@ int correcting_either();
 int robot_moving();
 void take_control();
 void reset_movement();
-int speed_limit_status();
 void speed_limit(int new_status);
-void lower_speed_limit();
+
+void set_top_speed_ang(int speed);
+void set_top_speed_ang_max(int speed); // Can only lower the existing limits
+
+void set_top_speed_fwd(int speed);
+void set_top_speed_fwd_max(int speed); // Can only lower the existing limits
+
+// Sets both angular and forward:
+void set_top_speed(int speed);
+void set_top_speed_max(int speed); // Can only lower the existing limits
+
 void reset_speed_limits();
 
 void enable_collision_detection();
-
-void set_ang_top_speed(int speed);
-
 
 
 int get_fwd();

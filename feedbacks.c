@@ -19,6 +19,8 @@ Keeps track of position & angle, controls the motors.
 
 extern volatile int dbg[10];
 
+static int reset_wheel_slip_det;
+
 uint8_t feedback_stop_flags;
 
 int64_t gyro_long_integrals[3];
@@ -39,16 +41,16 @@ int gyro_timing_issues;
 int xcel_timing_issues;
 
 int cur_compass_angle = 0;
-int aim_angle = 0; // same
+int aim_angle = 0;
 
 int ang_accel = 300; // was 220
-int ang_top_speed;
+int ang_top_speed = 170000;
 int ang_p = 1000; //1350; // 1500
 
 int aim_fwd;
 int final_fwd_accel = 400;
 int fwd_accel = 350; // was 250, kinda sluggish
-int fwd_top_speed;
+int fwd_top_speed = 600000;
 int fwd_p = 1600; // 3100 gives rather strong deceleration; 1600 feels sluggish. 2200 oscillates sometimes.
 
 volatile int manual_control;
@@ -103,7 +105,7 @@ void zero_xcel_long_integrals()
 }
 
 static int fwd_speed_limit;
-static int ang_speed_limit = 0;
+static int ang_speed_limit;
 static int speed_limit_lowered;
 
 void take_control()
@@ -116,31 +118,58 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
-void lower_speed_limit()
+void set_top_speed_ang(int speed)
 {
-	if(!speed_limit_lowered)
-		ang_top_speed >>= 1;  // Lower angular speed limit once only.
-	fwd_top_speed >>= 1;
-	speed_limit_lowered++;
+	int new_speed = speed*3400;
+	if(new_speed < 80000) new_speed = 80000;
+	else if(new_speed > 260000) new_speed = 260000;
+	ang_top_speed = new_speed;	
 }
 
-void speed_limit(int new_status)
+void set_top_speed_ang_max(int speed)
 {
-	if(new_status < 0 || new_status > 4) return;
+	int new_speed = speed*3400;
+	if(new_speed < 80000) new_speed = 80000;
+	else if(new_speed > 260000) new_speed = 260000;
 
-	while(new_status > speed_limit_lowered)
-		lower_speed_limit();
+	if(new_speed < ang_top_speed)
+		ang_top_speed = new_speed;
+}
+
+void set_top_speed_fwd(int speed)
+{
+	int new_speed = speed*12000;
+	if(new_speed < 120000) new_speed = 120000;
+	else if(new_speed > 1200000) new_speed = 1200000;
+	fwd_top_speed = new_speed;	
+}
+
+void set_top_speed_fwd_max(int speed)
+{
+	int new_speed = speed*12000;
+	if(new_speed < 120000) new_speed = 120000;
+	else if(new_speed > 1200000) new_speed = 1200000;
+
+	if(new_speed < fwd_top_speed)
+		fwd_top_speed = new_speed;
+}
+
+
+void set_top_speed(int speed)
+{
+	set_top_speed_fwd(speed);
+	set_top_speed_ang(speed);
+}
+
+void set_top_speed_max(int speed)
+{
+	set_top_speed_fwd_max(speed);
+	set_top_speed_ang_max(speed);
 }
 
 void reset_speed_limits()
 {
-	ang_top_speed = 170000;
-	fwd_top_speed = 600000;
-}
-
-void set_ang_top_speed(int speed)
-{
-	ang_top_speed = speed;
+	set_top_speed(50);
 }
 
 void rotate_rel(int angle)
@@ -150,9 +179,10 @@ void rotate_rel(int angle)
 	aim_angle += angle;
 
 	speed_limit_lowered = 0;
-	ang_top_speed = 170000;
 	manual_control = 0;
 	robot_moves();
+	reset_wheel_slip_det = 1;
+
 }
 
 void rotate_abs(int angle)
@@ -161,9 +191,10 @@ void rotate_abs(int angle)
 	aim_angle = angle;
 
 	speed_limit_lowered = 0;
-	ang_top_speed = 170000;
 	manual_control = 0;
 	robot_moves();
+	reset_wheel_slip_det = 1;
+
 }
 
 void change_angle_abs(int angle)
@@ -184,9 +215,9 @@ void straight_rel(int fwd /*in mm*/)
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
 	aim_fwd = fwd<<16;
-	fwd_top_speed = 600000;
 	manual_control = 0;
 	robot_moves();
+	reset_wheel_slip_det = 1;
 }
 
 int get_fwd()
@@ -306,6 +337,8 @@ void set_location_without_moving_external(pos_t new_pos)
 	aim_angle = new_pos.ang;
 }
 
+volatile int compass_round_on;
+
 void compass_fsm(int cmd)
 {
 	static int compass_x_min = 0;
@@ -318,17 +351,26 @@ void compass_fsm(int cmd)
 	if(cmd == 1 && state == 0)
 		state = 1;
 
+
+	if(state)
+		compass_round_on = 1;
+	else
+		compass_round_on = 0;
+
 	int cx = latest_compass->x;
 	int cy = latest_compass->y;
 
 	int ang_err = cur_pos.ang - aim_angle;
 	if(state == 1)
 	{
+		auto_disallow(1);
+		allow_angular(1);
+		allow_straight(0);
 		compass_x_min = compass_x_max = cx;
 		compass_y_min = compass_y_max = cy;
 
+		set_top_speed_ang(30);
 		rotate_rel(120*ANG_1_DEG);
-		ang_top_speed = 100000;
 
 		state = 2;
 	}
@@ -336,8 +378,8 @@ void compass_fsm(int cmd)
 	{
 		if(ang_err > -60*ANG_1_DEG && ang_err < 60*ANG_1_DEG)
 		{
+			set_top_speed_ang(30);
 			rotate_rel(120*ANG_1_DEG);
-			ang_top_speed = 100000;
 			state++;
 		}
 	}
@@ -553,6 +595,7 @@ void run_feedbacks(int sens_status)
 		prev_wheel_counts[1] = wheel_counts[1];
 		prev_cur_ang = cur_pos.ang;
 		turned_by_wheels_integral = 0;
+		turned_by_gyro_integral = 0;
 	}
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
 	prev_wheel_counts[0] = wheel_counts[0];
@@ -567,12 +610,23 @@ void run_feedbacks(int sens_status)
 
 	turned_by_gyro_integral += cur_pos.ang - prev_cur_ang;
 	prev_cur_ang = cur_pos.ang;
-	if(turned_by_wheels_integral < -10*ANG_1_DEG || turned_by_wheels_integral > 10*ANG_1_DEG)
+
+	if(reset_wheel_slip_det)
+	{
+		reset_wheel_slip_det = 0;
+		turned_by_wheels_integral = 0;
+		turned_by_gyro_integral = 0;
+	}
+	else if(turned_by_wheels_integral < -10*ANG_1_DEG || turned_by_wheels_integral > 10*ANG_1_DEG)
 	{
 		int err = turned_by_wheels_integral - turned_by_gyro_integral;
-		if(err < -5*ANG_1_DEG || err > 5*ANG_1_DEG)
+		if(err < -5*ANG_1_DEG)
 		{
 			collision_detected(2);
+		}
+		else if(err > 5*ANG_1_DEG)
+		{
+			collision_detected(3);
 		}
 		else if(err < -3*ANG_1_DEG || err > 3*ANG_1_DEG)
 		{
@@ -803,3 +857,4 @@ void run_feedbacks(int sens_status)
 	}
 
 }
+
