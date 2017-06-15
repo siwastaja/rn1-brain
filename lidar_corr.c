@@ -240,7 +240,7 @@ static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for v
 	int y_mid = in->pos[45].y;
 
 	*(buf++) = 0x84;
-	*(buf++) = ((in->status&LIVELIDAR_INVALID)?2:0) | (significant_for_mapping?1:0);
+	*(buf++) = ((in->status&LIVELIDAR_INVALID)?4:0) | (significant_for_mapping&0b11);
 
 	*(buf++) = I16_MS(a_mid);
 	*(buf++) = I16_LS(a_mid);
@@ -856,6 +856,7 @@ int* p_livelidar_num_samples_img2;
 
 int live_lidar_calc_req;
 int skip;
+static int semi_significant_img;
 
 volatile int calc_must_be_finished = 0;
 
@@ -1067,9 +1068,9 @@ int do_livelidar_corr()
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
 	for(int i = 0; i < 6; i++)
 	{
-		if(p_livelidar_num_samples_img1[i] > 20)
+		if(p_livelidar_num_samples_img1[i] > 23)
 			valid_segments_img1++;
-		if(p_livelidar_num_samples_img2[i] > 20)
+		if(p_livelidar_num_samples_img2[i] > 23)
 			valid_segments_img2++;
 	}
 
@@ -1088,8 +1089,8 @@ int do_livelidar_corr()
 	int32_t (*p_calc_f)(point_t*, point_t*) = &calc_match_lvl_live;
 
 	if(supposed_a_diff < -9*ANG_1_DEG || supposed_a_diff > 9*ANG_1_DEG ||
-	   supposed_x_diff < -150 || supposed_x_diff > 150 ||
-	   supposed_y_diff < -150 || supposed_y_diff > 150)
+	   supposed_x_diff < -160 || supposed_x_diff > 160 ||
+	   supposed_y_diff < -160 || supposed_y_diff > 160)
 	{
 		high_movement_mode = 1;
 		p_calc_f = &calc_match_lvl_live_high_movement;
@@ -1346,7 +1347,7 @@ int do_livelidar_corr()
 	if(best4_a > -2*ANG_1_DEG && best4_a < 2*ANG_1_DEG &&
 	   best4_x > -30  &&  best4_x < 30  &&
 	   best4_y > -30  &&  best4_y < 30  &&
-	   supposed_a_diff > -30*ANG_1_DEG && supposed_a_diff < 30*ANG_1_DEG &&
+	   supposed_a_diff > -40*ANG_1_DEG && supposed_a_diff < 40*ANG_1_DEG &&
 	   supposed_x_diff > -120 && supposed_x_diff < 120 &&
 	   supposed_y_diff > -120 && supposed_y_diff < 120)
 	{
@@ -1364,10 +1365,26 @@ int do_livelidar_corr()
 		memcpy(&lid_skiphold, p_livelidar_img1, sizeof(live_lidar_scan_t));
 		memcpy(l2d_skiphold, p_livelid2d_img1, 360*sizeof(point_t));
 		memcpy(num_samples_skiphold, p_livelidar_num_samples_img1, 6*sizeof(int));
+
+
+		if(best4_a < -1*ANG_1_DEG || best4_a > 1*ANG_1_DEG ||
+		   best4_x < -15 || best4_x > 15 ||
+		   best4_y < -15 || best4_y > 15 ||
+		   supposed_a_diff < -20*ANG_1_DEG || supposed_a_diff > 20*ANG_1_DEG ||
+		   supposed_x_diff < -60 || supposed_x_diff > 60 ||
+		   supposed_y_diff < -60 || supposed_y_diff > 60)
+		{
+			// when semi_significant_img == 1, we are halfway distance to a non-skipping significant image;
+			// or we have half of the error required to mark the image significant.
+			semi_significant_img++;
+		}
+		else
+			semi_significant_img = 0;
 	}
 	else
 	{
 		skip = 0;
+		semi_significant_img = 0;
 	}
 
 	// We apply the correction to img2, which will be img1 on the next round (unless we skip).
@@ -1398,9 +1415,15 @@ int livelidar_fsm(int allowed_to_send_lidar)
 		if(allowed_to_send_lidar && !uart_busy())
 		{
 			if(skip)
-				send_2d_live_to_uart(p_livelidar_img2, p_livelid2d_img2, 0);
+			{
+				// Just the newest image, robot has moved quite little.
+				send_2d_live_to_uart(p_livelidar_img2, p_livelid2d_img2, (semi_significant_img==1)?2:0);
+			}
 			else
-				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1, 1);
+			{
+				// This was img2 just a moment ago; it has been corrected for position, and it's significant:
+				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1, 1); 
+			}
 			ret = 1;
 		}
 		// Start correcting img1,img2.

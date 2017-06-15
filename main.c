@@ -793,7 +793,7 @@ int main()
 			seconds = 0;
 			start_charger = 0;
 		}
-		else if(seconds > 40)
+		else if(seconds > 30)
 		{
 			CHARGER_DIS();
 		}
