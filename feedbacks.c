@@ -22,6 +22,8 @@ extern volatile int dbg[10];
 static int reset_wheel_slip_det;
 
 uint8_t feedback_stop_flags;
+int feedback_stop_param1, feedback_stop_param2;
+int feedback_stop_param1_store, feedback_stop_param2_store;
 
 int64_t gyro_long_integrals[3];
 int64_t gyro_short_integrals[3];
@@ -29,8 +31,8 @@ int64_t gyro_short_integrals[3];
 int64_t xcel_long_integrals[3];
 int64_t xcel_short_integrals[3];
 
-int xcel_dc_corrs[3];
-int gyro_dc_corrs[3];
+int64_t xcel_dc_corrs[3];
+int64_t gyro_dc_corrs[3];
 
 // cur x,y are being integrated at higher than 1mm resolution; the result is copied in mm to cur_pos.
 static int64_t cur_x;
@@ -175,6 +177,10 @@ void reset_speed_limits()
 void rotate_rel(int angle)
 {
 	feedback_stop_flags = 0;
+	feedback_stop_param1 = 0;
+	feedback_stop_param2 = 0;
+	feedback_stop_param1_store = 0;
+	feedback_stop_param2_store = 0;
 
 	aim_angle += angle;
 
@@ -188,6 +194,10 @@ void rotate_rel(int angle)
 void rotate_abs(int angle)
 {
 	feedback_stop_flags = 0;
+	feedback_stop_param1 = 0;
+	feedback_stop_param2 = 0;
+	feedback_stop_param1_store = 0;
+	feedback_stop_param2_store = 0;
 	aim_angle = angle;
 
 	speed_limit_lowered = 0;
@@ -211,6 +221,10 @@ void change_angle_rel(int angle)
 void straight_rel(int fwd /*in mm*/)
 {
 	feedback_stop_flags = 0;
+	feedback_stop_param1 = 0;
+	feedback_stop_param2 = 0;
+	feedback_stop_param1_store = 0;
+	feedback_stop_param2_store = 0;
 	speed_limit_lowered = 0;
 	fwd_accel = final_fwd_accel/4;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
@@ -441,17 +455,33 @@ void move_arc_manual(int comm, int ang)
 	robot_moves();
 }
 
-void unexpected_movement_detected()
+void unexpected_movement_detected(int param1, int param2)
 {
+	// Store in case we have a gyro (wheel slip) stop, these can be useful to analyze the first hit.
+	feedback_stop_param1_store = param1;
+	feedback_stop_param2_store = param2;
 	lidar_mark_invalid();
 }
 
-void collision_detected(int reason)
+void collision_detected(int reason, int param1, int param2)
 {
-	feedback_stop_flags = reason;
-	lidar_mark_invalid();
-	reset_movement();
-	stop_navig_fsms();
+	if(!feedback_stop_flags)
+	{
+		if(reason != 1)
+		{
+			feedback_stop_param1 = feedback_stop_param1_store;
+			feedback_stop_param2 = feedback_stop_param2_store;
+		}
+		else
+		{
+			feedback_stop_param1 = param1;
+			feedback_stop_param2 = param2;
+		}
+		feedback_stop_flags = reason;
+		lidar_mark_invalid();
+		reset_movement();
+		stop_navig_fsms();
+	}
 }
 
 int coll_det_on;
@@ -617,21 +647,21 @@ void run_feedbacks(int sens_status)
 		turned_by_wheels_integral = 0;
 		turned_by_gyro_integral = 0;
 	}
-	else if(turned_by_wheels_integral < -10*ANG_1_DEG || turned_by_wheels_integral > 10*ANG_1_DEG)
+	else if(turned_by_wheels_integral < -12*ANG_1_DEG || turned_by_wheels_integral > 12*ANG_1_DEG)
 	{
 		int err = turned_by_wheels_integral - turned_by_gyro_integral;
-		if(err < -5*ANG_1_DEG)
+		if(err < -6*ANG_1_DEG)
 		{
-			collision_detected(2);
+			collision_detected(2, 0, 0);
 		}
-		else if(err > 5*ANG_1_DEG)
+		else if(err > 6*ANG_1_DEG)
 		{
-			collision_detected(3);
+			collision_detected(3, 0, 0);
 		}
-		else if(err < -3*ANG_1_DEG || err > 3*ANG_1_DEG)
-		{
-			unexpected_movement_detected();
-		}
+//		else if(err < -4*ANG_1_DEG || err > 4*ANG_1_DEG)
+//		{
+//			unexpected_movement_detected(0, 0);
+//		}
 
 		turned_by_wheels_integral = turned_by_gyro_integral = 0;
 	}
@@ -765,13 +795,12 @@ void run_feedbacks(int sens_status)
 		int latest[3] = {latest_xcel->x, latest_xcel->y, latest_xcel->z};
 		static int xcel_flt[2];
 
-		if(robot_nonmoving)
-		{
+//		if(robot_nonmoving)
+//		{
 			xcel_dc_corrs[0] = ((latest[0]<<15) + 255*xcel_dc_corrs[0])>>8;
 			xcel_dc_corrs[1] = ((latest[1]<<15) + 255*xcel_dc_corrs[1])>>8;
 			xcel_dc_corrs[2] = ((latest[2]<<15) + 255*xcel_dc_corrs[2])>>8;
-		}
-
+//		}
 
 		int xcel_dt = cnt - prev_xcel_cnt;
 		prev_xcel_cnt = cnt;
@@ -792,17 +821,17 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
-		// Moving average 7/8
-		xcel_flt[0] = ((latest[0]<<8) + 7*xcel_flt[0])>>3;
-		xcel_flt[1] = ((latest[1]<<8) + 7*xcel_flt[1])>>3;
+		// Moving average 15/16
+		xcel_flt[0] = ((latest[0]<<8) + 15*xcel_flt[0])>>4;
+		xcel_flt[1] = ((latest[1]<<8) + 15*xcel_flt[1])>>4;
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_WARN || xcel_flt[0] > XCEL_X_POS_WARN ||
 		   xcel_flt[1] < XCEL_Y_NEG_WARN || xcel_flt[1] > XCEL_Y_POS_WARN))
-			unexpected_movement_detected();
+			unexpected_movement_detected(xcel_flt[0]>>8, xcel_flt[1]>>8);
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_COLL || xcel_flt[0] > XCEL_X_POS_COLL ||
 		   xcel_flt[1] < XCEL_Y_NEG_COLL || xcel_flt[1] > XCEL_Y_POS_COLL))
-			collision_detected(1);
+			collision_detected(1, xcel_flt[0]>>8, xcel_flt[1]>>8);
 
 //		int unexpected_accel = /*(expected_fwd_accel>>4)*/ 0 - latest[1];
 

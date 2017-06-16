@@ -474,9 +474,16 @@ void uart_send_fsm()
 			txbuf[14] = I32_I7_0(t);
 
 			extern uint8_t feedback_stop_flags;
+			extern int feedback_stop_param1, feedback_stop_param2;
 			txbuf[15] = feedback_stop_flags&0x7f;
+			tm = feedback_stop_param1;
+			txbuf[16] = I16_MS(tm);
+			txbuf[17] = I16_LS(tm);
+			tm = feedback_stop_param2;
+			txbuf[18] = I16_MS(tm);
+			txbuf[19] = I16_LS(tm);
 
-			send_uart(16);
+			send_uart(20);
 
 		}
 		break;		
