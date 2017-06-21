@@ -48,6 +48,7 @@ typedef struct
 typedef struct
 {
 	int status;
+	int id;
 	pos_t pos[90]; // Each four points share the same position.
 	int16_t scan[360];
 } live_lidar_scan_t;
@@ -73,7 +74,7 @@ int lidar_is_half();
 
 void lidar_fsm();
 
-void reset_livelidar_images();
+void reset_livelidar_images(int id);
 
 void lidar_mark_invalid();
 
@@ -84,6 +85,7 @@ void lidar_mark_invalid();
 num_bytes
  1	uint8 start byte
  1	uint7 status
+ 1      uint7 id to identify when new robot coordinates have been applied.
  2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
  5	int32 cur_x   ( " " )
  5	int32 cur_y   ( " " )

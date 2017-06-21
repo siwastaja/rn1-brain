@@ -215,6 +215,7 @@ static void scan_to_2d_live_robot_coord_frame(live_lidar_scan_t* in, point_t* ou
 num_bytes
  1	uint8 start byte
  1	uint7 status
+ 1      uint7 id to identify when new robot coordinates have been applied.
  2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
  5	int32 cur_x   ( " " )
  5	int32 cur_y   ( " " )
@@ -241,6 +242,7 @@ static void send_2d_live_to_uart(live_lidar_scan_t* in, point_t* point2d /*for v
 
 	*(buf++) = 0x84;
 	*(buf++) = ((in->status&LIVELIDAR_INVALID)?4:0) | (significant_for_mapping&0b11);
+	*(buf++) = in->id&0x7f;
 
 	*(buf++) = I16_MS(a_mid);
 	*(buf++) = I16_LS(a_mid);

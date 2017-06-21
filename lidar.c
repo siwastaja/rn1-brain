@@ -133,11 +133,16 @@ extern int* p_livelidar_num_samples_store; // For counting validness of data for
 	Data is prepared and stored with location info (cur_pos from feedbacks.c) on each sample.
 */
 
-int reset = 0;
+int reset;
+int cur_lidar_id;
 
-void reset_livelidar_images()
+void reset_livelidar_images(int id)
 {
 	reset = 3; // to skip doing anything with the image being acquired right now.
+	if(id > -1 && id < 128)
+	{
+		cur_lidar_id = id;
+	}
 }
 
 void lidar_mark_invalid()
@@ -211,9 +216,11 @@ void lidar_fsm()
 				if(!skip)
 					apply_corr_to_livelidar(p_livelidar_store);
 
+				p_livelidar_store->id = cur_lidar_id;
+
 				// Now, correction has been applied to both images: the previous one, and the one just finished.
 				// We can swap the buffers to start gathering the new image, and start processing the latest scan:
-				livelidar_storage_finished();
+				livelidar_storage_finished(cur_lidar_id);
 
 				// One more thing, we need to apply the correction to the robot coordinates right here,
 				// so that we get the new coords applied to the new lidar scan from the start:
