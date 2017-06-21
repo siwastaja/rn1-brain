@@ -105,11 +105,17 @@ void handle_uart_message()
 
 		case 0x82:
 		host_alive();
+		ena_coll_avoid();
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
 		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]),
 		            process_rx_buf[11], process_rx_buf[12], process_rx_buf[13]);
 		break;
 
+		case 0x83:
+		host_alive();
+		dis_coll_avoid();
+		move_absa_rels_twostep(((int32_t)I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]))<<16, I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]), process_rx_buf[5]);
+		break;
 
 		case 0x86:
 		if(process_rx_buf[1] == 5)
@@ -137,6 +143,7 @@ void handle_uart_message()
 			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4])>>2;
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6])>>2;
 			correct_location_without_moving_external(corr);
+			reset_livelidar_images();
 		}
 		break;
 
@@ -147,6 +154,7 @@ void handle_uart_message()
 			new_pos.x = I7x5_I32(process_rx_buf[3],process_rx_buf[4],process_rx_buf[5],process_rx_buf[6],process_rx_buf[7]);
 			new_pos.y = I7x5_I32(process_rx_buf[8],process_rx_buf[9],process_rx_buf[10],process_rx_buf[11],process_rx_buf[12]);
 			set_location_without_moving_external(new_pos);
+			reset_livelidar_images();
 		}
 		break;
 

@@ -871,7 +871,7 @@ void reset_lidar_corr_images()
 	lidlive2.status = 0;
 	lidlive3.status = 0;
 
-	skip = 1;
+	skip = 0;
 }
 
 void livelidar_storage_finished()
@@ -949,9 +949,9 @@ static int LIVE_PASS1_A[LIVE_PASS1_NUM_A] =
 };
 static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
 {
-	1,
-	1,
-	1
+	3,
+	4,
+	3
 };
 
 #define LIVE_PASS1_NUM_X 5
@@ -967,7 +967,7 @@ static int LIVE_PASS1_X_WEIGH[LIVE_PASS1_NUM_X] =
 {
 	5,
 	6,
-	6,
+	8,
 	6,
 	5
 };
@@ -1064,20 +1064,28 @@ int do_livelidar_corr()
 	latest_corr.ang = 0;
 	latest_corr.x = 0;
 	latest_corr.y = 0;
-	// Require enough valid samples on at least four of six 60deg segments.
+	// Require enough valid samples on at least four of six 60deg segments,
+	// and some valid samples on either remaining segment.
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
+	int semivalid_segments_img1 = 0, semivalid_segments_img2 = 0;
 	for(int i = 0; i < 6; i++)
 	{
-		if(p_livelidar_num_samples_img1[i] > 23)
+		if(p_livelidar_num_samples_img1[i] > 26)
 			valid_segments_img1++;
-		if(p_livelidar_num_samples_img2[i] > 23)
+		if(p_livelidar_num_samples_img1[i] > 12)
+			semivalid_segments_img1++;
+
+		if(p_livelidar_num_samples_img2[i] > 26)
 			valid_segments_img2++;
+		if(p_livelidar_num_samples_img2[i] > 12)
+			semivalid_segments_img2++;
 	}
 
-	if(valid_segments_img1 < 4)
+
+	if(valid_segments_img1 < 4 || semivalid_segments_img1 < 5)
 		return 1;
 
-	if(valid_segments_img2 < 4)
+	if(valid_segments_img2 < 4 || semivalid_segments_img2 < 5)
 		return 2;
 	
 	int32_t supposed_a_diff = p_livelidar_img2->pos[45].ang - p_livelidar_img1->pos[45].ang;
@@ -1422,7 +1430,9 @@ int livelidar_fsm(int allowed_to_send_lidar)
 			else
 			{
 				// This was img2 just a moment ago; it has been corrected for position, and it's significant:
-				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1, 1); 
+				int significant = 0;
+				if(latest_corr_ret == 100 || latest_corr_ret == 0) significant = 1;
+				send_2d_live_to_uart(p_livelidar_img1, p_livelid2d_img1, significant); 
 			}
 			ret = 1;
 		}

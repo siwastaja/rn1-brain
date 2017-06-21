@@ -76,7 +76,7 @@ int robot_moving()
 static int host_alive_watchdog;
 void host_alive()
 {
-	host_alive_watchdog = 5000;
+	host_alive_watchdog = 15000;
 }
 
 void host_dead()
@@ -328,10 +328,15 @@ void correct_location_without_moving(pos_t corr)
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
 
-	if(gyro_avgd < -100)
+	if(gyro_avgd < -300)
 		gyro_mul_neg += corr.ang;
-	else if(gyro_avgd > 100)
+	else if(gyro_avgd > 300)
 		gyro_mul_pos += corr.ang;
+	else
+	{
+		gyro_mul_neg += corr.ang>>1;
+		gyro_mul_pos += corr.ang>>1;
+	}
 
 }
 
@@ -882,6 +887,7 @@ void run_feedbacks(int sens_status)
 		motcon_tx[3].state = 1;
 		motcon_tx[2].speed = 0;
 		motcon_tx[3].speed = 0;
+		feedback_stop_flags = 4;
 		reset_movement(); stop_navig_fsms(); // to prevent surprises when we are back up.
 	}
 

@@ -16,6 +16,7 @@ Collision avoidance, simple mechanical tasks.
 
 extern point_t lidar_collision_avoidance[360];
 volatile int lidar_collision_avoidance_new;
+int enable_coll_avoidance = 1;
 int collision_avoidance_on;
 
 uint32_t store_stop_flags = 0;
@@ -76,7 +77,10 @@ void move_fsm()
 
 		case MOVE_START:
 		{
-			collision_avoidance_on = 1;
+			if(enable_coll_avoidance)
+				collision_avoidance_on = 1;
+			else
+				collision_avoidance_on = 0;
 			allow_angular(1);
 			auto_disallow(1);
 			rotate_abs(cur_move.abs_ang);
@@ -114,6 +118,7 @@ void move_fsm()
 
 		case MOVE_END:	
 		{
+			collision_avoidance_on = 0;
 			was_correcting_xy = 0;
 			correct_xy = 0;
 			avoidance_in_action = 0;
@@ -139,22 +144,31 @@ void move_rel_twostep(int angle16, int fwd /*in mm*/)
 	correct_xy = 0;
 	store_action_flags = store_stop_flags = 0;
 	avoidance_in_action = 0;
-	collision_avoidance_on = 1;
 	cur_move.state = MOVE_START;
 	cur_move.abs_ang = cur_pos.ang + (angle16<<16);
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
 }
 
-void move_absa_rels_twostep(int angle32, int fwd /*in mm*/)
+void ena_coll_avoid()
+{
+	enable_coll_avoidance = 1;
+}
+void dis_coll_avoid()
+{
+	enable_coll_avoidance = 0;
+}
+
+void move_absa_rels_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 {
 	reset_movement();
 	take_control();
 	was_correcting_xy = 0;
 	correct_xy = 0;
 	store_action_flags = store_stop_flags = 0;
-	collision_avoidance_on = 1;
 	avoidance_in_action = 0;
+	speedlim_hommel = speedlim;
+	set_top_speed(speedlim);
 	cur_move.state = MOVE_START;
 	cur_move.abs_ang = angle32;
 	cur_move.rel_fwd = fwd;
@@ -251,8 +265,7 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 	xy_left = new_fwd;
 
 	xy_original_ang = new_ang;
-	move_absa_rels_twostep(new_ang, new_fwd);
-	set_top_speed_max(speedlim);
+	move_absa_rels_twostep(new_ang, new_fwd, speedlim);
 	was_correcting_xy = 1;
 	correct_xy = 1;
 	xy_id = id;
@@ -399,7 +412,7 @@ int chafind_middle_mark()
 
 
 typedef enum {
-	CHAFIND_IDLE 		= 0, 
+	CHAFIND_IDLE 		= 0,
 	CHAFIND_START          	= 1,
 	CHAFIND_WAIT_ROTATED	= 2,
 	CHAFIND_WAIT_BACK	= 3,
@@ -850,7 +863,7 @@ void navig_fsm2()
 
 					if(dist_to_front < 70)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 
 						if(ang < 55)
 						{
@@ -860,28 +873,23 @@ void navig_fsm2()
 					}
 					else if(dist_to_front < 110)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						if(ang > 38) {action_flags |= 1UL<<(1+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(1+(d?16:0)); stop = 1; break;}
 					}
 					else if(dist_to_front < 140)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						if(ang > 30) {action_flags |= 1UL<<(2+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(2+(d?16:0)); stop = 1; break;}
-					}
-					else if(dist_to_front < 170)
-					{
-						set_top_speed_max(13);
-						if(ang > 22) {action_flags |= 1UL<<(3+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(3+(d?16:0)); stop = 1; break;}
 					}
 					else if(dist_to_front < 300)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						action_flags |= 1UL<<(4+(d?16:0)); 
 						turn[d] = 4;
 					}
 					else if(dist_to_front < 450)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						if(ang < 30)
 						{
 							turn[d] = 4;
@@ -889,11 +897,6 @@ void navig_fsm2()
 						else
 						{if(turn[d] < 2) turn[d] = 2;}
 						action_flags |= 1UL<<(5+(d?16:0)); 
-					}
-					else if(dist_to_front < 500)
-					{
-						set_top_speed_max(13);
-						limited = 1;
 					}
 					else if(dist_to_front < 1000)
 					{
@@ -907,13 +910,13 @@ void navig_fsm2()
 				{
 					if(dist_to_front < 450)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						if(turn[d]<1) turn[d] = 1;
 						action_flags |= 1UL<<(6+(d?16:0)); 
 					}
 					else if(dist_to_front < 500)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						limited = 1;
 					}
 					else if(dist_to_front < 1000)
@@ -929,13 +932,13 @@ void navig_fsm2()
 					}
 
 				}
-				else 
+/*				else 
 				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+90) ||
 				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+90)))
 				{
 					if(dist_to_front < 500)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(16);
 						limited = 1;
 					}
 					else if(dist_to_front < 1000)
@@ -949,19 +952,19 @@ void navig_fsm2()
 						action_flags |= 1UL<<(8+(d?16:0)); 
 						do_not_turn[d] = 1;
 					}
-				}
+				} */
 				else 
-				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+200) ||
-				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+200)))
+				if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+160) ||
+				   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+160)))
 				{
 					if(dist_to_front < 500)
 					{
-						set_top_speed_max(13);
+						set_top_speed_max(20);
 						limited = 1;
 					}
 					else if(dist_to_front < 1000)
 					{
-						set_top_speed_max(25);
+						set_top_speed_max(30);
 						limited = 1;
 					}
 				}
@@ -981,7 +984,7 @@ void navig_fsm2()
 				{
 					if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
 					{
-						set_top_speed_max(25);
+						set_top_speed_max(22);
 						do_not_turn[d] |= 2;
 						action_flags |= 1UL<<(9+(d?16:0)); 
 						break;
@@ -994,7 +997,7 @@ void navig_fsm2()
 				{
 					if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -1*(ROBOT_ORIGIN_TO_BACK+150))
 					{
-						set_top_speed_max(25);
+						set_top_speed_ang_max(30);
 						limited = 1;
 					}
 
@@ -1004,7 +1007,7 @@ void navig_fsm2()
 
 			}
 
-			for(int i = (d?345:0); i < (d?360:15); i+=2)
+			for(int i = (d?347:0); i < (d?360:13); i+=2)
 			{
 				if(!lidar_collision_avoidance[i].valid) continue;
 
@@ -1022,7 +1025,7 @@ void navig_fsm2()
 						}
 						else if(dist_to_front < 500)
 						{
-							set_top_speed_max(13);
+							set_top_speed_max(16);
 							limited = 1;
 						}
 						else if(dist_to_front < 1000)
@@ -1049,7 +1052,7 @@ void navig_fsm2()
 		if(nearest_son < 80)
 		{ set_top_speed_max(25); limited = 1; avoidance_in_action = 5;}
 		else if(nearest_son < 45)
-		{ set_top_speed_max(13); limited = 1; avoidance_in_action = 5;}
+		{ set_top_speed_max(16); limited = 1; avoidance_in_action = 5;}
 		else if(nearest_son < 10)
 		{
 			stop_flags |= 1UL<<5;
@@ -1064,7 +1067,7 @@ void navig_fsm2()
 			// Leftmost sonar sees an obstacle, two other do not; turn right if we already won't by the lidar.
 			if(turn[1] < 4) turn[1] = 4;
 			action_flags |= 1UL<<11; 
-			set_top_speed_max(13);
+			set_top_speed_max(16);
 			sonar_assumption_made = 1;
 		} 
 		else
@@ -1075,7 +1078,7 @@ void navig_fsm2()
 			// Same, but opposite -> turn left.
 			if(turn[0] < 4) turn[0] = 4;
 			action_flags |= 1UL<<12; 
-			set_top_speed_max(13);
+			set_top_speed_max(16);
 			sonar_assumption_made = 1;
 		}
 
@@ -1108,7 +1111,7 @@ void navig_fsm2()
 
 		if((turn[0] && do_not_turn[1]) || (turn[1] && do_not_turn[0]))
 		{
-			set_top_speed_max(13);
+			set_top_speed_max(16);
 		}
 
 		int ang_err = get_ang_err();

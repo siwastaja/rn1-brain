@@ -52,15 +52,15 @@ int get_fwd();
 
 
 // Before the multiplicant: Measured min/max peaks during peaceful operation (without averaging)
-#define XCEL_X_NEG_WARN ((int)(-7000)*256)
-#define XCEL_X_POS_WARN ((int)(7000)*256)
-#define XCEL_Y_NEG_WARN ((int)(-9000)*256)
-#define XCEL_Y_POS_WARN ((int)(9000)*256)
+#define XCEL_X_NEG_WARN ((int)(-14000)*256)
+#define XCEL_X_POS_WARN ((int)(14000)*256)
+#define XCEL_Y_NEG_WARN ((int)(-13000)*256)
+#define XCEL_Y_POS_WARN ((int)(13000)*256)
 
-#define XCEL_X_NEG_COLL ((int)(-8000)*256)
-#define XCEL_X_POS_COLL ((int)(8000)*256)
-#define XCEL_Y_NEG_COLL ((int)(-10000)*256)
-#define XCEL_Y_POS_COLL ((int)(10000)*256)
+#define XCEL_X_NEG_COLL ((int)(-20000)*256)
+#define XCEL_X_POS_COLL ((int)(20000)*256)
+#define XCEL_Y_NEG_COLL ((int)(-16000)*256)
+#define XCEL_Y_POS_COLL ((int)(16000)*256)
 
 
 typedef struct
