@@ -400,6 +400,8 @@ void timebase_10k_handler()
 	// Things expecting 1kHz calls:
 	if(cnt_10k == 0)
 	{
+		handle_uart_message(); // 3.33 kHz min
+
 		millisec++;
 		sec_gen++;
 		if(sec_gen >= 1000)
@@ -419,12 +421,11 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 1)
 	{
-		handle_uart_message(); // 3.33 kHz min
-
 		motcon_fsm();
 	}
 	else if(cnt_10k == 2)
 	{
+		handle_uart_message(); // 3.33 kHz min
 		navig_fsm1();
 	}
 	else if(cnt_10k == 3)
@@ -442,15 +443,16 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 6)
 	{
+		handle_uart_message(); // 3.33 kHz min
 		lidar_fsm();
 		motcon_fsm();
 	}
 	else if(cnt_10k == 7)
 	{
-		handle_uart_message(); // 3.33 kHz min
 	}
 	else if(cnt_10k == 8)
 	{
+		handle_uart_message(); // 3.33 kHz min
 		if(do_compass_round)
 		{
 			do_compass_round = 0;
@@ -462,8 +464,6 @@ void timebase_10k_handler()
 	else if(cnt_10k == 9)
 	{
 		motcon_fsm();
-		handle_uart_message(); // 3.33 kHz min
-
 	}
 
 

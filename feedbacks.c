@@ -110,6 +110,9 @@ static int fwd_speed_limit;
 static int ang_speed_limit;
 static int speed_limit_lowered;
 
+static int do_correct_angle = 0;
+static int do_correct_fwd = 0;
+
 void take_control()
 {
 	manual_control = 0;
@@ -122,16 +125,16 @@ int speed_limit_status()
 
 void set_top_speed_ang(int speed)
 {
-	int new_speed = speed*3400;
-	if(new_speed < 80000) new_speed = 80000;
+	int new_speed = speed*3900;
+	if(new_speed < 100000) new_speed = 100000;
 	else if(new_speed > 260000) new_speed = 260000;
 	ang_top_speed = new_speed;	
 }
 
 void set_top_speed_ang_max(int speed)
 {
-	int new_speed = speed*3400;
-	if(new_speed < 80000) new_speed = 80000;
+	int new_speed = speed*3900;
+	if(new_speed < 100000) new_speed = 100000;
 	else if(new_speed > 260000) new_speed = 260000;
 
 	if(new_speed < ang_top_speed)
@@ -176,6 +179,8 @@ void reset_speed_limits()
 
 void rotate_rel(int angle)
 {
+	do_correct_fwd = 0;
+	do_correct_angle = 0;
 	feedback_stop_flags = 0;
 	feedback_stop_param1 = 0;
 	feedback_stop_param2 = 0;
@@ -193,6 +198,8 @@ void rotate_rel(int angle)
 
 void rotate_abs(int angle)
 {
+	do_correct_fwd = 0;
+	do_correct_angle = 0;
 	feedback_stop_flags = 0;
 	feedback_stop_param1 = 0;
 	feedback_stop_param2 = 0;
@@ -220,6 +227,8 @@ void change_angle_rel(int angle)
 
 void straight_rel(int fwd /*in mm*/)
 {
+	do_correct_fwd = 0;
+	do_correct_angle = 0;
 	feedback_stop_flags = 0;
 	feedback_stop_param1 = 0;
 	feedback_stop_param2 = 0;
@@ -227,7 +236,6 @@ void straight_rel(int fwd /*in mm*/)
 	feedback_stop_param2_store = 0;
 	speed_limit_lowered = 0;
 	fwd_accel = final_fwd_accel/4;
-	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
 	aim_fwd = fwd<<16;
 	manual_control = 0;
 	robot_moves();
@@ -248,15 +256,15 @@ void reset_movement()
 {
 	aim_fwd = 0;
 	aim_angle = cur_pos.ang;
+	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
 }
 
 static int auto_keepstill;
 
-static int do_correct_angle = 0;
-static int do_correct_fwd = 0;
-
 static int angular_allowed = 1;
 static int straight_allowed = 1;
+
+int accurate_turngo;
 
 void allow_angular(int yes)
 {
@@ -533,11 +541,20 @@ void run_feedbacks(int sens_status)
 
 	if(straight_allowed && (fwd_err < -40*65536 || fwd_err > 40*65536))
 	{
-		if(ang_err > (-8*ANG_1_DEG) && ang_err < (8*ANG_1_DEG))
-			do_correct_fwd = 1;
-		else if(ang_err < (-12*ANG_1_DEG) && ang_err > (12*ANG_1_DEG))
-			do_correct_fwd = 0;
-		
+		if(accurate_turngo)
+		{
+			if(ang_err > (-4*ANG_1_DEG) && ang_err < (4*ANG_1_DEG))
+				do_correct_fwd = 1;
+			else if(ang_err < (-7*ANG_1_DEG) && ang_err > (7*ANG_1_DEG))
+				do_correct_fwd = 0;
+		}
+		else
+		{
+			if(ang_err > (-15*ANG_1_DEG) && ang_err < (15*ANG_1_DEG))
+				do_correct_fwd = 1;
+			else if(ang_err < (-30*ANG_1_DEG) && ang_err > (30*ANG_1_DEG))
+				do_correct_fwd = 0;
+		}		
 	}
 	if(!straight_allowed || (fwd_err > -15*65536 && fwd_err < 15*65536))
 	{
@@ -617,8 +634,6 @@ void run_feedbacks(int sens_status)
 	}
 
 	static int32_t prev_cur_ang = 0;
-	static int32_t turned_by_wheels_integral = 0;
-	static int32_t turned_by_gyro_integral;
 
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[2].pos;
@@ -629,8 +644,7 @@ void run_feedbacks(int sens_status)
 		prev_wheel_counts[0] = wheel_counts[0];
 		prev_wheel_counts[1] = wheel_counts[1];
 		prev_cur_ang = cur_pos.ang;
-		turned_by_wheels_integral = 0;
-		turned_by_gyro_integral = 0;
+		reset_wheel_slip_det = 1;
 	}
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
 	prev_wheel_counts[0] = wheel_counts[0];
@@ -641,34 +655,38 @@ void run_feedbacks(int sens_status)
 
 	int movement = (wheel_deltas[0] + wheel_deltas[1])*278528; // in 1mm/65536
 	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*15500000;
-	turned_by_wheels_integral += turned_by_wheels;
+	int turned_by_gyro = cur_pos.ang - prev_cur_ang;
+	int turn_wheels_gyro_err = turned_by_wheels - turned_by_gyro;
 
-	turned_by_gyro_integral += cur_pos.ang - prev_cur_ang;
+
+	// Keep track of integral of error between gyro and wheel-based turning information.
+	// Decrement the error integral slowly (2 deg per s) to prevent small error buildup.
+	// Use error signal to detect wheel slip.
+	static int turn_wheels_gyro_err_integral = 0;
+	turn_wheels_gyro_err_integral += turn_wheels_gyro_err;
+
+	if(turn_wheels_gyro_err_integral < 0) turn_wheels_gyro_err_integral += 2*ANG_0_001_DEG;
+	else                                  turn_wheels_gyro_err_integral -= 2*ANG_0_001_DEG;
+
 	prev_cur_ang = cur_pos.ang;
 
 	if(reset_wheel_slip_det)
 	{
 		reset_wheel_slip_det = 0;
-		turned_by_wheels_integral = 0;
-		turned_by_gyro_integral = 0;
+		turn_wheels_gyro_err_integral = 0;
 	}
-	else if(turned_by_wheels_integral < -12*ANG_1_DEG || turned_by_wheels_integral > 12*ANG_1_DEG)
+	else
 	{
-		int err = turned_by_wheels_integral - turned_by_gyro_integral;
-		if(err < -6*ANG_1_DEG)
+		if(turn_wheels_gyro_err_integral < -6*ANG_1_DEG)
 		{
 			collision_detected(2, 0, 0);
+			turn_wheels_gyro_err_integral = 0;
 		}
-		else if(err > 6*ANG_1_DEG)
+		else if(turn_wheels_gyro_err_integral > 6*ANG_1_DEG)
 		{
 			collision_detected(3, 0, 0);
+			turn_wheels_gyro_err_integral = 0;
 		}
-//		else if(err < -4*ANG_1_DEG || err > 4*ANG_1_DEG)
-//		{
-//			unexpected_movement_detected(0, 0);
-//		}
-
-		turned_by_wheels_integral = turned_by_gyro_integral = 0;
 	}
 
 	aim_fwd -= movement;
@@ -709,7 +727,7 @@ void run_feedbacks(int sens_status)
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
 		if(fwd_speed_limit < top_speed) fwd_speed_limit += fwd_accel;
-		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= 2*fwd_accel;
+		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= 1*fwd_accel;
 		else fwd_speed_limit = top_speed;
 
 		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;

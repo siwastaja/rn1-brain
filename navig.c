@@ -82,13 +82,16 @@ void move_fsm()
 			else
 				collision_avoidance_on = 0;
 			allow_angular(1);
-			auto_disallow(1);
+			allow_straight(1);
+			auto_disallow(0);
 			rotate_abs(cur_move.abs_ang);
+			straight_rel(cur_move.rel_fwd);
 			set_top_speed(speedlim_hommel);
-			cur_move.state++;
+			cur_move.state = MOVE_WAIT_STRAIGHT;
 		}
 		break;
 
+/*
 		case MOVE_WAIT_ANGULAR:
 		{
 			if(angle_almost_corrected())
@@ -100,6 +103,7 @@ void move_fsm()
 			}
 		}
 		break;
+*/
 		case MOVE_WAIT_STRAIGHT:
 
 
@@ -583,8 +587,11 @@ void navig_fsm2_for_charger()
 
 }
 
+extern int accurate_turngo;
+
 void find_charger()
 {
+	accurate_turngo = 1;
 	chafind_state = CHAFIND_START;
 }
 

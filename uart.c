@@ -78,6 +78,7 @@ static void handle_maintenance_msg()
 }
 
 volatile int do_compass_round;
+extern int accurate_turngo;
 
 void handle_uart_message()
 {
@@ -106,6 +107,7 @@ void handle_uart_message()
 		case 0x82:
 		host_alive();
 		ena_coll_avoid();
+		accurate_turngo = process_rx_buf[14];
 		move_xy_abs(I7x5_I32(process_rx_buf[1],process_rx_buf[2],process_rx_buf[3],process_rx_buf[4],process_rx_buf[5]),
 		            I7x5_I32(process_rx_buf[6],process_rx_buf[7],process_rx_buf[8],process_rx_buf[9],process_rx_buf[10]),
 		            process_rx_buf[11], process_rx_buf[12], process_rx_buf[13]);
@@ -114,6 +116,7 @@ void handle_uart_message()
 		case 0x83:
 		host_alive();
 		dis_coll_avoid();
+		accurate_turngo = process_rx_buf[6];
 		move_absa_rels_twostep(((int32_t)I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]))<<16, I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]), process_rx_buf[5]);
 		break;
 
@@ -144,11 +147,13 @@ void handle_uart_message()
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6])>>2;
 			correct_location_without_moving_external(corr);
 			reset_livelidar_images(process_rx_buf[7]);
+			dbg[2] = process_rx_buf[7];
 		}
 		break;
 
 		case 0x8a:
 		{
+			dbg[3]++;
 			pos_t new_pos;
 			new_pos.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
 			new_pos.x = I7x5_I32(process_rx_buf[3],process_rx_buf[4],process_rx_buf[5],process_rx_buf[6],process_rx_buf[7]);
@@ -200,14 +205,15 @@ void handle_uart_message()
 void uart_rx_handler()
 {
 	// This SR-then-DR read sequence clears error flags:
-	/*uint32_t flags = */USART3->SR;
+	uint32_t flags = USART3->SR;
 	uint8_t byte = USART3->DR;
 
 // TODO:
-//	if(flags & 0b1011)
-//	{
-//		// At error, drop the packet.
-//	}
+	if(flags & 0b1011)
+	{
+		dbg[4]++;
+		// At error, drop the packet.
+	}
 
 	if(byte == 255) // End-of-command delimiter
 	{

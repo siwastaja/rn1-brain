@@ -49,6 +49,8 @@ int get_fwd();
 #define ANG_0_125_DEG  1491308
 #define ANG_0_1_DEG    1193047
 #define ANG_0_05_DEG    596523
+#define ANG_0_01_DEG    119305
+#define ANG_0_001_DEG    11930
 
 
 // Before the multiplicant: Measured min/max peaks during peaceful operation (without averaging)
