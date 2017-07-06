@@ -147,13 +147,11 @@ void handle_uart_message()
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6])>>2;
 			correct_location_without_moving_external(corr);
 			reset_livelidar_images(process_rx_buf[7]);
-			dbg[2] = process_rx_buf[7];
 		}
 		break;
 
 		case 0x8a:
 		{
-			dbg[3]++;
 			pos_t new_pos;
 			new_pos.ang = ((uint32_t)(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2])))<<16;
 			new_pos.x = I7x5_I32(process_rx_buf[3],process_rx_buf[4],process_rx_buf[5],process_rx_buf[6],process_rx_buf[7]);
