@@ -130,12 +130,16 @@ extern unsigned int _BOOST_BEGIN;
 extern unsigned int _BOOST_END;
 extern unsigned int _BOOSTI_BEGIN;
 
+extern void hwtest_main();
+
 void stm32init(void)
 {
+#ifndef HWTEST
 	// We need the 5V supply up and running as the very first thing!
 	RCC->AHB1ENR = 1UL<<4 /*PORTE*/;
 	GPIOE->ODR = 1UL<<15;
-	GPIOE->MODER = 0b01UL<<(15*2) /*ena_5V*/ | 0b0101010101010101UL<<(7*2) /*PE7..PE14 debug outputs*/;
+	GPIOE->MODER = 0b01UL<<(15*2) /*ena_5V*/;
+#endif
 
 	uint32_t* bss_begin = (uint32_t*)&_BSS_BEGIN;
 	uint32_t* bss_end   = (uint32_t*)&_BSS_END;
@@ -156,9 +160,11 @@ void stm32init(void)
 		datai_begin++;
 	}
 
-	GPIOE->BSRR = 1UL<<8; // DBG IO2
-
+#ifndef HWTEST
 	main();
+#else
+	hwtest_main();
+#endif
 }
 
 

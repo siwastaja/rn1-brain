@@ -728,6 +728,8 @@ int main()
 
 	int lidar_ready = 0;
 
+	extern int ignore_cmds;
+
 	while(1)
 	{
 		random++;
@@ -746,6 +748,7 @@ int main()
 				generate_lidar_ignore();
 				lidar_ready = 1;
 				dbg[0] = 0;
+				ignore_cmds = 0;
 			}
 		}
 		else
@@ -766,7 +769,21 @@ int main()
 			if(tooktime < 30) delay_ms(30); // temporary shit
 
 			uart_send_fsm(); // send something else.
-			while(uart_busy());
+			while(uart_busy()) random++;
+
+			if(lidar_full_rev[0].idx != 183)
+			{
+				dbg[2]++;
+				host_dead();
+				ignore_cmds = 1;
+				lidar_ready = 0;
+				deinit_lidar();
+				delay_ms(500);
+				init_lidar();
+				delay_ms(200);
+				sync_lidar();
+			}
+
 		}
 
 

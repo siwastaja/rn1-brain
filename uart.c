@@ -59,6 +59,7 @@ volatile uint8_t* process_rx_buf;
 
 volatile int do_handle_message;
 
+extern void delay_ms(uint32_t i);
 static void handle_maintenance_msg()
 {
 	switch(process_rx_buf[4])
@@ -73,6 +74,16 @@ static void handle_maintenance_msg()
 		mc_flasher(process_rx_buf[5]);
 		break;
 
+		case 0x54:
+		host_dead();
+		DO_KILL_PWR();
+		delay_ms(100);
+		
+		case 0x55:
+		host_dead();
+		NVIC_SystemReset();
+		while(1);
+
 		default: break;
 	}
 }
@@ -80,10 +91,17 @@ static void handle_maintenance_msg()
 volatile int do_compass_round;
 extern int accurate_turngo;
 
+int ignore_cmds = 1;
+
 void handle_uart_message()
 {
 	if(!do_handle_message)
 		return;
+
+	if(ignore_cmds && process_rx_buf[0] != 0xfe)
+	{
+		return;
+	}
 
 	switch(process_rx_buf[0])
 	{

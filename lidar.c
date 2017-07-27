@@ -394,8 +394,8 @@ void lidar_motor_ctrl_loop()
 		lidar_speed_in_spec = 1;
 
 	pwm_shadow_x256 -= error/16;
-	if(pwm_shadow_x256 < 100*256) pwm_shadow_x256=100*256;
-	else if(pwm_shadow_x256 > 700*256) pwm_shadow_x256=700*256;
+	if(pwm_shadow_x256 < 80*256) {pwm_shadow_x256=80*256; lidar_speed_in_spec = 0; in_spec_cnt = 0;}
+	else if(pwm_shadow_x256 > 500*256) {pwm_shadow_x256=500*256; lidar_speed_in_spec = 0; in_spec_cnt = 0;}
 	TIM4->CCR4 = pwm_shadow_x256>>8;
 }
 

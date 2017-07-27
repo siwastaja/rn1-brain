@@ -533,8 +533,6 @@ int init_gyro_xcel_compass()
 	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 	NVIC_DisableIRQ(I2C1_EV_IRQn);
 
-	GPIOE->BSRR = 1UL<<8; // DBG IO2
-
 	/*
 		I2C1 @ APB1 at 30MHz
 		"Tpclk1" = 1/30MHz = 0.03333333us
@@ -569,21 +567,15 @@ int init_gyro_xcel_compass()
 	I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
 	I2C1->TRISE = 30UL;
 
-	GPIOE->BSRR = 1UL<<9; // DBG IO3
-
 	I2C1->CR1 |= 1UL; // Enable I2C
 
 	GPIOB->MODER &= ~(0b1111UL<<(2*8));
 	GPIOB->MODER |= (0b1010UL<<(2*8));
 
-	GPIOE->BSRR = 1UL<<10; // DBG IO4
-
 
 	delay_us(1000);
 //	delay_ms(100);
 
-
-	GPIOE->BSRR = 1UL<<11; // DBG IO5
 
 	// Init gyro
 
@@ -601,7 +593,7 @@ int init_gyro_xcel_compass()
 
 	if(i2c1_config_byte(0x3A, 0x20,
 		0b100<<4 /*200Hz*/ | 1<<3 /*Must be set for proper operation*/ | 0b111 /*Z,Y,X ena*/))
-		return 1;
+		return 2;
 
 
 	// configuring anything seems to break the xcel sensor. 200Hz setting luckily works.
@@ -609,12 +601,12 @@ int init_gyro_xcel_compass()
 //	if(i2c1_config_byte(0x3A, 0x21,
 //		0b10<<5 /*This field ridiculously configures both LPF and HPF, when HighRes is set: LPF=200/9 Hz. HPF undefined, go figure.*/ |
 //		0<<2 /* HPF off */))
-//		return 1;
+//		return 2;
 
 
 //	if(i2c1_config_byte(0x3A, 0x23,
 //		0b11<<6 /*50Hz BW AA*/ | 0b00<<4 /*+- 2g full scale*/ | 1<<3 /*Enable BW selection (lol)*/)
-//		return 1;
+//		return 2;
 
 
 
@@ -622,30 +614,27 @@ int init_gyro_xcel_compass()
 
 	if(i2c1_config_byte(0x3C, 0x20,
 		0b11<<5 /*Ultra-high performance mode*/ | 0b100<<2 /*10Hz*/))
-		return 1;
+		return 3;
 
 
 	if(i2c1_config_byte(0x3C, 0x21,
 		0b11<<5 /*must be set*/))
-		return 1;
+		return 3;
 
 
 	if(i2c1_config_byte(0x3C, 0x22,
 		0b00<0 /*continuous*/))
-		return 1;
+		return 3;
 
 
 	if(i2c1_config_byte(0x3C, 0x23,
 		0b11<2 /*Z in ultra-high performance mode, too (why not?)*/))
-		return 1;
+		return 3;
 
 
 	if(i2c1_config_byte(0x3C, 0x24,
 		1<<6 /*"block data update"; must be set*/))
-		return 1;
-
-
-	GPIOE->BSRR = 1UL<<12; // DBG IO6
+		return 3;
 
 
 	delay_us(100);
@@ -654,8 +643,6 @@ int init_gyro_xcel_compass()
 	NVIC_SetPriority(I2C1_EV_IRQn, 0b0000);
 	NVIC_ClearPendingIRQ(I2C1_EV_IRQn);
 	NVIC_EnableIRQ(I2C1_EV_IRQn);
-
-	GPIOE->BSRR = 1UL<<13; // DBG IO7
 
 	i2c1_ready = 1;
 

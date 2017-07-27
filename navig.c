@@ -632,7 +632,7 @@ void daiju_meininki_fsm()
 
 			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+10) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+10))
 			{
 				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
 			}
@@ -643,7 +643,7 @@ void daiju_meininki_fsm()
 
 			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+20))
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+10) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+10))
 			{
 				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
 			}
@@ -654,7 +654,7 @@ void daiju_meininki_fsm()
 
 			int dist_to_back  = -1*lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_BACK;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+20) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+0))
+			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+0) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+0))
 			{
 				if(dist_to_back  < nearest_colliding_back) nearest_colliding_back = dist_to_back;
 			}
@@ -729,6 +729,7 @@ void daiju_meininki_fsm()
 				{
 					nothing_cnt = 0;
 					state = random&0b11;
+					if(state == GO_BACK) state = TURN_LEFT;
 				}
 			}
 			instruct_movement = 1;
@@ -738,21 +739,27 @@ void daiju_meininki_fsm()
 
 		if(instruct_movement)
 		{
+			set_top_speed_max(13);
+
 			switch(state)
 			{
 				case GO_FWD:
 				{
 					int amount = nearest_colliding_front;
 					if(amount > 300) amount = 300;
+					else if(amount < 10) amount = 10;
 					straight_rel(amount);
 				}
 				break;
 				case GO_BACK:
 				{
+					set_top_speed_max(10);
 					int amount = nearest_colliding_back;
-					if(amount > 300) amount = 300;
+					if(amount > 200) amount = 200;
+					else if(amount < 5) amount = 5;
 					straight_rel(-1*amount);
 				}
+				break;
 				case TURN_LEFT:
 				{
 					rotate_rel(-8*ANG_1_DEG);
@@ -763,9 +770,11 @@ void daiju_meininki_fsm()
 				{
 					rotate_rel(8*ANG_1_DEG);
 				}
-			}
+				break;
 
-			set_top_speed_max(13);
+				default:
+				break;
+			}
 		}
 	}
 }

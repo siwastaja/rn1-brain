@@ -21,6 +21,9 @@
 void error(int code);
 void run_flasher();
 void mc_flasher(int mcnum);
+void delay_ms(uint32_t i);
+void delay_us(uint32_t i);
+
 
 extern volatile int optflow_int_x, optflow_int_y;
 

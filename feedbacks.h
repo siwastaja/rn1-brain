@@ -53,16 +53,15 @@ int get_fwd();
 #define ANG_0_001_DEG    11930
 
 
-// Before the multiplicant: Measured min/max peaks during peaceful operation (without averaging)
-#define XCEL_X_NEG_WARN ((int)(-14000)*256)
-#define XCEL_X_POS_WARN ((int)(14000)*256)
-#define XCEL_Y_NEG_WARN ((int)(-13000)*256)
-#define XCEL_Y_POS_WARN ((int)(13000)*256)
+#define XCEL_X_NEG_WARN ((int)(-20000)*256)
+#define XCEL_X_POS_WARN ((int)(20000)*256)
+#define XCEL_Y_NEG_WARN ((int)(-16000)*256)
+#define XCEL_Y_POS_WARN ((int)(16000)*256)
 
-#define XCEL_X_NEG_COLL ((int)(-20000)*256)
-#define XCEL_X_POS_COLL ((int)(20000)*256)
-#define XCEL_Y_NEG_COLL ((int)(-16000)*256)
-#define XCEL_Y_POS_COLL ((int)(16000)*256)
+#define XCEL_X_NEG_COLL ((int)(-27000)*256)
+#define XCEL_X_POS_COLL ((int)(27000)*256)
+#define XCEL_Y_NEG_COLL ((int)(-22000)*256)
+#define XCEL_Y_POS_COLL ((int)(22000)*256)
 
 
 typedef struct

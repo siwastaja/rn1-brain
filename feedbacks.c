@@ -257,6 +257,7 @@ void reset_movement()
 	aim_fwd = 0;
 	aim_angle = cur_pos.ang;
 	fwd_speed_limit = fwd_accel*80; // use starting speed that equals to 80ms of acceleration
+	reset_wheel_slip_det = 1;
 }
 
 static int auto_keepstill;
@@ -317,11 +318,13 @@ void zero_angle()
 {
 	aim_angle = 0;
 	cur_pos.ang = 0;
+	reset_wheel_slip_det = 1;
 }
 
 void zero_coords()
 {
 	cur_x = cur_y = 0;
+	reset_wheel_slip_det = 1;
 }
 
 int64_t gyro_mul_neg = 763300LL<<16;
@@ -362,6 +365,7 @@ void set_location_without_moving_external(pos_t new_pos)
 	cur_y = new_pos.y<<16;
 	cur_pos.ang = new_pos.ang;
 	aim_angle = new_pos.ang;
+	reset_wheel_slip_det = 1;
 }
 
 volatile int compass_round_on;
@@ -413,6 +417,7 @@ void compass_fsm(int cmd)
 	else if(state == 7)
 	{
 		state = 0;
+		reset_wheel_slip_det = 1;
 	}
 
 	/*
@@ -665,8 +670,8 @@ void run_feedbacks(int sens_status)
 	static int turn_wheels_gyro_err_integral = 0;
 	turn_wheels_gyro_err_integral += turn_wheels_gyro_err;
 
-	if(turn_wheels_gyro_err_integral < 0) turn_wheels_gyro_err_integral += 2*ANG_0_001_DEG;
-	else                                  turn_wheels_gyro_err_integral -= 2*ANG_0_001_DEG;
+	if(turn_wheels_gyro_err_integral < 0) turn_wheels_gyro_err_integral += 3*ANG_0_001_DEG;
+	else                                  turn_wheels_gyro_err_integral -= 3*ANG_0_001_DEG;
 
 	prev_cur_ang = cur_pos.ang;
 
@@ -677,14 +682,14 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		if(turn_wheels_gyro_err_integral < -6*ANG_1_DEG)
+		if(turn_wheels_gyro_err_integral < -8*ANG_1_DEG)
 		{
-			collision_detected(2, 0, 0);
+			collision_detected(do_correct_fwd?2:5, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
 		}
-		else if(turn_wheels_gyro_err_integral > 6*ANG_1_DEG)
+		else if(turn_wheels_gyro_err_integral > 8*ANG_1_DEG)
 		{
-			collision_detected(3, 0, 0);
+			collision_detected(do_correct_fwd?3:6, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
 		}
 	}
@@ -844,9 +849,9 @@ void run_feedbacks(int sens_status)
 			xcel_short_integrals[i] += (int64_t)latest[i];
 		}
 
-		// Moving average 15/16
-		xcel_flt[0] = ((latest[0]<<8) + 15*xcel_flt[0])>>4;
-		xcel_flt[1] = ((latest[1]<<8) + 15*xcel_flt[1])>>4;
+		// Moving average 31/32
+		xcel_flt[0] = ((latest[0]<<8) + 31*xcel_flt[0])>>5;
+		xcel_flt[1] = ((latest[1]<<8) + 31*xcel_flt[1])>>5;
 
 		if(coll_det_on && (xcel_flt[0] < XCEL_X_NEG_WARN || xcel_flt[0] > XCEL_X_POS_WARN ||
 		   xcel_flt[1] < XCEL_Y_NEG_WARN || xcel_flt[1] > XCEL_Y_POS_WARN))
