@@ -30,7 +30,16 @@ extern volatile int optflow_int_x, optflow_int_y;
 extern volatile optflow_data_t latest_optflow;
 extern volatile int optflow_errors;
 
+#define ADC_ITEMS 1
+#define ADC_SAMPLES 2
+
+typedef struct  __attribute__ ((__packed__))
+{
+	uint16_t bat_v;
+} adc_data_t;
+
 int get_bat_v();
+extern volatile adc_data_t adc_data[ADC_SAMPLES];
 
 extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 

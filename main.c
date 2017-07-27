@@ -493,14 +493,6 @@ extern int cur_compass_angle;
 
 extern int64_t xcel_long_integrals[3];
 
-#define ADC_ITEMS 1
-#define ADC_SAMPLES 2
-
-typedef struct  __attribute__ ((__packed__))
-{
-	uint16_t bat_v;
-} adc_data_t;
-
 volatile adc_data_t adc_data[ADC_SAMPLES];
 
 int get_bat_v() // in mv
@@ -588,6 +580,7 @@ int main()
 	             //     | | | | | | | | | | | | | | | |
 	GPIOB->MODER   = 0b10101001000001011010000000000000;
 	GPIOB->OSPEEDR = 0b01000101000001010000010001000000;
+	GPIOB->PUPDR   = 0b00000000010100000000000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOC->MODER   = 0b00000100101000000000010100110000;
