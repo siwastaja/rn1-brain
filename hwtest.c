@@ -86,6 +86,7 @@ void hwtest_main()
 	             //     | | | | | | | | | | | | | | | |
 	GPIOB->MODER   = 0b10101001000001011010000000000000;
 	GPIOB->OSPEEDR = 0b01000101000001010000010001000000;
+	GPIOB->PUPDR   = 0b00000000010100000000000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOC->MODER   = 0b00000100101000000000010100110000;
@@ -135,6 +136,9 @@ void hwtest_main()
 
 	uart_print_string_blocking("R#1 OJABOTTI DEV PROTOTYPE REV.A HWTEST       PULUROBOTICS 2017\r\n");
 	uart_print_string_blocking("If you read this, UART TX is working. If you read at 115200bps, clock gen (xtal+pll) is working.\r\n");
+
+	int ena5v = 0;
+	int ena12v = 0;
 	
 	while(1)
 	{
@@ -143,6 +147,20 @@ void hwtest_main()
 		uart_print_string_blocking("[ 3 ]  Test motor controller 3\r\n");
 		uart_print_string_blocking("[ 4 ]  Test motor controller 4\r\n");
 		uart_print_string_blocking("[ 5 ]  Test I2C gyro, accelerometer, compass\r\n");
+
+		if(!ena5v)
+			uart_print_string_blocking("[ 6 ] (   5V off    ) Enable 5V 10A supply\r\n");
+		else
+			uart_print_string_blocking("[ 6 ] (5V turned ON ) Disable 5V 10A supply\r\n");
+
+		if(!ena12v)
+			uart_print_string_blocking("[ 7 ] (   12V off    ) Enable 12V 1.5A supply\r\n");
+		else
+			uart_print_string_blocking("[ 7 ] (12V turned ON ) Disable 12V 1.5A supply\r\n");
+
+
+		uart_print_string_blocking("[ 8 ]  Test charger subsystem\r\n");
+
 
 		char buffer[1000];
 
@@ -254,7 +272,7 @@ void hwtest_main()
 					}
 
 					char *p_buf = buffer;
-					p_buf = o_str_append(p_buf, "\r\nGYRO:    status=");
+					p_buf = o_str_append(p_buf, "\r\n\r\nGYRO:    status=");
 					p_buf = o_utoa8_fixed(latest_gyro->status_reg, p_buf);
 					p_buf = o_str_append(p_buf, " X=");
 					p_buf = o_itoa16_fixed(latest_gyro->x, p_buf);
@@ -288,6 +306,109 @@ void hwtest_main()
 
 
 				}
+			}
+			break;
+
+			case '6':
+			{
+				if(!ena5v)
+				{
+					ena5v = 1;
+					PSU5V_ENA();
+				}
+				else
+				{
+					ena5v = 0;
+					PSU5V_DIS();
+				}
+			}
+			break;
+
+			case '7':
+			{
+				if(!ena12v)
+				{
+					ena12v = 1;
+					PSU12V_ENA();
+				}
+				else
+				{
+					ena12v = 0;
+					PSU12V_DIS();
+				}
+			}
+			break;
+
+			case '8':
+			{
+
+				ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
+				ADC1->CR1 = 1UL<<8 /* SCAN mode */;
+				ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 1UL<<1 /*continuous*/;
+				ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/;
+				ADC1->SQR1 = (1  -1)<<20 /* sequence length */;
+				ADC1->SQR3 = 12<<0; // Ch12 first in sequence
+
+				ADC1->CR2 |= 1; // Enable ADC
+
+				DMA2_Stream4->PAR = (uint32_t)&(ADC1->DR);
+				DMA2_Stream4->M0AR = (uint32_t)(adc_data);
+				DMA2_Stream4->NDTR = ADC_ITEMS*ADC_SAMPLES;
+				DMA2_Stream4->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b01UL<<13 /*16-bit mem*/ | 0b01UL<<11 /*16-bit periph*/ |
+						   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
+
+				DMA2->LIFCR = 0b111101UL<<0;
+				DMA2_Stream4->CR |= 1UL; // Enable ADC DMA
+
+				delay_ms(1);
+
+				ADC1->CR2 |= 1UL<<30; // Start converting.
+
+				uart_print_string_blocking("a = enable charging, s = disable charging, q = stop\r\n");
+
+				while(1)
+				{
+					char *p_buf = buffer;
+					p_buf = o_str_append(p_buf, "BATT VOLTAGE ADC = ");
+					p_buf = o_utoa16_fixed(adc_data[0].bat_v, p_buf);
+					p_buf = o_str_append(p_buf, ",");
+					p_buf = o_utoa16_fixed(adc_data[1].bat_v, p_buf);
+					p_buf = o_str_append(p_buf, "-->");
+					p_buf = o_utoa16_fixed(get_bat_v(), p_buf);
+					p_buf = o_str_append(p_buf, "mV ");
+
+					if(CHA_RUNNING())
+						p_buf = o_str_append(p_buf, " (  CHARGING  )");
+					else
+						p_buf = o_str_append(p_buf, " (not charging)");
+
+					if(CHA_FINISHED())
+						p_buf = o_str_append(p_buf, " (  FINISHED  )\r\n");
+					else
+						p_buf = o_str_append(p_buf, " (not finished)\r\n");
+
+					uart_print_string_blocking(buffer);
+
+					delay_ms(300);
+					uint8_t subcmd = 0;
+					if(USART3->SR & (1<<5)) subcmd = USART3->DR;
+					if(subcmd == 'q')
+						break;
+					else if(subcmd == 'a')
+					{
+						uart_print_string_blocking("==> Charging enabled\r\n");
+						CHARGER_ENA();
+					}
+					else if(subcmd == 's')
+					{
+						uart_print_string_blocking("==> Charging disabled\r\n");
+						CHARGER_DIS();
+					}
+
+				}
+				uart_print_string_blocking("Charging disabled\r\n");
+				CHARGER_DIS();
+
 			}
 			break;
 
