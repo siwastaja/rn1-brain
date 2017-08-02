@@ -20,7 +20,6 @@
 
 void hwtest_main()
 {
-
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -159,13 +158,20 @@ void hwtest_main()
 			uart_print_string_blocking("[ 7 ] (12V turned ON ) Disable 12V 1.5A supply\r\n");
 
 
-		uart_print_string_blocking("[ 8 ]  Test charger subsystem\r\n");
-
+		uart_print_string_blocking("[ 8 ]  Test charger subsystem + voltage meas. ADC\r\n");
+		uart_print_string_blocking("[ 9 ]  Try requesting KILL_PWR (does a hard reboot; or a complete shutdown with emptyish battery)\r\n");
 
 		char buffer[1000];
 
-		while(!(USART3->SR & (1<<5))) ;
+		while(!(USART3->SR & (1<<5)))
+		{
+			LED_ON();
+			delay_ms(50);
+			LED_OFF();
+			delay_ms(50);
+		}
 		uint8_t cmd = USART3->DR;
+		LED_OFF();
 
 		switch(cmd)
 		{
@@ -411,6 +417,16 @@ void hwtest_main()
 
 			}
 			break;
+
+			case '9':
+			{
+				DO_KILL_PWR();
+				delay_ms(100);
+				uart_print_string_blocking("\r\n    F A I L U R E !   KILL_PWR failed to reboot, since we are still running :(\r\n");
+				delay_ms(500);
+			}
+			break;
+
 
 			default:
 			break;
