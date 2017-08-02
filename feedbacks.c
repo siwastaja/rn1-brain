@@ -37,7 +37,7 @@ int64_t gyro_dc_corrs[3];
 // cur x,y are being integrated at higher than 1mm resolution; the result is copied in mm to cur_pos.
 static int64_t cur_x;
 static int64_t cur_y;
-pos_t cur_pos;
+volatile pos_t cur_pos;
 
 int gyro_timing_issues;
 int xcel_timing_issues;

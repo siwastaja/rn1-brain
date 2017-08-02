@@ -492,27 +492,32 @@ void uart_send_fsm()
 
 			txbuf[20] = 0xa0;
 			txbuf[21] = 1;
-			tm = cur_pos.ang>>16;
+			__disable_irq();
+			tm = cur_pos.ang;
+			__enable_irq();
+			tm>>=16;
 			txbuf[22] = I16_MS(tm);
 			txbuf[23] = I16_LS(tm);
-			txbuf[24] = 0;
-			txbuf[25] = 0;
-			txbuf[26] = 0;
-			txbuf[27] = 0;
+			__disable_irq();
 			tm = cur_pos.x;
-			txbuf[28] = I32_I7_4(tm);
-			txbuf[29] = I32_I7_3(tm);
-			txbuf[30] = I32_I7_2(tm);
-			txbuf[31] = I32_I7_1(tm);
-			txbuf[32] = I32_I7_0(tm);
+			__enable_irq();
+			if(tm < -1000000 || tm > 1000000) tm = 123456789;
+			txbuf[24] = I32_I7_4(tm);
+			txbuf[25] = I32_I7_3(tm);
+			txbuf[26] = I32_I7_2(tm);
+			txbuf[27] = I32_I7_1(tm);
+			txbuf[28] = I32_I7_0(tm);
+			__disable_irq();
 			tm = cur_pos.y;
-			txbuf[33] = I32_I7_4(tm);
-			txbuf[34] = I32_I7_3(tm);
-			txbuf[35] = I32_I7_2(tm);
-			txbuf[36] = I32_I7_1(tm);
-			txbuf[37] = I32_I7_0(tm);
+			__enable_irq();
+			if(tm < -1000000 || tm > 1000000) tm = 123456789;
+			txbuf[29] = I32_I7_4(tm);
+			txbuf[30] = I32_I7_3(tm);
+			txbuf[31] = I32_I7_2(tm);
+			txbuf[32] = I32_I7_1(tm);
+			txbuf[33] = I32_I7_0(tm);
 
-			send_uart(20+18);
+			send_uart(34);
 
 		}
 		break;		

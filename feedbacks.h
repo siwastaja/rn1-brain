@@ -73,7 +73,7 @@ typedef struct
 
 #define COPY_POS(to, from) { (to).ang = (from).ang; (to).x = (from).x; (to).y = (from).y; }
 
-extern pos_t cur_pos;
+extern volatile pos_t cur_pos;
 
 void zero_angle();
 void zero_coords();

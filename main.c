@@ -500,9 +500,6 @@ int get_bat_v() // in mv
 	return (((adc_data[0].bat_v + adc_data[1].bat_v))*70920 / 22200);
 }
 
-extern pos_t cur_pos;
-extern volatile int ang_idle;
-
 volatile uint32_t random = 123;
 
 int main()
