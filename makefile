@@ -5,7 +5,8 @@ LD = arm-none-eabi-gcc
 SIZE = arm-none-eabi-size
 OBJCOPY = arm-none-eabi-objcopy
 
-CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -DHWTEST
+CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline 
+#-DHWTEST
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 

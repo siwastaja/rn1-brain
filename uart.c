@@ -431,29 +431,6 @@ void uart_send_fsm()
 
 		case 10:
 		{
-			txbuf[0] = 0xa0;
-			txbuf[1] = 1;
-			int tm = cur_pos.ang>>16;
-			txbuf[2] = I16_MS(tm);
-			txbuf[3] = I16_LS(tm);
-			txbuf[4] = 0;
-			txbuf[5] = 0;
-			txbuf[6] = 0;
-			txbuf[7] = 0;
-			tm = cur_pos.x;
-			txbuf[8] = I32_I7_4(tm);
-			txbuf[9] = I32_I7_3(tm);
-			txbuf[10] = I32_I7_2(tm);
-			txbuf[11] = I32_I7_1(tm);
-			txbuf[12] = I32_I7_0(tm);
-			tm = cur_pos.y;
-			txbuf[13] = I32_I7_4(tm);
-			txbuf[14] = I32_I7_3(tm);
-			txbuf[15] = I32_I7_2(tm);
-			txbuf[16] = I32_I7_1(tm);
-			txbuf[17] = I32_I7_0(tm);
-
-			send_uart(18);
 		}
 		break;
 
@@ -513,7 +490,29 @@ void uart_send_fsm()
 			txbuf[18] = I16_MS(tm);
 			txbuf[19] = I16_LS(tm);
 
-			send_uart(20);
+			txbuf[20] = 0xa0;
+			txbuf[21] = 1;
+			tm = cur_pos.ang>>16;
+			txbuf[22] = I16_MS(tm);
+			txbuf[23] = I16_LS(tm);
+			txbuf[24] = 0;
+			txbuf[25] = 0;
+			txbuf[26] = 0;
+			txbuf[27] = 0;
+			tm = cur_pos.x;
+			txbuf[28] = I32_I7_4(tm);
+			txbuf[29] = I32_I7_3(tm);
+			txbuf[30] = I32_I7_2(tm);
+			txbuf[31] = I32_I7_1(tm);
+			txbuf[32] = I32_I7_0(tm);
+			tm = cur_pos.y;
+			txbuf[33] = I32_I7_4(tm);
+			txbuf[34] = I32_I7_3(tm);
+			txbuf[35] = I32_I7_2(tm);
+			txbuf[36] = I32_I7_1(tm);
+			txbuf[37] = I32_I7_0(tm);
+
+			send_uart(20+18);
 
 		}
 		break;		
