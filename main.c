@@ -792,6 +792,8 @@ int main()
 			enable_collision_detection();
 		}
 
+		CHARGER_ENA();
+/*
 		extern volatile int start_charger;
 
 		if(seconds > 60 || start_charger)
@@ -804,7 +806,7 @@ int main()
 		{
 			CHARGER_DIS();
 		}
-
+*/
 	}
 
 
