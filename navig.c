@@ -140,7 +140,7 @@ void move_fsm()
 	}
 }
 
-void move_rel_twostep(int angle16, int fwd /*in mm*/)
+void move_rel_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 {
 	reset_movement();
 	take_control();
@@ -148,8 +148,10 @@ void move_rel_twostep(int angle16, int fwd /*in mm*/)
 	correct_xy = 0;
 	store_action_flags = store_stop_flags = 0;
 	avoidance_in_action = 0;
+	speedlim_hommel = speedlim;
+	set_top_speed(speedlim);
 	cur_move.state = MOVE_START;
-	cur_move.abs_ang = cur_pos.ang + (angle16<<16);
+	cur_move.abs_ang = cur_pos.ang + angle32;
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
 }
@@ -223,7 +225,7 @@ void xy_fsm()
 
 	int32_t ang_changed = xy_original_ang - new_ang;
 
-	if((ang_changed < -30*ANG_1_DEG || ang_changed > 30*ANG_1_DEG) &&
+	if((ang_changed < -90*ANG_1_DEG || ang_changed > 90*ANG_1_DEG) &&
 	   (new_fwd < -1*XY_DONT_AT_END_LEN || new_fwd > XY_DONT_AT_END_LEN))
 	{
 		store_stop_flags |= 1UL<<11;
@@ -859,7 +861,7 @@ void navig_fsm2()
 		{
 			for(int d = 0; d < 2; d++)
 			{
-				for(int i = (d?295:15); i < (d?345:65); i+=2)
+				for(int i = (d?297:17); i < (d?343:63); i+=2)
 				{
 					int ang = d?(360-i):(i);
 
@@ -967,7 +969,7 @@ void navig_fsm2()
 
 
 				// Check the arse, to avoid hitting when turning.
-				for(int i = (d?(90-1):(180+35)); i < (d?(90+35):(180+90+1)); i+=2)
+				for(int i = (d?(90+1):(180+37)); i < (d?(90+33):(180+90-1)); i+=2)
 				{
 					if(!lidar_collision_avoidance[i].valid) continue;
 
@@ -1040,49 +1042,53 @@ void navig_fsm2()
 			it disappears from the sonar's view when we turn, so we just make assumptions.
 			*/
 
-			int nearest_son = nearest_sonar();
-			if(nearest_son < 80)
-			{ set_top_speed_max(25); limited = 1; avoidance_in_action = 5;}
-			else if(nearest_son < 45)
-			{ set_top_speed_max(16); limited = 1; avoidance_in_action = 5;}
-			else if(nearest_son < 10)
+			if(angle_almost_corrected())
 			{
-				stop_flags |= 1UL<<5;
-				stop = 1;
-			}
-			int fwd_remain_or = fwd_remain; if(fwd_remain_or > 400) fwd_remain_or = 400;
+				int nearest_son = nearest_sonar();
+				if(nearest_son < 80)
+				{ set_top_speed_max(25); limited = 1; avoidance_in_action = 5;}
+				else if(nearest_son < 45)
+				{ set_top_speed_max(16); limited = 1; avoidance_in_action = 5;}
+				else if(nearest_son < 10)
+				{
+					stop_flags |= 1UL<<5;
+					stop = 1;
+				}
 
-			if(latest_sonars[0] && (latest_sonars[0]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
-			   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
-			   (!latest_sonars[2] || latest_sonars[2]*10 > fwd_remain))
-			{
-				// Leftmost sonar sees an obstacle, two other do not; turn right if we already won't by the lidar.
-				if(turn[1] < 4) turn[1] = 4;
-				action_flags |= 1UL<<11; 
-				set_top_speed_max(16);
-				sonar_assumption_made = 1;
-			} 
-			else
-			if(latest_sonars[2] && (latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
-			   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
-			   (!latest_sonars[0] || latest_sonars[0]*10 > fwd_remain))
-			{
-				// Same, but opposite -> turn left.
-				if(turn[0] < 4) turn[0] = 4;
-				action_flags |= 1UL<<12; 
-				set_top_speed_max(16);
-				sonar_assumption_made = 1;
-			}
+				int fwd_remain_or = fwd_remain; if(fwd_remain_or > 400) fwd_remain_or = 400;
 
-			fwd_remain_or = fwd_remain-50; if(fwd_remain_or > 200) fwd_remain_or = 200;
+				if(latest_sonars[0] && (latest_sonars[0]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
+				   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
+				   (!latest_sonars[2] || latest_sonars[2]*10 > fwd_remain))
+				{
+					// Leftmost sonar sees an obstacle, two other do not; turn right if we already won't by the lidar.
+					if(turn[1] < 4) turn[1] = 4;
+					action_flags |= 1UL<<11; 
+					set_top_speed_max(16);
+					sonar_assumption_made = 1;
+				} 
+				else
+				if(latest_sonars[2] && (latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
+				   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
+				   (!latest_sonars[0] || latest_sonars[0]*10 > fwd_remain))
+				{
+					// Same, but opposite -> turn left.
+					if(turn[0] < 4) turn[0] = 4;
+					action_flags |= 1UL<<12; 
+					set_top_speed_max(16);
+					sonar_assumption_made = 1;
+				}
 
-			if((latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or) ||
-			   (latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or &&
-			   latest_sonars[2] && latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or))
-			{
-				// Stop if middle sonar sees an obstacle, or if both left and right see it.
-				stop = 1;
-				stop_flags |= 1UL<<6;
+				fwd_remain_or = fwd_remain-50; if(fwd_remain_or > 200) fwd_remain_or = 200;
+
+				if((latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or) ||
+				   (latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or &&
+				   latest_sonars[2] && latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or))
+				{
+					// Stop if middle sonar sees an obstacle, or if both left and right see it.
+					stop = 1;
+					stop_flags |= 1UL<<6;
+				}
 			}
 		}
 		else // reverse
@@ -1255,4 +1261,15 @@ void navig_fsm2()
 	}
 }
 
+void stop_movement()
+{
+	reset_movement();
+	cur_move.state = 0;
+}
+
+void limit_speed(int speed)
+{
+	speedlim_hommel = speed;
+	set_top_speed(speedlim_hommel);
+}
 

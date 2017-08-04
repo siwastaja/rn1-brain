@@ -119,7 +119,9 @@ void handle_uart_message()
 
 		case 0x81:
 		host_alive();
-		move_rel_twostep(I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]), I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]));
+		dis_coll_avoid();
+		accurate_turngo = process_rx_buf[6];
+		move_rel_twostep(((int32_t)I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]))<<16, I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]), process_rx_buf[5]);
 		break;
 
 		case 0x82:
@@ -136,6 +138,15 @@ void handle_uart_message()
 		dis_coll_avoid();
 		accurate_turngo = process_rx_buf[6];
 		move_absa_rels_twostep(((int32_t)I7I7_I16_lossy(process_rx_buf[1],process_rx_buf[2]))<<16, I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4]), process_rx_buf[5]);
+		break;
+
+		case 0x84:
+		host_alive();
+		stop_movement();
+		break;
+
+		case 0x85:
+		limit_speed(process_rx_buf[1]);
 		break;
 
 		case 0x86:

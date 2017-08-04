@@ -3,7 +3,7 @@
 
 #include "lidar.h"
 
-void move_rel_twostep(int angle, int fwd /*in mm*/);
+void move_rel_twostep(int angle32, int fwd /*in mm*/, int speedlim);
 void move_absa_rels_twostep(int angle32, int fwd /*in mm*/, int speedlim);
 void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim);
 void navig_fsm1();
@@ -31,6 +31,9 @@ void daiju_mode_off();
 
 void ena_coll_avoid();
 void dis_coll_avoid();
+void stop_movement();
+
+void limit_speed(int speed);
 
 
 #endif
