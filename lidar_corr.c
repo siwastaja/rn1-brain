@@ -1066,6 +1066,12 @@ int do_livelidar_corr()
 	latest_corr.ang = 0;
 	latest_corr.x = 0;
 	latest_corr.y = 0;
+
+	// Do a copy for collision avoidance:
+	for(int i = 0; i < 360; i++) lidar_collision_avoidance[i].valid = p_livelid2d_img2[i].valid;
+	scan_to_2d_live_robot_coord_frame(p_livelidar_img2, lidar_collision_avoidance);
+	lidar_collision_avoidance_new = 1;
+
 	// Require enough valid samples on at least four of six 60deg segments,
 	// and some valid samples on either remaining segment.
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
@@ -1107,11 +1113,6 @@ int do_livelidar_corr()
 	}
 
 	angle_optim = supposed_a_diff/-ANG_1_DEG;
-
-	// Do a copy for collision avoidance:
-	for(int i = 0; i < 360; i++) lidar_collision_avoidance[i].valid = p_livelid2d_img2[i].valid;
-	scan_to_2d_live_robot_coord_frame(p_livelidar_img2, lidar_collision_avoidance);
-	lidar_collision_avoidance_new = 1;
 
 	// Convert img1, which stays fixed during the tests.
 	scan_to_2d_live(p_livelidar_img1, p_livelid2d_img1, 0, 0, 0);

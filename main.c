@@ -775,7 +775,12 @@ int main()
 			uart_send_fsm(); // send something else.
 			while(uart_busy()) random++;
 
-			if(lidar_full_rev[0].idx != 183)
+			#ifdef RN1P4
+			if(lidar_full_rev[0].idx != 183) // syncing at 0xa0 hw offset + 90/4 degrees results in this.
+			#endif
+			#ifdef PULU1
+			if(lidar_full_rev[0].idx != 183+45)
+			#endif
 			{
 				dbg[2]++;
 				host_dead();

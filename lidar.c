@@ -329,12 +329,12 @@ void sync_lidar()
 				}
 				data = USART1->DR;
 
-//				#ifdef RN1P4
+				#ifdef RN1P4
 				if(data == 0xA0+(90/4))
-//				#endif
-//				#ifdef PULU1
-//				if(data == 0xA0) //+(90/4))
-//				#endif
+				#endif
+				#ifdef PULU1
+				if(data == 0xA0+(270/4))
+				#endif
 				{
 					for(i=0; i < shift; i++)
 					{

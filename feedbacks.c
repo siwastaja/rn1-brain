@@ -4,6 +4,17 @@ Mechanical feedback module.
 Keeps track of position & angle, controls the motors.
 */
 
+
+#ifdef RN1P4
+	#define A_MC_IDX 2
+	#define B_MC_IDX 3
+#endif
+#ifdef PULU1
+	#define A_MC_IDX 3
+	#define B_MC_IDX 0
+#endif
+
+
 #include <inttypes.h>
 #include <math.h>
 
@@ -389,7 +400,13 @@ void compass_fsm(int cmd)
 		compass_round_on = 0;
 
 	int cx = latest_compass->x;
-	int cy = latest_compass->y;
+	int cy = 
+	#ifdef RN1P4
+		latest_compass->y;
+	#endif
+	#ifdef PULU1
+		-1*latest_compass->y;
+	#endif
 
 	int ang_err = cur_pos.ang - aim_angle;
 	if(state == 1)
@@ -641,15 +658,8 @@ void run_feedbacks(int sens_status)
 	static int32_t prev_cur_ang = 0;
 
 	int16_t wheel_counts[2];
-	#ifdef RN1P4
-	wheel_counts[0] = motcon_rx[2].pos;
-	wheel_counts[1] = -1*motcon_rx[3].pos;
-	#endif
-
-	#ifdef PULU1
-	wheel_counts[0] = -1*motcon_rx[0].pos;
-	wheel_counts[1] = motcon_rx[3].pos;
-	#endif
+	wheel_counts[0] = motcon_rx[A_MC_IDX].pos;
+	wheel_counts[1] = -1*motcon_rx[B_MC_IDX].pos;
 
 	if(first)
 	{
@@ -666,8 +676,24 @@ void run_feedbacks(int sens_status)
 	if(wheel_deltas[0] != 0 || wheel_deltas[1] != 0)
 		robot_moves();
 
-	int movement = (wheel_deltas[0] + wheel_deltas[1])*278528; // in 1mm/65536
-	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*15500000;
+	// in 1mm/65536:
+	int movement = (wheel_deltas[0] + wheel_deltas[1])*
+	#ifdef RN1P4
+		278528; 
+	#endif
+	#ifdef PULU1
+		246147;
+	#endif
+
+
+	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*
+	#ifdef RN1P4
+		15500000;
+	#endif
+	#ifdef PULU1
+		21678321;
+	#endif
+
 	int turned_by_gyro = cur_pos.ang - prev_cur_ang;
 	int turn_wheels_gyro_err = turned_by_wheels - turned_by_gyro;
 
@@ -682,6 +708,9 @@ void run_feedbacks(int sens_status)
 	else                                  turn_wheels_gyro_err_integral -= 3*ANG_0_001_DEG;
 
 	prev_cur_ang = cur_pos.ang;
+
+//	dbg[4] += turned_by_wheels;
+//	dbg[5] = dbg[4]/ANG_0_1_DEG;
 
 	if(reset_wheel_slip_det)
 	{
@@ -917,28 +946,13 @@ void run_feedbacks(int sens_status)
 	if(b > MAX_SPEED) b=MAX_SPEED;
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
-	#ifdef RN1P4
-		#define A_MC_IDX 2
-		#define B_MC_IDX 3
-	#endif
-	#ifdef PULU1
-		#define A_MC_IDX 0
-		#define B_MC_IDX 3
-	#endif
-
 	if(host_alive_watchdog)
 	{
 		host_alive_watchdog--;
 		motcon_tx[A_MC_IDX].state = 5;
 		motcon_tx[B_MC_IDX].state = 5;
-	#ifdef RN1P4
 		motcon_tx[A_MC_IDX].speed = a;
 		motcon_tx[B_MC_IDX].speed = -1*b;
-	#endif
-	#ifdef PULU1
-		motcon_tx[A_MC_IDX].speed = -1*a;
-		motcon_tx[B_MC_IDX].speed = b;
-	#endif
 	}
 	else
 	{

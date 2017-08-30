@@ -291,10 +291,10 @@ void navig_fsm1()
 #endif
 
 #ifdef PULU1
-#define ROBOT_YS_TIGHT (480)
-#define ROBOT_XS_TIGHT (524)
-#define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)
-#define ROBOT_ORIGIN_TO_BACK_TIGHT  (390)
+#define ROBOT_YS_TIGHT (300)
+#define ROBOT_XS_TIGHT (340)
+#define ROBOT_ORIGIN_TO_FRONT_TIGHT (70)
+#define ROBOT_ORIGIN_TO_BACK_TIGHT  (250)
 #endif
 
 
@@ -453,7 +453,7 @@ void navig_fsm2_for_charger()
 	{
 		case CHAFIND_START:
 		{
-			set_top_speed_max(25);
+			set_top_speed_max(20);
 
 			int ret = chafind_middle_mark();
 			if(ret == 0)
@@ -563,8 +563,8 @@ void navig_fsm2_for_charger()
 		{
 			if(!correcting_either())
 			{
-				set_top_speed_max(13);
-				straight_rel(x_dist_to_charger-140);
+				set_top_speed_max(11);
+				straight_rel(x_dist_to_charger-ROBOT_ORIGIN_TO_FRONT_TIGHT+10);
 				chafind_state++;
 			}
 		}
