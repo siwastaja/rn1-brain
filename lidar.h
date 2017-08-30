@@ -4,9 +4,15 @@
 #include <stdint.h>
 #include "feedbacks.h" // for pos_t
 
-//#define LIDAR_IGNORE_LEN 400 // mm, everything below this is marked in ignore list during ignore scan.
-#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
-#define LIDAR_IGNORE_LEN_FRONT 200 // mm, everything below this is marked in ignore list during ignore scan.
+#ifdef RN1P4
+	#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
+	#define LIDAR_IGNORE_LEN_FRONT 200 // mm, everything below this is marked in ignore list during ignore scan.
+#endif
+#ifdef PULU1
+	#define LIDAR_IGNORE_LEN 250
+	#define LIDAR_IGNORE_LEN_FRONT 120
+#endif
+
 
 #define DEFAULT_LIDAR_RPM 300
 // For determining whether the lidar is turning within the specs, so that the data flow can be synchronized:
