@@ -238,7 +238,6 @@ void uart_rx_handler()
 // TODO:
 	if(flags & 0b1011)
 	{
-		dbg[4]++;
 		// At error, drop the packet.
 	}
 

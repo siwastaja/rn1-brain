@@ -47,7 +47,9 @@ int lidar_is_half()
 }
 
 uint8_t lidar_ignore[360];
+
 const int lidar_ignore_len[32] =
+#ifdef RN1P4
 {
 100,
 (100+170)/2,
@@ -82,6 +84,45 @@ const int lidar_ignore_len[32] =
 170,
 (170+100)/2
 };
+#endif
+
+#ifdef PULU1
+{
+30,
+(30+55)/2,
+55,
+(55+70)/2,
+70,
+(70+90)/2,
+90,
+(90+70)/2,
+70,
+(70+90)/2,
+90,
+(90+120)/2,
+120,
+(120+210)/2,
+210,
+(210+190)/2,
+190,
+(190+210)/2,
+210,
+(210+120)/2,
+120,
+(120+90)/2,
+90,
+(90+70)/2,
+70,
+(70+90)/2,
+90,
+(90+70)/2,
+70,
+(70+55)/2,
+55,
+(55+30)/2
+};
+#endif
+
 
 // Process the data so that datapoints either in the ignore list, or having the "error" flag set, are set as 0, and copy to a continuous int16_t table.
 // Data is always positive and 14 bits long.
@@ -287,7 +328,13 @@ void sync_lidar()
 					if(!(--timeout)) goto LIDAR_SYNC_TIMEOUT;
 				}
 				data = USART1->DR;
+
+//				#ifdef RN1P4
 				if(data == 0xA0+(90/4))
+//				#endif
+//				#ifdef PULU1
+//				if(data == 0xA0) //+(90/4))
+//				#endif
 				{
 					for(i=0; i < shift; i++)
 					{

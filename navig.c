@@ -282,10 +282,21 @@ void navig_fsm1()
 	xy_fsm();
 }
 
+
+#ifdef RN1P4
 #define ROBOT_YS_TIGHT (480)
 #define ROBOT_XS_TIGHT (524)
 #define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)
 #define ROBOT_ORIGIN_TO_BACK_TIGHT  (390)
+#endif
+
+#ifdef PULU1
+#define ROBOT_YS_TIGHT (480)
+#define ROBOT_XS_TIGHT (524)
+#define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)
+#define ROBOT_ORIGIN_TO_BACK_TIGHT  (390)
+#endif
+
 
 int ROBOT_YS, ROBOT_XS, ROBOT_ORIGIN_TO_FRONT, ROBOT_ORIGIN_TO_BACK;
 
@@ -700,9 +711,11 @@ void daiju_meininki_fsm()
 			}
 		}
 
+		#ifdef RN1P4
 		if((latest_sonars[0] && latest_sonars[0] < 7) || (latest_sonars[2] && latest_sonars[2] < 7) ||
 		   (latest_sonars[1] && latest_sonars[1] < 10))
 			can_do[GO_FWD] = 0;
+		#endif
 
 		int can_do_cnt = can_do[0]+can_do[1]+can_do[2]+can_do[3];
 
@@ -834,6 +847,9 @@ void navig_fsm2()
 		}
 
 		if(fwd_remain > 1200) fwd_remain = 1200; // Don't do any decisions based on a far-away destination.
+
+		if(fwd_remain < 50) // Don't avoid obstacles when we are near to our destination anyway.
+			return;
 
 /*
 		lidar_collision_avoidance[360] is the latest lidar scan converted to 2d XY plane, referenced to the
@@ -1042,6 +1058,8 @@ void navig_fsm2()
 			it disappears from the sonar's view when we turn, so we just make assumptions.
 			*/
 
+			#ifdef RN1P4
+
 			if(angle_almost_corrected())
 			{
 				int nearest_son = nearest_sonar();
@@ -1090,6 +1108,7 @@ void navig_fsm2()
 					stop_flags |= 1UL<<6;
 				}
 			}
+			#endif
 		}
 		else // reverse
 		{
@@ -1224,7 +1243,7 @@ void navig_fsm2()
 			reset_movement();
 			cur_move.state = 0;
 		}
-		else if(turn[0])
+		else if(turn[0] && fwd_remain < 200)
 		{
 			set_top_speed_fwd_max(25);
 			set_top_speed_ang_max(26 + turn[0]*3);
@@ -1232,7 +1251,7 @@ void navig_fsm2()
 			correct_xy = 0;
 			avoidance_in_action = 1+turn[0]+sonar_assumption_made*2;
 		}
-		else if(turn[1])
+		else if(turn[1] && fwd_remain < 200)
 		{
 			set_top_speed_fwd_max(25);
 			set_top_speed_ang_max(26 + turn[1]*3);

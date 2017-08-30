@@ -1,3 +1,7 @@
+#if (!RN1P4 && !PULU1)
+#error "Unsupported robot model"
+#endif
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -390,7 +394,10 @@ void timebase_10k_handler()
 
 	// Things expecting 10kHz calls:
 	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
+
+	#ifdef RN1P4
 	sonar_fsm_10k();
+	#endif
 
 	// Send one more character through UART.
 	// With 115200 baud rate, this will produce 10 kbytes/s stream,
@@ -411,12 +418,15 @@ void timebase_10k_handler()
 		}
 		motcon_fsm();
 		lidar_motor_ctrl_loop();
+
+	#ifdef RN1P4
 		int dx = 0;
 		int dy = 0;
 		optflow_fsm(&dx, &dy);
 
 		optflow_int_x += dx;
 		optflow_int_y += dy;
+	#endif
 
 	}
 	else if(cnt_10k == 1)
@@ -599,7 +609,9 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
+	#ifdef RN1P4
 	init_sonars();
+	#endif
 	init_uart();
 
 	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
@@ -659,7 +671,9 @@ int main()
 
 	set_obstacle_avoidance_margin(1);
 
+	#ifdef RN1P4
 	init_optflow();
+	#endif
 	init_motcons();
 	init_lidar();
 

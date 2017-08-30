@@ -641,8 +641,16 @@ void run_feedbacks(int sens_status)
 	static int32_t prev_cur_ang = 0;
 
 	int16_t wheel_counts[2];
+	#ifdef RN1P4
 	wheel_counts[0] = motcon_rx[2].pos;
 	wheel_counts[1] = -1*motcon_rx[3].pos;
+	#endif
+
+	#ifdef PULU1
+	wheel_counts[0] = -1*motcon_rx[0].pos;
+	wheel_counts[1] = motcon_rx[3].pos;
+	#endif
+
 	if(first)
 	{
 		first--;
@@ -763,7 +771,14 @@ void run_feedbacks(int sens_status)
 	if(sens_status & GYRO_NEW_DATA)
 	{
 
-		int latest[3] = {latest_gyro->x, latest_gyro->y, latest_gyro->z};
+		int latest[3] = 
+		#ifdef RN1P4
+			{latest_gyro->x, latest_gyro->y, latest_gyro->z};
+		#endif
+		#ifdef PULU1
+			{latest_gyro->x, latest_gyro->y, -1*latest_gyro->z}; 
+			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
+		#endif
 
 #define GYRO_MOVEMENT_DETECT_THRESHOLD_X 800
 #define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 600
@@ -820,7 +835,14 @@ void run_feedbacks(int sens_status)
 
 	if(sens_status & XCEL_NEW_DATA)
 	{
-		int latest[3] = {latest_xcel->x, latest_xcel->y, latest_xcel->z};
+		int latest[3] = 
+		#ifdef RN1P4
+			{latest_xcel->x, latest_xcel->y, latest_xcel->z};
+		#endif
+		#ifdef PULU1
+			{latest_xcel->x, latest_xcel->y, -1*latest_xcel->z}; // todo: fix x, y
+		#endif
+
 		static int xcel_flt[2];
 
 //		if(robot_nonmoving)
@@ -895,21 +917,35 @@ void run_feedbacks(int sens_status)
 	if(b > MAX_SPEED) b=MAX_SPEED;
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
+	#ifdef RN1P4
+		#define A_MC_IDX 2
+		#define B_MC_IDX 3
+	#endif
+	#ifdef PULU1
+		#define A_MC_IDX 0
+		#define B_MC_IDX 3
+	#endif
 
 	if(host_alive_watchdog)
 	{
 		host_alive_watchdog--;
-		motcon_tx[2].state = 5;
-		motcon_tx[3].state = 5;
-		motcon_tx[2].speed = a;
-		motcon_tx[3].speed = -1*b;
+		motcon_tx[A_MC_IDX].state = 5;
+		motcon_tx[B_MC_IDX].state = 5;
+	#ifdef RN1P4
+		motcon_tx[A_MC_IDX].speed = a;
+		motcon_tx[B_MC_IDX].speed = -1*b;
+	#endif
+	#ifdef PULU1
+		motcon_tx[A_MC_IDX].speed = -1*a;
+		motcon_tx[B_MC_IDX].speed = b;
+	#endif
 	}
 	else
 	{
-		motcon_tx[2].state = 1;
-		motcon_tx[3].state = 1;
-		motcon_tx[2].speed = 0;
-		motcon_tx[3].speed = 0;
+		motcon_tx[A_MC_IDX].state = 1;
+		motcon_tx[B_MC_IDX].state = 1;
+		motcon_tx[A_MC_IDX].speed = 0;
+		motcon_tx[B_MC_IDX].speed = 0;
 		feedback_stop_flags = 4;
 		reset_movement(); stop_navig_fsms(); // to prevent surprises when we are back up.
 	}

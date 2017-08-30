@@ -1,11 +1,14 @@
 # This makefile is made to work with the toolchain downloadable at https://launchpad.net/gcc-arm-embedded
 
+MODEL=PULU1
+#MODEL=RN1P4
+
 CC = arm-none-eabi-gcc
 LD = arm-none-eabi-gcc
 SIZE = arm-none-eabi-size
 OBJCOPY = arm-none-eabi-objcopy
 
-CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline 
+CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)
 #-DHWTEST
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
@@ -20,7 +23,7 @@ all: main.bin
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 main.bin: $(OBJ)
-	$(LD) -Tstm32.ld $(LDFLAGS) -o main.elf $^ /usr/arm-none-eabi/lib/armv7-m/libm.a
+	$(LD) -Tstm32.ld $(LDFLAGS) -o main.elf $^ /usr/arm-none-eabi/lib/thumb/v7-m/libm.a
 	$(OBJCOPY) -Obinary --remove-section=.ARM* main.elf main_full.bin
 	$(OBJCOPY) -Obinary --remove-section=.ARM* --remove-section=.flasher main.elf main.bin
 	$(SIZE) main.elf
