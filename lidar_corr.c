@@ -942,6 +942,11 @@ int livelidar_skip()
 	return skip;
 }
 
+// Don't do X,Y at all:
+#define LIVE_ONLY_ANG
+
+
+#ifndef LIVE_ONLY_ANG
 #define LIVE_PASS1_NUM_A 3
 static int LIVE_PASS1_A[LIVE_PASS1_NUM_A] =
 {
@@ -955,6 +960,25 @@ static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
 	4,
 	3
 };
+#else
+#define LIVE_PASS1_NUM_A 5
+static int LIVE_PASS1_A[LIVE_PASS1_NUM_A] =
+{
+	-2*ANG_1_DEG,
+	-1*ANG_1_DEG,
+	0,
+	1*ANG_1_DEG,
+	2*ANG_1_DEG,
+};
+static int LIVE_PASS1_A_WEIGH[LIVE_PASS1_NUM_A] =
+{
+	2,
+	3,
+	4,
+	3,
+	2
+};
+#endif
 
 #define LIVE_PASS1_NUM_X 5
 static int LIVE_PASS1_X[LIVE_PASS1_NUM_X] =
@@ -995,7 +1019,7 @@ static int LIVE_PASS2_X[LIVE_PASS2_NUM_X] =
 	20,
 };
 
-
+#ifndef LIVE_ONLY_ANG
 #define LIVE_PASS3_NUM_A 5
 static int LIVE_PASS3_A[LIVE_PASS3_NUM_A] =
 {
@@ -1005,6 +1029,24 @@ static int LIVE_PASS3_A[LIVE_PASS3_NUM_A] =
 	1*ANG_0_25_DEG,
 	2*ANG_0_25_DEG
 };
+#else
+#define LIVE_PASS3_NUM_A 11
+static int LIVE_PASS3_A[LIVE_PASS3_NUM_A] =
+{
+	-5*ANG_0_1_DEG,
+	-4*ANG_0_1_DEG,
+	-3*ANG_0_1_DEG,
+	-2*ANG_0_1_DEG,
+	-1*ANG_0_1_DEG,
+	0,
+	1*ANG_0_1_DEG,
+	2*ANG_0_1_DEG,
+	3*ANG_0_1_DEG,
+	4*ANG_0_1_DEG,
+	5*ANG_0_1_DEG
+};
+#endif
+
 
 #define LIVE_PASS3_NUM_X 5
 static int LIVE_PASS3_X[LIVE_PASS3_NUM_X] =
@@ -1072,6 +1114,8 @@ int do_livelidar_corr()
 	scan_to_2d_live_robot_coord_frame(p_livelidar_img2, lidar_collision_avoidance);
 	lidar_collision_avoidance_new = 1;
 
+	return 0;
+
 	// Require enough valid samples on at least four of six 60deg segments,
 	// and some valid samples on either remaining segment.
 	int valid_segments_img1 = 0, valid_segments_img2 = 0;
@@ -1104,9 +1148,12 @@ int do_livelidar_corr()
 	int high_movement_mode = 0;
 	int32_t (*p_calc_f)(point_t*, point_t*) = &calc_match_lvl_live;
 
+	#ifndef LIVE_ONLY_ANG
 	if(supposed_a_diff < -9*ANG_1_DEG || supposed_a_diff > 9*ANG_1_DEG ||
 	   supposed_x_diff < -160 || supposed_x_diff > 160 ||
 	   supposed_y_diff < -160 || supposed_y_diff > 160)
+	#endif
+	// If ONLY_ANG, always use high movement mode since we have a lot of time.
 	{
 		high_movement_mode = 1;
 		p_calc_f = &calc_match_lvl_live_high_movement;
@@ -1121,6 +1168,8 @@ int do_livelidar_corr()
 
 	int biggest_lvl = 0;
 	int best1_a=0, best1_x=0, best1_y=0;
+
+	#ifndef LIVE_ONLY_ANG
 
 	for(int x_corr = 0; x_corr < LIVE_PASS1_NUM_X; x_corr++)
 	{
@@ -1147,6 +1196,14 @@ int do_livelidar_corr()
 	{
 		return 3;
 	}
+
+	#else
+
+	best1_x = 0;
+	best1_y = 0;
+
+	#endif
+
 
 	biggest_lvl = 0;
 
@@ -1178,6 +1235,9 @@ int do_livelidar_corr()
 	biggest_lvl = 0;
 
 	int best2_a=0, best2_x=0, best2_y=0;
+
+	#ifndef LIVE_ONLY_ANG
+
 	for(int x_corr = 0; x_corr < LIVE_PASS2_NUM_X; x_corr++)
 	{
 		for(int y_corr = 0; y_corr < LIVE_PASS2_NUM_Y; y_corr++)
@@ -1202,6 +1262,13 @@ int do_livelidar_corr()
 	{
 		return 5;
 	}
+
+	#else
+
+	best2_x = 0;
+	best2_y = 0;
+
+	#endif
 
 	biggest_lvl = 0;
 
@@ -1231,6 +1298,9 @@ int do_livelidar_corr()
 	biggest_lvl = 0;
 
 	int best3_a=0, best3_x=0, best3_y=0;
+
+	#ifndef LIVE_ONLY_ANG
+
 	for(int x_corr = 0; x_corr < LIVE_PASS3_NUM_X; x_corr++)
 	{
 		for(int y_corr = 0; y_corr < LIVE_PASS3_NUM_Y; y_corr++)
@@ -1255,6 +1325,13 @@ int do_livelidar_corr()
 	{
 		return 7;
 	}
+
+	#else
+
+	best3_x = 0;
+	best3_y = 0;
+
+	#endif
 
 	biggest_lvl = 0;
 
@@ -1282,6 +1359,9 @@ int do_livelidar_corr()
 	// Run pass 4, which goes x,y,a instead of (x,y),a
 
 	int best4_a=0, best4_x=0, best4_y=0;
+
+	#ifndef LIVE_ONLY_ANG
+
 	if(!high_movement_mode)
 	{
 
@@ -1345,11 +1425,13 @@ int do_livelidar_corr()
 		if(biggest_lvl == 0) return 11;
 	}
 	else
+	#endif
 	{
 		best4_a = best3_a;
 		best4_x = best3_x;
 		best4_y = best3_y;
 	}
+
 
 	latest_corr.ang = best4_a;
 	latest_corr.x = best4_x;

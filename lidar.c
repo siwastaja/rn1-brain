@@ -491,7 +491,14 @@ void deinit_lidar()
 	GPIOC->BSRR = 1UL<<(15+16); // FET gate down
 
 	USART1->CR1 = 0; // Disable uart
-	DMA2_Stream2->CR = 0; // Disable DMA
+//	DMA2_Stream2->CR = 0; // Disable DMA
+
+	// Disable DMA.
+	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;  // Disable
+	while(DMA2_Stream2->CR & 1UL) ;
+	USART1->CR3 &= ~(1UL<<6) /*disable RX DMA*/;
+
 
 	lidar_initialized = 0;
 }

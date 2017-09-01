@@ -34,14 +34,14 @@ flash_full: main.bin
 flash: main.bin
 	sudo stm32sprog -b 115200 -vw main.bin
 
-f: main.bin
-	../rn1-tools/prog ~/dev/robo ./main.bin
-
 f_local: main.bin
 	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
 
-ff: main.bin
+f_proto4: main.bin
 	scp main.bin hrst@proto4:~/rn1-tools/
+
+f_pulu1: main.bin
+	scp main.bin hrst@pulu1:~/rn1-tools/
 
 stack:
 	cat *.su

@@ -338,27 +338,48 @@ void zero_coords()
 	reset_wheel_slip_det = 1;
 }
 
+#ifdef RN1P4
 int64_t gyro_mul_neg = 763300LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
+#endif
+
+#ifdef PULU1
+int64_t gyro_mul_neg = 767116LL<<16; // too big = lidar drifts ccw on screen. too small = lidar drifts cw on screen
+int64_t gyro_mul_pos = 763300LL<<16;
+#endif
+
 
 int gyro_avgd = 0;
 
 void correct_location_without_moving(pos_t corr)
 {
-	cur_x += corr.x<<16;
-	cur_y += corr.y<<16;
-	cur_pos.ang += corr.ang;
-	aim_angle += corr.ang;
+//	cur_x += corr.x<<16;
+//	cur_y += corr.y<<16;
+//	cur_pos.ang += corr.ang;
+//	aim_angle += corr.ang;
+
+	dbg[3] = corr.ang/ANG_0_01_DEG;
+	dbg[4] += corr.ang/ANG_0_01_DEG;
 
 	if(gyro_avgd < -300)
-		gyro_mul_neg += corr.ang;
+	{
+		dbg[5]++;
+//		gyro_mul_neg += corr.ang;
+	}
 	else if(gyro_avgd > 300)
-		gyro_mul_pos += corr.ang;
+	{
+		dbg[6]++;
+//		gyro_mul_pos += corr.ang;
+	}
 	else
 	{
-		gyro_mul_neg += corr.ang>>1;
-		gyro_mul_pos += corr.ang>>1;
+		dbg[7]++;
+//		gyro_mul_neg += corr.ang>>1;
+//		gyro_mul_pos += corr.ang>>1;
 	}
+
+	dbg[8] = gyro_mul_neg>>16;
+	dbg[9] = gyro_mul_pos>>16;
 
 }
 
@@ -853,7 +874,7 @@ void run_feedbacks(int sens_status)
 
 		int gyro_blank = robot_nonmoving?(100*5):(50*5); // Prevent slow gyro drifting during no operation
 
-		gyro_avgd = ((latest[2]<<8) + 3*gyro_avgd)>>2;
+		gyro_avgd = ((latest[2]<<8) + 7*gyro_avgd)>>3;
 
 		if(latest[2] < -1*gyro_blank)  // Negative = left
 			cur_pos.ang += ((int64_t)latest[2]*(int64_t)(gyro_mul_neg>>16))>>13;

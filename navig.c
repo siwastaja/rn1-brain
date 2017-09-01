@@ -293,7 +293,7 @@ void navig_fsm1()
 #ifdef PULU1
 #define ROBOT_YS_TIGHT (300)
 #define ROBOT_XS_TIGHT (340)
-#define ROBOT_ORIGIN_TO_FRONT_TIGHT (70)
+#define ROBOT_ORIGIN_TO_FRONT_TIGHT (60)
 #define ROBOT_ORIGIN_TO_BACK_TIGHT  (250)
 #endif
 
@@ -564,7 +564,7 @@ void navig_fsm2_for_charger()
 			if(!correcting_either())
 			{
 				set_top_speed_max(11);
-				straight_rel(x_dist_to_charger-ROBOT_ORIGIN_TO_FRONT_TIGHT+10);
+				straight_rel(x_dist_to_charger-ROBOT_ORIGIN_TO_FRONT_TIGHT+20);
 				chafind_state++;
 			}
 		}
