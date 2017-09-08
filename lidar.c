@@ -49,7 +49,7 @@ int lidar_is_half()
 uint8_t lidar_ignore[360];
 
 const int lidar_ignore_len[32] =
-#ifdef RN1P4
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 {
 100,
 (100+170)/2,
@@ -331,6 +331,12 @@ void sync_lidar()
 
 				#ifdef RN1P4
 				if(data == 0xA0+(90/4))
+				#endif
+				#ifdef RN1P6
+				if(data == 0xA0)
+				#endif
+				#ifdef RN1P5
+				if(data == 0xA0)
 				#endif
 				#ifdef PULU1
 				if(data == 0xA0+(270/4))

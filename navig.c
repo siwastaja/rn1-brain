@@ -283,7 +283,7 @@ void navig_fsm1()
 }
 
 
-#ifdef RN1P4
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 #define ROBOT_YS_TIGHT (480)
 #define ROBOT_XS_TIGHT (524)
 #define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)
@@ -711,7 +711,7 @@ void daiju_meininki_fsm()
 			}
 		}
 
-		#ifdef RN1P4
+		#ifdef SONARS_INSTALLED
 		if((latest_sonars[0] && latest_sonars[0] < 7) || (latest_sonars[2] && latest_sonars[2] < 7) ||
 		   (latest_sonars[1] && latest_sonars[1] < 10))
 			can_do[GO_FWD] = 0;
@@ -1058,7 +1058,7 @@ void navig_fsm2()
 			it disappears from the sonar's view when we turn, so we just make assumptions.
 			*/
 
-			#ifdef RN1P4
+			#ifdef SONARS_INSTALLED
 
 			if(angle_almost_corrected())
 			{

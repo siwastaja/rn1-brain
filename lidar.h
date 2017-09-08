@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "feedbacks.h" // for pos_t
 
-#ifdef RN1P4
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 	#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
 	#define LIDAR_IGNORE_LEN_FRONT 200 // mm, everything below this is marked in ignore list during ignore scan.
 #endif

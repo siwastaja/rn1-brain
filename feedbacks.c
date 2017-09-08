@@ -9,6 +9,14 @@ Keeps track of position & angle, controls the motors.
 	#define A_MC_IDX 2
 	#define B_MC_IDX 3
 #endif
+#ifdef RN1P6
+	#define A_MC_IDX 3
+	#define B_MC_IDX 0
+#endif
+#ifdef RN1P5
+	#define A_MC_IDX 3
+	#define B_MC_IDX 2
+#endif
 #ifdef PULU1
 	#define A_MC_IDX 3
 	#define B_MC_IDX 0
@@ -134,19 +142,29 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
+#define ANG_SPEED_MUL 4700
+#define ANG_SPEED_MAX 360000
+#endif
+
+#ifdef PULU1
+#define ANG_SPEED_MUL 3900
+#define ANG_SPEED_MAX 300000
+#endif
+
 void set_top_speed_ang(int speed)
 {
-	int new_speed = speed*3900;
+	int new_speed = speed*ANG_SPEED_MUL;
 	if(new_speed < 100000) new_speed = 100000;
-	else if(new_speed > 260000) new_speed = 260000;
+	else if(new_speed > ANG_SPEED_MAX) new_speed = ANG_SPEED_MAX;
 	ang_top_speed = new_speed;	
 }
 
 void set_top_speed_ang_max(int speed)
 {
-	int new_speed = speed*3900;
+	int new_speed = speed*ANG_SPEED_MUL;
 	if(new_speed < 100000) new_speed = 100000;
-	else if(new_speed > 260000) new_speed = 260000;
+	else if(new_speed > ANG_SPEED_MAX) new_speed = ANG_SPEED_MAX;
 
 	if(new_speed < ang_top_speed)
 		ang_top_speed = new_speed;
@@ -348,6 +366,16 @@ int64_t gyro_mul_neg = 767116LL<<16; // too big = lidar drifts ccw on screen. to
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
 
+#ifdef RN1P6
+int64_t gyro_mul_neg = 763300LL<<16;
+int64_t gyro_mul_pos = 763300LL<<16;
+#endif
+
+#ifdef RN1P5
+int64_t gyro_mul_neg = 763300LL<<16;
+int64_t gyro_mul_pos = 763300LL<<16;
+#endif
+
 
 int gyro_avgd = 0;
 
@@ -358,33 +386,30 @@ void correct_location_without_moving(pos_t corr)
 //	cur_pos.ang += corr.ang;
 //	aim_angle += corr.ang;
 
-	dbg[3] = corr.ang/ANG_0_01_DEG;
-	dbg[4] += corr.ang/ANG_0_01_DEG;
-
 	if(gyro_avgd < -300)
 	{
-		dbg[5]++;
 //		gyro_mul_neg += corr.ang;
 	}
 	else if(gyro_avgd > 300)
 	{
-		dbg[6]++;
 //		gyro_mul_pos += corr.ang;
 	}
 	else
 	{
-		dbg[7]++;
 //		gyro_mul_neg += corr.ang>>1;
 //		gyro_mul_pos += corr.ang>>1;
 	}
-
-	dbg[8] = gyro_mul_neg>>16;
-	dbg[9] = gyro_mul_pos>>16;
 
 }
 
 void correct_location_without_moving_external(pos_t corr)
 {
+	if(corr.x < -2000 || corr.x > 2000 || corr.y < -2000 || corr.y > 2000)
+	{
+		dbg[4]++;
+		return;
+	}
+
 	cur_x += corr.x<<16;
 	cur_y += corr.y<<16;
 	cur_pos.ang += corr.ang;
@@ -425,7 +450,7 @@ void compass_fsm(int cmd)
 	#ifdef RN1P4
 		latest_compass->y;
 	#endif
-	#ifdef PULU1
+	#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
 		-1*latest_compass->y;
 	#endif
 
@@ -702,13 +727,19 @@ void run_feedbacks(int sens_status)
 	#ifdef RN1P4
 		278528; 
 	#endif
+	#ifdef RN1P5
+		278528; 
+	#endif
+	#ifdef RN1P6
+		282242; 
+	#endif
 	#ifdef PULU1
 		246147;
 	#endif
 
 
 	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*
-	#ifdef RN1P4
+	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 		15500000;
 	#endif
 	#ifdef PULU1
@@ -825,7 +856,7 @@ void run_feedbacks(int sens_status)
 		#ifdef RN1P4
 			{latest_gyro->x, latest_gyro->y, latest_gyro->z};
 		#endif
-		#ifdef PULU1
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
 			{latest_gyro->x, latest_gyro->y, -1*latest_gyro->z}; 
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
@@ -889,7 +920,7 @@ void run_feedbacks(int sens_status)
 		#ifdef RN1P4
 			{latest_xcel->x, latest_xcel->y, latest_xcel->z};
 		#endif
-		#ifdef PULU1
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
 			{latest_xcel->x, latest_xcel->y, -1*latest_xcel->z}; // todo: fix x, y
 		#endif
 

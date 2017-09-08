@@ -1,15 +1,25 @@
 # This makefile is made to work with the toolchain downloadable at https://launchpad.net/gcc-arm-embedded
 
-MODEL=PULU1
-#MODEL=RN1P4
-
 CC = arm-none-eabi-gcc
 LD = arm-none-eabi-gcc
 SIZE = arm-none-eabi-size
 OBJCOPY = arm-none-eabi-objcopy
 
+
+
+#MODEL=RN1P4
+MODEL=RN1P5
+#MODEL=RN1P6
+#MODEL=PULU1
+
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)
-#-DHWTEST
+
+#CFLAGS += -DHWTEST
+#CFLAGS += -DSONARS_INSTALLED
+#CFLAGS += -DOPTFLOW_INSTALLED
+
+
+
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
@@ -39,6 +49,12 @@ f_local: main.bin
 
 f_proto4: main.bin
 	scp main.bin hrst@proto4:~/rn1-tools/
+
+f_proto5: main.bin
+	scp main.bin hrst@proto5:~/rn1-tools/
+
+f_proto6: main.bin
+	scp main.bin hrst@proto6:~/rn1-tools/
 
 f_pulu1: main.bin
 	scp main.bin hrst@pulu1:~/rn1-tools/

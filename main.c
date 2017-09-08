@@ -1,4 +1,4 @@
-#if (!RN1P4 && !PULU1)
+#if (!RN1P4 && !PULU1 && !RN1P6 && !RN1P5)
 #error "Unsupported robot model"
 #endif
 
@@ -395,7 +395,7 @@ void timebase_10k_handler()
 	// Things expecting 10kHz calls:
 	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
 
-	#ifdef RN1P4
+	#ifdef SONARS_INSTALLED
 	sonar_fsm_10k();
 	#endif
 
@@ -419,7 +419,7 @@ void timebase_10k_handler()
 		motcon_fsm();
 		lidar_motor_ctrl_loop();
 
-	#ifdef RN1P4
+	#ifdef OPTFLOW_INSTALLED
 		int dx = 0;
 		int dy = 0;
 		optflow_fsm(&dx, &dy);
@@ -609,7 +609,7 @@ int main()
 	GPIOG->MODER   = 0b00000000000000000000000000000000;
 	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
 
-	#ifdef RN1P4
+	#ifdef SONARS_INSTALLED
 	init_sonars();
 	#endif
 	init_uart();
@@ -671,7 +671,7 @@ int main()
 
 	set_obstacle_avoidance_margin(1);
 
-	#ifdef RN1P4
+	#ifdef OPTFLOW_INSTALLED
 	init_optflow();
 	#endif
 	init_motcons();
@@ -775,8 +775,15 @@ int main()
 			uart_send_fsm(); // send something else.
 			while(uart_busy()) random++;
 
+			dbg[8] = lidar_full_rev[0].idx;
 			#ifdef RN1P4
 			if(lidar_full_rev[0].idx != 183) // syncing at 0xa0 hw offset + 90/4 degrees results in this.
+			#endif
+			#ifdef RN1P6
+			if(lidar_full_rev[0].idx != 161)
+			#endif
+			#ifdef RN1P5
+			if(lidar_full_rev[0].idx != 161)
 			#endif
 			#ifdef PULU1
 			if(lidar_full_rev[0].idx != 183+45)
