@@ -68,8 +68,6 @@ is used to calculate the (x,y) coords, this calculation uses the most recent rob
 
 */
 
-
-
 #include <stdint.h>
 #include "ext_include/stm32f2xx.h"
 
@@ -326,11 +324,13 @@ void generate_lidar_ignore()
 	}
 }
 
-
 typedef enum
 {
 	S_LIDAR_UNINIT = 0,
 	S_LIDAR_OFF,
+	S_LIDAR_WAITPOWERED,
+	S_LIDAR_PRECONF_WAIT_READY, // Quite stupidly, we need to poll whether the motor has reached its initial (default, or the previous) setpoint, 
+	                            // even if we want to just configure it again to whatever we actually want. Then we need to wait again.
 	S_LIDAR_CONF1,
 	S_LIDAR_CONF2,
 	S_LIDAR_WAIT_READY,
@@ -351,14 +351,164 @@ uint8_t lidar_error_flags;
 int sweep_idx;
 
 int prev_lidar_scan_idx;
+
+/*
+Double buffer of processed lidar scans in the world coordinate frame.
+ack_lidar_scan is actively written to all the time.
+prev_lidar_scan points to the finished buffer. Take a local copy of the pointer: even if you start reading
+it just before the buffer swap happens, you'll likely read it faster than the new data comes in, so it's ok :-).
+
+The buffers are never zeroed out, but written over.
+*/
+
 lidar_scan_t lidar_scans[2];
 lidar_scan_t *acq_lidar_scan;
 lidar_scan_t *prev_lidar_scan;
+
+int lidar_fps = 2;
+int lidar_smp = 2;
+
+/*
+	Controls the state machine to turn lidar on, stabilize, configure, and start acquiring.
+	If called during acquisition, motor speed / sampling is changed on the fly.
+*/
+void lidar_on(int fps, int smp)
+{
+	if(fps < 1 || fps > 5 || smp < 1 || smp > 3)
+		return;
+	lidar_fps = fps;
+	lidar_smp = smp;
+	LIDAR_ENA();
+	if(cur_lidar_state == S_LIDAR_RUNNING)
+		cur_lidar_state = S_LIDAR_RECONF;
+	else
+		cur_lidar_state = S_LIDAR_WAITPOWERED;
+}
+
+void lidar_off()
+{
+	LIDAR_DIS();
+	cur_lidar_state = S_LIDAR_OFF;
+}
+
+int wait_ready_poll_cnt;
+
+void lidar_fsm()
+{
+	static int powerwait_cnt;
+
+	switch(cur_lidar_state)
+	{
+		case S_LIDAR_WAITPOWERED:
+		{
+			if(++powerwait_cnt > 2000)
+			{
+				powerwait_cnt = 0;
+				wait_ready_poll_cnt = 1000; // Try to first poll after 1 sec
+				cur_lidar_state = S_LIDAR_PRECONF_WAIT_READY;
+			}
+		}
+		break;
+
+		case S_LIDAR_PRECONF_WAIT_READY:
+		case S_LIDAR_WAIT_READY:
+		{
+			// Just do the tx part of the polling here, the state is changed in ISR based on the reply.
+			if(--wait_ready_poll_cnt == 0)
+			{
+				lidar_txbuf[0] = 'M';
+				lidar_txbuf[1] = 'Z';
+				lidar_txbuf[2] = 10;
+				lidar_send_cmd(3, 4);
+			}
+		}
+		break;
+
+
+		default:
+		break;
+	}
+}
 
 void lidar_rx_done_inthandler()
 {
 	switch(cur_lidar_state)
 	{
+		case S_LIDAR_PRECONF_WAIT_READY:
+		{
+			if(lidar_rxbuf[0] == 'M' && 
+			   lidar_rxbuf[1] == 'Z' &&
+			   lidar_rxbuf[2] == '0' &&
+			   lidar_rxbuf[3] == '0')
+			{
+				// Motor speed is stabilized to whatever uninteresting default value: now we can start configuring the device.
+				lidar_txbuf[0] = 'M';
+				lidar_txbuf[1] = 'S';
+				lidar_txbuf[2] = '0';
+				lidar_txbuf[3] = '0'+lidar_fps;
+				lidar_txbuf[4] = 10;
+				lidar_send_cmd(5, 9);
+				cur_lidar_state = S_LIDAR_CONF1;
+			}
+			else
+			{
+				// Motor not stabilized yet. Poll again after 100 ms pause (in lidar_fsm())
+				wait_ready_poll_cnt = 100;
+			}
+		}
+		break;
+
+		case S_LIDAR_CONF1:
+		{
+			if(lidar_rxbuf[0] == 'M' && 
+			   lidar_rxbuf[1] == 'S' &&
+			   lidar_rxbuf[2] == '0' &&
+			   lidar_rxbuf[3] == '0'+lidar_fps &&
+			   lidar_rxbuf[4] == 10 &&
+			   lidar_rxbuf[5] == '0' &&
+			   lidar_rxbuf[6] == '0' &&
+			   lidar_rxbuf[7] == 'P' &&
+			   lidar_rxbuf[8] == 10)
+			{
+				// Adjust motor speed command succeeded.
+				// Send "Adjust LiDAR Sample Rate" command.
+				lidar_txbuf[0] = 'L';
+				lidar_txbuf[1] = 'R';
+				lidar_txbuf[2] = '0';
+				lidar_txbuf[3] = '0'+lidar_smp;
+				lidar_txbuf[4] = 10;
+				lidar_send_cmd(5, 9);
+				cur_lidar_state = S_LIDAR_CONF2;
+			}
+			else // unexpected reply
+			{
+				cur_lidar_state = S_LIDAR_ERROR;
+			}
+		}
+		break;
+
+		case S_LIDAR_CONF2:
+		{
+			if(lidar_rxbuf[0] == 'L' && 
+			   lidar_rxbuf[1] == 'R' &&
+			   lidar_rxbuf[2] == '0' &&
+			   lidar_rxbuf[3] == '0'+lidar_smp &&
+			   lidar_rxbuf[4] == 10 &&
+			   lidar_rxbuf[5] == '0' &&
+			   lidar_rxbuf[6] == '0' &&
+			   lidar_rxbuf[7] == 'P' &&
+			   lidar_rxbuf[8] == 10)
+			{
+				// Sample rate successfully set.
+				wait_ready_poll_cnt = 1000; // Force the generation of "is speed stabilized?" poll message after 1 second. (Polling done in lidar_fsm())
+				cur_lidar_state = S_LIDAR_WAIT_READY;
+			}
+			else // unexpected reply
+			{
+				cur_lidar_state = S_LIDAR_ERROR;
+			}
+		}
+		break;
 
 		case S_LIDAR_WAIT_READY:
 		{
@@ -375,7 +525,11 @@ void lidar_rx_done_inthandler()
 				lidar_send_cmd(3, 6);
 				cur_lidar_state = S_LIDAR_WAIT_START_ACK;
 			}
-			// else: motor not stabilized yet. Don't do anything.
+			else
+			{
+				// Motor not stabilized yet. Poll again after 100 ms pause (in lidar_fsm())
+				wait_ready_poll_cnt = 100;
+			}
 		}
 		break;
 
@@ -418,28 +572,54 @@ void lidar_rx_done_inthandler()
 					cur_lidar_state = S_LIDAR_ERROR;
 					lidar_error_flags = lidar_rxbuf[buf_idx][0];
 				}
-			}
-			else
-			{
-				if(chk_err_cnt) chk_err_cnt--;
-				lidar_s cur_lidar_scan_idx;
-				if(lidar_rxbuf[buf_idx][0]) // non-zero = sync -- error flags have been handled already
-				{
-					prev_lidar_scan = 
-					cur_lidar_scan_idx = prev_lidar_scan_idx;
-					prev_lidar_scan_idx = prev_lidar_scan_idx?0:1;
-				}
+				// Else: just ignore this data.
 
-				// optimization todo: we are little endian like the sensor: align rxbuf properly and directly access as uint16
-				int degper16 = (lidar_rxbuf[buf_idx][2]<<8) | lidar_rxbuf[buf_idx][1];
-				int len      = (lidar_rxbuf[buf_idx][4]<<8) | lidar_rxbuf[buf_idx][3];
-				int snr      = lidar_rxbuf[buf_idx][5];
+				break;
+			}
+
+
+			if(chk_err_cnt) chk_err_cnt--;
+			lidar_s cur_lidar_scan_idx;
+			if(lidar_rxbuf[buf_idx][0]) // non-zero = sync. (error flags have been handled already)
+			{
+				COPY_POS(acq_lidar_scan->pos_at_end, cur_pos);
+				lidar_scan_t* swptmp;
+				swptmp = prev_lidar_scan;
+				prev_lidar_scan = acq_lidar_scan;
+				acq_lidar_scan = swptmp;
+				COPY_POS(acq_lidar_scan->pos_at_start, cur_pos);
+			}
+
+			// optimization todo: we are little endian like the sensor: align rxbuf properly and directly access as uint16
+			int32_t degper16 = (lidar_rxbuf[buf_idx][2]<<8) | lidar_rxbuf[buf_idx][1];
+			int32_t len      = (lidar_rxbuf[buf_idx][4]<<8) | lidar_rxbuf[buf_idx][3];
+//			int snr      = lidar_rxbuf[buf_idx][5];
+
+			unsigned int degper2 = degper16>>3;
+			if(degper2 > 719)
+			{
+				chk_err_cnt+=20;
+				break;
+			}
+
+			if(len < 2)
+			{
+				acq_lidar_scan->scan[degper2].valid = 0;
+				break;
+			}
+
+			len *= 10; // cm --> mm
+
+			uint32_t ang32 = (uint32_t)cur_pos.ang + degper16*ANG_1PER16_DEG;
+			int32_t y_idx = (ang32)>>SIN_LUT_SHIFT;
+			int32_t x_idx = (1073741824-ang32)>>SIN_LUT_SHIFT;
+
+			acq_lidar_scan->scan[degper2].valid = 1;
+			acq_lidar_scan->scan[degper2].x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)len)>>15);
+			acq_lidar_scan->scan[degper2].y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)len)>>15);
+			
 
 				
-
-
-
-			}
 		}
 		break;
 

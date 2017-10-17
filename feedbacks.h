@@ -52,6 +52,8 @@ int get_fwd();
 #define ANG_0_01_DEG    119305
 #define ANG_0_001_DEG    11930
 
+#define ANG_1PER16_DEG  745654  // cumulated full circle rounding error: 0.000006%
+
 
 #define XCEL_X_NEG_WARN ((int)(-20000)*256)
 #define XCEL_X_POS_WARN ((int)(20000)*256)

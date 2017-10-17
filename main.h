@@ -15,6 +15,9 @@
 #define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
 #define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
 
+#define LIDAR_ENA()
+#define LIDAR_DIS()
+
 #define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
 
 

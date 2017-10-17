@@ -24,6 +24,7 @@ typedef struct
 typedef struct
 {
 	pos_t pos_at_start;
+	pos_t pos_at_end;
 	point_t scan[720];
 } lidar_scan_t;
 
