@@ -23,8 +23,8 @@ typedef struct
 
 typedef struct
 {
-	pos_t pos;
-	int16_t scan[360];
+	pos_t pos_at_start;
+	point_t scan[720];
 } lidar_scan_t;
 
 #define LIVELIDAR_INVALID 1

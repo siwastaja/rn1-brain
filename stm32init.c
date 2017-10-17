@@ -94,7 +94,7 @@ unsigned int * the_nvic_vector[97] __attribute__ ((section(".nvic_vector"))) =
 /* 0x011C                    */ (unsigned int *) invalid_handler,
 /* 0x0120 DMA2_Stream0       */ (unsigned int *) motcon_rx_done_inthandler,
 /* 0x0124                    */ (unsigned int *) invalid_handler,
-/* 0x0128                    */ (unsigned int *) invalid_handler,
+/* 0x0128 DMA2_Stream2       */ (unsigned int *) lidar_rx_done_inthandler,
 /* 0x012C                    */ (unsigned int *) invalid_handler,
 /* 0x0130                    */ (unsigned int *) invalid_handler,
 /* 0x0134                    */ (unsigned int *) invalid_handler,

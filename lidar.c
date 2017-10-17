@@ -16,9 +16,9 @@ Scanse, OTOH, is readily available.
 
 Changing the lidars is not the case of only changing the low-level layer, since the two lidars work in different principle:
 Neato lidar gave readings on fixed angular intervals of 1.0 degrees, whereas the Scance gives variable number of samples with
-an angular resolution of 1/16th degree (5760th full circle).
+an angular resolution of 1/16th degree (5760th full circle). Sampling time, and hence the angular sample interval, is _not_ constant.
 
-Since the code designed for Neato only server historical purposes, the compatibility will be broken on purpose. You can always
+Since the code designed for Neato only serves historical purposes, the compatibility will be broken on purpose. You can always
 look at the old code in the version control.
 
 */
@@ -26,8 +26,8 @@ look at the old code in the version control.
 /*
 Scance Sweep
 
-Sweep	Sample	Min	Max	Smp/rev
-				min	max
+Sweep	Sample	Min	Max	Samples/rev
+rate	mode	samp.f	samp.f	min	max
 
 1Hz	01	500Hz	600Hz	500	600
 1Hz	02	750Hz	800Hz	750	800
@@ -45,7 +45,9 @@ Sweep	Sample	Min	Max	Smp/rev
 4Hz	02	750Hz	800Hz	187	200
 4Hz	03	1000Hz	1075Hz	250	269
 
-We probably don't want to ever run at over 4Hz, since the angular resolution would be compromised too much.
+We probably don't want to ever run at over 4Hz, since the angular resolution would be compromised too much. (Maybe we'll do it 
+one day as a separate mode, when the environment is well mapped, with lots of easy visual clues, proven IMU reliability, so that
+the localization dependence on good laser data is not crucial. Then we can run at higher speeds and avoid obstacles.
 
 For mapping large spaces, it's crucial to get enough samples from far-away (say, 10 meters) walls, when seen through
 gaps created by nearby obstacles. The 360 degree resolution of the Neato lidar seemed bare minimum; even with its low 5 meter
@@ -325,26 +327,193 @@ void generate_lidar_ignore()
 }
 
 
-void lidar_dma_inthandler()
+typedef enum
 {
+	S_LIDAR_UNINIT = 0,
+	S_LIDAR_OFF,
+	S_LIDAR_CONF1,
+	S_LIDAR_CONF2,
+	S_LIDAR_WAIT_READY,
+	S_LIDAR_WAIT_START_ACK,
+	S_LIDAR_RUNNING,
+	S_LIDAR_ERROR
+} lidar_state_t;
+
+lidar_state_t cur_lidar_state;
+
+
+uint8_t lidar_rxbuf[2][16];
+uint8_t lidar_txbuf[16];
+
+uint8_t lidar_error_flags;
+
+
+int sweep_idx;
+
+int prev_lidar_scan_idx;
+lidar_scan_t lidar_scans[2];
+lidar_scan_t *acq_lidar_scan;
+lidar_scan_t *prev_lidar_scan;
+
+void lidar_rx_done_inthandler()
+{
+	switch(cur_lidar_state)
+	{
+
+		case S_LIDAR_WAIT_READY:
+		{
+			if(lidar_rxbuf[0] == 'M' && 
+			   lidar_rxbuf[1] == 'Z' &&
+			   lidar_rxbuf[2] == '0' &&
+			   lidar_rxbuf[3] == '0')
+			{
+				// Motor speed is stabilized.
+				// Send "Start data acquisition" command and start waiting for actual scan data.
+				lidar_txbuf[0] = 'D';
+				lidar_txbuf[1] = 'S';
+				lidar_txbuf[2] = 10;
+				lidar_send_cmd(3, 6);
+				cur_lidar_state = S_LIDAR_WAIT_START_ACK;
+			}
+			// else: motor not stabilized yet. Don't do anything.
+		}
+		break;
+
+		case S_LIDAR_WAIT_START_ACK:
+		{
+			if(lidar_rxbuf[0] == 'D' && 
+			   lidar_rxbuf[1] == 'S' &&
+			   lidar_rxbuf[2] == '0' &&
+			   lidar_rxbuf[3] == '0' &&
+			   lidar_rxbuf[4] == 'P') // The correct checksum from "00"
+			{
+				// Start data acquisition acknowledged OK. Reconfigure the DMA to circular doublebuffer without reconfig, to minimize time
+				// spent in this ISR in the RUNNING state.
+				lidar_start_acq();
+				cur_lidar_state = S_LIDAR_RUNNING;
+				chk_err_cnt = 0;
+			}
+			else
+			{
+				// This shouldn't happen, as we have polled to confirm that the motor is ready.
+				cur_lidar_state = S_LIDAR_ERROR;
+			}
+		}
+		break;
+
+		case S_LIDAR_RUNNING:
+		{
+			int buf_idx = (DMA2_Stream2->CR&(1UL<<19))?0:1; // We want to read the previous buffer, not the one the DMA is now writing to.
+			// Actual data packet is 7 bytes of binary instead of ASCII.
+			int chk = (lidar_rxbuf[buf_idx][0]+lidar_rxbuf[buf_idx][1]+lidar_rxbuf[buf_idx][2]+
+				  lidar_rxbuf[buf_idx][3]+lidar_rxbuf[buf_idx][4]+lidar_rxbuf[buf_idx][5]) % 255;
+			if(chk != lidar_rxbuf[buf_idx][6] /*checksum fail*/ || (lidar_rxbuf[buf_idx][0]&0b11111110) /* any error bit*/)
+			{
+				chk_err_cnt+=20;
+
+				if(chk_err_cnt > 100)
+				{
+					// In the long run, 1/20th of the data is allowed to fail the checksum / error flag tests.
+					// In the short run, 5 successive samples are allowed to fail.
+					cur_lidar_state = S_LIDAR_ERROR;
+					lidar_error_flags = lidar_rxbuf[buf_idx][0];
+				}
+			}
+			else
+			{
+				if(chk_err_cnt) chk_err_cnt--;
+				lidar_s cur_lidar_scan_idx;
+				if(lidar_rxbuf[buf_idx][0]) // non-zero = sync -- error flags have been handled already
+				{
+					prev_lidar_scan = 
+					cur_lidar_scan_idx = prev_lidar_scan_idx;
+					prev_lidar_scan_idx = prev_lidar_scan_idx?0:1;
+				}
+
+				// optimization todo: we are little endian like the sensor: align rxbuf properly and directly access as uint16
+				int degper16 = (lidar_rxbuf[buf_idx][2]<<8) | lidar_rxbuf[buf_idx][1];
+				int len      = (lidar_rxbuf[buf_idx][4]<<8) | lidar_rxbuf[buf_idx][3];
+				int snr      = lidar_rxbuf[buf_idx][5];
+
+				
+
+
+
+			}
+		}
+		break;
+
+
+		default:
+		break;
+
+	}
 
 }
+
+/*
+	Sends a command to the lidar using DMA; configures DMA to expect answer, which will give an interrupt after rx_len bytes received.
+	To save a little bit of time, buffers are fixed (lidar_txbuf and lidar_rxbuf).
+*/
+void lidar_send_cmd(int tx_len, int rx_len)
+{
+	// Configure for RX:
+	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 1UL<<4 /*transfer complete interrupt*/;
+	DMA2_Stream2->NDTR = rx_len;
+
+	// Configure for TX:
+	DMA2_Stream7->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/;
+	DMA2_Stream7->NDTR = tx_len;
+
+	USART1->SR = 0;
+	DMA2->LIFCR = 0xffffffff; // Clear all flags
+	DMA2->HIFCR = 0xffffffff;
+
+	DMA2_Stream2->CR |= 1UL; // Enable RX DMA
+	DMA2_Stream7->CR |= 1UL; // Enable TX DMA
+}
+
+/*
+	Start receiving - configure the RX DMA for circular double buffering - we don't need to reconfigure DMA until we stop.
+	Each new full packet causes an interrupt.
+*/
+void lidar_start_acq()
+{
+	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 1UL<<18 /*Double Buf mode*/ | 0b01UL<<16 /*med prio*/ | 
+			   0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;  // Disable
+
+	USART1->SR = 0;
+	DMA2->LIFCR = 0xffffffff; // Clear all flags
+	DMA2->HIFCR = 0xffffffff;
+
+	DMA2_Stream2->CR |= 1UL; // Enable RX DMA
+}
+
 
 void init_lidar()
 {
 	// USART1 (lidar) = APB2 = 60 MHz
 	// 16x oversampling
 	// 115200bps -> Baudrate register = 32.5625 = 32 9/16
-	// USART1 RX is mapped to DMA2, Stream2, Ch4
+	// USART1 RX: DMA2 Stream2 Ch4
+	// USART1 TX: DMA2 Stream7 Ch4
 
-	// Do not enable the DMA yet.
+	// Preconfigure what we can on the DMA, don't enable yet.
 
 	DMA2_Stream2->PAR = (uint32_t)&(USART1->DR);
-	DMA2_Stream2->M0AR = (uint32_t)(lidar_full_rev);
+	DMA2_Stream2->M0AR = (uint32_t)(lidar_rxbuf[0]);
+	DMA2_Stream2->M1AR = (uint32_t)(lidar_rxbuf[1]);
+
+	DMA2_Stream7->PAR = (uint32_t)&(USART1->DR);
+	DMA2_Stream7->M0AR = (uint32_t)(lidar_txbuf);
 
 	USART1->BRR = 32UL<<4 | 9UL;
 	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	USART1->CR3 = 1UL<<7 /*TX DMA*/ 1UL<<6 /*RX DMA*/;
 
-	lidar_initialized = 1;
+	cur_lidar_state = S_LIDAR_OFF;
 }
 
