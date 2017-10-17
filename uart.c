@@ -88,7 +88,7 @@ static void handle_maintenance_msg()
 	}
 }
 
-volatile int do_compass_round;
+volatile int do_compass_round = 1;
 extern int accurate_turngo;
 
 int ignore_cmds = 1;

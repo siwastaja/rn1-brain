@@ -1,27 +1,83 @@
 /*
-Reading the LIDAR is a bit tricky, because the start delimiter byte is not escaped and can reappear in the data.
-The stream of data is rather continuous, and it's unreliable to rely to idle times.
+A bit of development history:
 
-Each packet is 22 bytes fixed.
-Full revolution = 1980 bytes
+First we used a Neato XV11 lidar; it seemed a good idea at the time to do some prototyping on. 
+We also considered using it on early production models (small batches).
+
+A few things happened:
+- The XV11 lidar has a serious lifetime problem with the slip ring communication.
+- It also has an availability problem; most units are used, and already starting to fail.
+- We decided not to use 2D lidar on long term, since we are actively developing our own 3D vision system.
+
+Scanse Sweep was not available at that time, but now it is, so we migrated to it.
+
+We decided to break all compatibility to the old Neato lidar simply because of its poor availability and reliability;
+Scanse, OTOH, is readily available.
+
+Changing the lidars is not the case of only changing the low-level layer, since the two lidars work in different principle:
+Neato lidar gave readings on fixed angular intervals of 1.0 degrees, whereas the Scance gives variable number of samples with
+an angular resolution of 1/16th degree (5760th full circle).
+
+Since the code designed for Neato only server historical purposes, the compatibility will be broken on purpose. You can always
+look at the old code in the version control.
 
 */
+
+/*
+Scance Sweep
+
+Sweep	Sample	Min	Max	Smp/rev
+				min	max
+
+1Hz	01	500Hz	600Hz	500	600
+1Hz	02	750Hz	800Hz	750	800
+1Hz	03	1000Hz	1075Hz	1000	1075
+
+2Hz	01	500Hz	600Hz	250	300
+2Hz	02	750Hz	800Hz	375	400
+2Hz	03	1000Hz	1075Hz	500	538
+
+3Hz	01	500Hz	600Hz	166	200
+3Hz	02	750Hz	800Hz	250	267
+3Hz	03	1000Hz	1075Hz	333	359
+
+4Hz	01	500Hz	600Hz	125	150
+4Hz	02	750Hz	800Hz	187	200
+4Hz	03	1000Hz	1075Hz	250	269
+
+We probably don't want to ever run at over 4Hz, since the angular resolution would be compromised too much.
+
+For mapping large spaces, it's crucial to get enough samples from far-away (say, 10 meters) walls, when seen through
+gaps created by nearby obstacles. The 360 degree resolution of the Neato lidar seemed bare minimum; even with its low 5 meter
+range!
+
+At the same time, we want to gather enough temporal data to ignore moving objects and fill in the wall data while the robot
+moves and sees the world from different angles. To add to this compromise, we don't want to sacrifice measurement accuracy.
+
+To begin, we'll be using 2Hz sweep with 750-800Hz sample rate, giving us 375 to 400 samples per 360 degrees.
+
+Maximum number of readings per sweep is guaranteed 1075. We'll probably never do that.
+
+Let's use an array[720] to hold the samples: we'll never try to write to the same cell twice (if we don't use 1Hz-02 or 1Hz-03 modes)
+
+We fill the array in the interrupt handler receiving the packets: even though the array step is only 0.5 deg, full 1/16th deg resolution
+is used to calculate the (x,y) coords, this calculation uses the most recent robot coordinates to map the lidar to the world coords.
+
+
+*/
+
+
 
 #include <stdint.h>
 #include "ext_include/stm32f2xx.h"
 
+#include "main.h"
 #include "lidar.h"
-#include "lidar_corr.h" // for point_t
 
 extern int dbg[10];
 
 extern void delay_us(uint32_t i);
 extern void delay_ms(uint32_t i);
-
-
-volatile int lidar_initialized;
-volatile lidar_datum_t lidar_full_rev[90];
-volatile int lidar_rpm_setpoint_x64 = (DEFAULT_LIDAR_RPM)*64;
 
 void lidar_reset_flags() 
 {
@@ -123,46 +179,6 @@ const int lidar_ignore_len[32] =
 };
 #endif
 
-
-// Process the data so that datapoints either in the ignore list, or having the "error" flag set, are set as 0, and copy to a continuous int16_t table.
-// Data is always positive and 14 bits long.
-void copy_lidar_half1(int16_t* dst_start)
-{
-	int i;
-	int o = 359;
-	for(i = 0; i < 45; i++)
-	{
-		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
-	}
-}
-void copy_lidar_half2(int16_t* dst_start)
-{
-	int i;
-	int o = 179;
-	for(i = 45; i < 90; i++)
-	{
-		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
-	}
-}
-void copy_lidar_full(int16_t* dst_start)
-{
-	int i;
-	int o = 359;
-	for(i = 0; i < 90; i++)
-	{
-		dst_start[o--] = (lidar_ignore[i*4+0] || (lidar_full_rev[i].d[0].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[0].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+1] || (lidar_full_rev[i].d[1].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[1].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+2] || (lidar_full_rev[i].d[2].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[2].flags_distance&0x3fff);
-		dst_start[o--] = (lidar_ignore[i*4+3] || (lidar_full_rev[i].d[3].flags_distance&(1<<15))) ? 0 : (lidar_full_rev[i].d[3].flags_distance&0x3fff);
-	}
-
-}
 
 extern live_lidar_scan_t* p_livelidar_store;
 extern point_t* p_livelid2d_store;
@@ -309,167 +325,13 @@ void generate_lidar_ignore()
 }
 
 
-void sync_lidar()
+void lidar_dma_inthandler()
 {
-	if(!lidar_initialized) return;
-	int i;
-	int shift = 20;
-	__disable_irq();
-	int timeout = 100 * 1000000;
-	while(1)
-	{
-		if(USART1->SR & (1UL<<5)) // data ready
-		{
-			int data = USART1->DR;
-			if(data == 0xFA)
-			{
-				while(!(USART1->SR & (1UL<<5)))
-				{
-					if(!(--timeout)) goto LIDAR_SYNC_TIMEOUT;
-				}
-				data = USART1->DR;
 
-				#ifdef RN1P4
-				if(data == 0xA0+(90/4))
-				#endif
-				#ifdef RN1P6
-				if(data == 0xA0)
-				#endif
-				#ifdef RN1P5
-				if(data == 0xA0)
-				#endif
-				#ifdef PULU1
-				if(data == 0xA0+(270/4))
-				#endif
-				{
-					for(i=0; i < shift; i++)
-					{
-						while(!(USART1->SR & (1UL<<5)))
-						{
-							if(!(--timeout)) goto LIDAR_SYNC_TIMEOUT;
-						}
-						data = USART1->DR;
-					}
-					break;
-				}
-
-			}
-		}
-		if(!(--timeout)) goto LIDAR_SYNC_TIMEOUT;
-	}
-	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
-	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;  // Disable
-	USART1->SR = 0;
-	USART1->CR3 = 1UL<<6 /*RX DMA*/;
-	DMA2_Stream2->NDTR = 22*90;
-	DMA2->LIFCR = 0xffffffff; // Clear all flags
-	DMA2->HIFCR = 0xffffffff;
-	DMA2_Stream2->CR |= 1UL; // Enable
-
-	__enable_irq();
-	return;
-
-	LIDAR_SYNC_TIMEOUT:
-	deinit_lidar();
-	__enable_irq();
-	return;
-}
-
-
-void resync_lidar()
-{
-	if(!lidar_initialized) return;
-	// Disable DMA.
-	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
-	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;  // Disable
-	while(DMA2_Stream2->CR & 1UL) ;
-	USART1->CR3 &= ~(1UL<<6) /*disable RX DMA*/;
-	sync_lidar();
-}
-
-// Requires little-endian CPU
-uint16_t lidar_calc_checksum(volatile lidar_datum_t* l)
-{
-	int i;
-	uint32_t chk32 = 0;
-
-	for(i=0; i < 10; i++)
-	{
-		chk32 = (chk32<<1) + l->u16[i];
-	}
-
-	uint32_t checksum = (chk32 & 0x7FFF) + (chk32 >> 15);
-	checksum &= 0x7FFF;
-	return checksum;
-}
-
-volatile int lidar_speed_in_spec = 0;
-
-// run this at 1 kHz
-void lidar_motor_ctrl_loop()
-{
-	static int in_spec_cnt = 0;
-	static int cycle = 0;
-	static int pwm_shadow_x256 = 350*256;
-	int i;
-	int actual_speed = 0;
-
-	if(cycle<10) // actual code runs at 100Hz
-	{
-		cycle++;
-		return;
-	}
-	cycle = 0;
-
-	if(!lidar_initialized)
-	{
-		TIM4->CCR4 = 0;
-		return;
-	}
-
-	for(i=0; i<90; i++)
-	{
-		actual_speed += lidar_full_rev[i].speed;
-	}
-	actual_speed /= 90;
-
-	int error = actual_speed - lidar_rpm_setpoint_x64;
-
-	if(actual_speed > (MAX_LIDAR_RPM)*64 || actual_speed < (MIN_LIDAR_RPM)*64)
-	{
-		in_spec_cnt = 0;
-		lidar_speed_in_spec = 0;
-	}
-	else
-		in_spec_cnt++;
-
-	if(in_spec_cnt > 100) // require 1 sec of stability
-		lidar_speed_in_spec = 1;
-
-	pwm_shadow_x256 -= error/16;
-	if(pwm_shadow_x256 < 80*256) {pwm_shadow_x256=80*256; lidar_speed_in_spec = 0; in_spec_cnt = 0;}
-	else if(pwm_shadow_x256 > 500*256) {pwm_shadow_x256=500*256; lidar_speed_in_spec = 0; in_spec_cnt = 0;}
-	TIM4->CCR4 = pwm_shadow_x256>>8;
 }
 
 void init_lidar()
 {
-	/*
-		TIM4 generates PWM control for the LIDAR brushed DC motor.
-	*/
-
-	// Set the IO to alternate function
-	GPIOD->MODER &= ~(1UL<<30);
-	GPIOD->MODER |= 1UL<<31;
-	TIM4->CR1 = 1UL<<7 /*auto preload*/ | 0b01UL<<5 /*centermode*/;
-	TIM4->CCMR2 = 1UL<<11 /*CH4 preload*/ | 0b110UL<<12 /*PWMmode1*/;
-	TIM4->CCER = 1UL<<12 /*CH4 out ena*/;
-	TIM4->ARR = 1024;
-	TIM4->CCR4 = 350;
-	TIM4->CR1 |= 1UL; // Enable.
-
-	delay_ms(300); // let the motor spin up
-
 	// USART1 (lidar) = APB2 = 60 MHz
 	// 16x oversampling
 	// 115200bps -> Baudrate register = 32.5625 = 32 9/16
@@ -483,28 +345,6 @@ void init_lidar()
 	USART1->BRR = 32UL<<4 | 9UL;
 	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
 
-	delay_ms(100);
-
 	lidar_initialized = 1;
 }
 
-void deinit_lidar()
-{
-	TIM4->CR1 = 0; // Disable the motor PWM
-	// Set the motor fet drive IO as normal output
-	GPIOD->MODER &= ~(1UL<<31);
-	GPIOD->MODER |= 1UL<<30;
-	GPIOC->BSRR = 1UL<<(15+16); // FET gate down
-
-	USART1->CR1 = 0; // Disable uart
-//	DMA2_Stream2->CR = 0; // Disable DMA
-
-	// Disable DMA.
-	DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
-	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;  // Disable
-	while(DMA2_Stream2->CR & 1UL) ;
-	USART1->CR3 &= ~(1UL<<6) /*disable RX DMA*/;
-
-
-	lidar_initialized = 0;
-}

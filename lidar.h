@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include "feedbacks.h" // for pos_t
 
+typedef struct
+{
+	int valid;
+	int32_t x;
+	int32_t y;
+} point_t;
+
+
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 	#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
 	#define LIDAR_IGNORE_LEN_FRONT 200 // mm, everything below this is marked in ignore list during ignore scan.
@@ -12,36 +20,6 @@
 	#define LIDAR_IGNORE_LEN 250
 	#define LIDAR_IGNORE_LEN_FRONT 120
 #endif
-
-
-#define DEFAULT_LIDAR_RPM 300
-// For determining whether the lidar is turning within the specs, so that the data flow can be synchronized:
-#define MAX_LIDAR_RPM 340
-#define MIN_LIDAR_RPM 260
-
-extern volatile int lidar_rpm_setpoint_x64;
-extern uint8_t lidar_ignore[360];
-
-
-typedef struct __attribute__ ((__packed__))
-{
-	uint16_t flags_distance;
-	uint16_t signal;
-} lidar_d_t;
-
-typedef union
-{
-	struct __attribute__ ((__packed__))
-	{
-		uint8_t start;
-		uint8_t idx;
-		uint16_t speed;
-		lidar_d_t d[4];
-		uint16_t checksum;
-	};
-	uint16_t u16[11];
-	uint8_t u8[22];
-} lidar_datum_t;
 
 typedef struct
 {

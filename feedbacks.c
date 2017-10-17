@@ -427,6 +427,11 @@ void set_location_without_moving_external(pos_t new_pos)
 
 volatile int compass_round_on;
 
+void sync_to_compass()
+{
+	cur_pos.ang = aim_angle = cur_compass_angle;
+}
+
 void compass_fsm(int cmd)
 {
 	static int compass_x_min = 0;
@@ -463,7 +468,7 @@ void compass_fsm(int cmd)
 		compass_x_min = compass_x_max = cx;
 		compass_y_min = compass_y_max = cy;
 
-		set_top_speed_ang(30);
+		set_top_speed_ang(25);
 		rotate_rel(120*ANG_1_DEG);
 
 		state = 2;
@@ -472,7 +477,7 @@ void compass_fsm(int cmd)
 	{
 		if(ang_err > -60*ANG_1_DEG && ang_err < 60*ANG_1_DEG)
 		{
-			set_top_speed_ang(30);
+			set_top_speed_ang(25);
 			rotate_rel(120*ANG_1_DEG);
 			state++;
 		}
@@ -481,6 +486,7 @@ void compass_fsm(int cmd)
 	{
 		state = 0;
 		reset_wheel_slip_det = 1;
+		sync_to_compass();
 	}
 
 	/*
@@ -521,11 +527,6 @@ void compass_fsm(int cmd)
 		cur_compass_angle = (int)heading;
 	}
 
-}
-
-void sync_to_compass()
-{
-	cur_pos.ang = aim_angle = cur_compass_angle;
 }
 
 void move_arc_manual(int comm, int ang)

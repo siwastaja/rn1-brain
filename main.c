@@ -671,12 +671,13 @@ int main()
 
 	set_obstacle_avoidance_margin(1);
 
+	PSU12V_ENA();
+
 	#ifdef OPTFLOW_INSTALLED
 	init_optflow();
 	#endif
 	init_motcons();
 	init_lidar();
-
 
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
@@ -707,7 +708,6 @@ int main()
 	NVIC_SetPriority(TIM6_DAC_IRQn, 0b1010);
 	NVIC_EnableIRQ(TIM6_DAC_IRQn);
 
-	PSU12V_ENA();
 	CHARGER_ENA();
 
 	/*
@@ -725,6 +725,8 @@ int main()
 
 		TODO: Implement the trivial check of lidar data not being synced, and resync when necessary.
 	*/
+
+	delay_ms(300);
 
 	sync_lidar();
 
