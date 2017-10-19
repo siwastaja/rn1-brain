@@ -417,7 +417,6 @@ void timebase_10k_handler()
 			sec_gen = 0;
 		}
 		motcon_fsm();
-		lidar_motor_ctrl_loop();
 
 	#ifdef OPTFLOW_INSTALLED
 		int dx = 0;
@@ -487,8 +486,6 @@ void timebase_10k_handler()
 	}
 }
 
-extern volatile lidar_datum_t lidar_full_rev[90];
-
 
 extern volatile int i2c1_state;
 extern volatile int last_sr1;
@@ -497,8 +494,6 @@ extern volatile int i2c1_fails;
 extern volatile int gyro_timestep_len;
 extern volatile int xcel_timestep_len;
 
-extern volatile int lidar_speed_in_spec;
-extern int lidar_initialized;
 extern int cur_compass_angle;
 
 extern int64_t xcel_long_integrals[3];
@@ -710,55 +705,16 @@ int main()
 
 	CHARGER_ENA();
 
-	/*
-		Lidar requires two types of syncing:
-		sync_lidar() is called when the motor is turning at a widely acceptable range of rpm, which is
-		enough to produce _some_ data from the lidar. sync_lidar does sync the data frame to the struct boundaries,
-		but may not sync to the degree field, so the image may be wrongly rotated.
-
-		But, syncing to data frames allows the lidar control loop to read the rpm field and start regulating the motor speed.
-
-		After the control loop has stabilized the rpm, the lidar
-		produces fully correct data, so resync_lidar() must be called: it does not only sync the data frame, but it also
-		syncs the whole table so that the 1 degree point is at the start of the table. At this point, lidar ignore table
-		is generated from the closeby objects.
-
-		TODO: Implement the trivial check of lidar data not being synced, and resync when necessary.
-	*/
-
-	delay_ms(300);
-
-	sync_lidar();
-
 	int cnt = 0;
 
-	int lidar_ready = 0;
-
 	extern int ignore_cmds;
+
 
 	while(1)
 	{
 		random++;
 		cnt++;
 
-		if(!lidar_ready)
-		{
-			if(lidar_initialized && lidar_speed_in_spec)
-			{
-				resync_lidar();
-				delay_ms(300);
-				lidar_reset_flags();
-				while(!lidar_is_complete());
-				lidar_reset_flags();
-				while(!lidar_is_complete());
-				generate_lidar_ignore();
-				lidar_ready = 1;
-				dbg[0] = 0;
-				ignore_cmds = 0;
-			}
-		}
-		else
-		{
 			/*
 				livelidar_fsm(1) will check if there is a pending calculation request. If there is, it
 				sends the previous image to uart (only if the uart is free; if it isn't, the image will
@@ -766,6 +722,7 @@ int main()
 				the corrections. These corrections are automatically applied in the 1k ISR lidar_fsm().
 			*/
 
+		/*
 			int starttime = millisec;
 
 			dbg_error_num = 1;
@@ -801,8 +758,7 @@ int main()
 				delay_ms(200);
 				sync_lidar();
 			}
-
-		}
+		*/
 
 
 		// calc from xcel integral
@@ -821,20 +777,6 @@ int main()
 		}
 
 		CHARGER_ENA();
-/*
-		extern volatile int start_charger;
-
-		if(seconds > 60 || start_charger)
-		{
-			CHARGER_ENA();
-			seconds = 0;
-			start_charger = 0;
-		}
-		else if(seconds > 30)
-		{
-			CHARGER_DIS();
-		}
-*/
 	}
 
 

@@ -23,10 +23,54 @@ typedef struct
 
 typedef struct
 {
+	int n_samples;
 	pos_t pos_at_start;
 	pos_t pos_at_end;
 	point_t scan[720];
 } lidar_scan_t;
+
+extern lidar_scan_t lidar_scans[2];
+extern lidar_scan_t *acq_lidar_scan;
+extern lidar_scan_t *prev_lidar_scan;
+
+extern int lidar_cur_n_samples;
+
+
+typedef enum
+{
+	S_LIDAR_UNINIT			= 0,
+	S_LIDAR_OFF			= 1,
+	S_LIDAR_WAITPOWERED		= 2,
+	S_LIDAR_PRECONF_WAIT_READY	= 3, // Quite stupidly, we need to poll whether the motor has reached its initial (default, or the previous) setpoint, 
+	                          	     // even if we want to just configure it again to whatever we actually want. Then we need to wait again.
+	S_LIDAR_PRECONF_CHECK_SPEED	= 4, // If the speed happenes to be configured to what we actually want, we can skip the next one:
+	S_LIDAR_CONF_SPEED		= 5,
+	S_LIDAR_WAIT_READY		= 6,
+	S_LIDAR_CONF_SAMPLING		= 7,
+	S_LIDAR_WAIT_START_ACK		= 8,
+	S_LIDAR_RUNNING			= 9,
+	S_LIDAR_RECONF			= 10,
+	S_LIDAR_ERROR			= 11
+} lidar_state_t;
+
+extern lidar_state_t cur_lidar_state;
+
+typedef enum
+{
+	LIDAR_NO_ERROR				= 0,
+	LIDAR_ERR_RX_DMA_BUSY			= 1,
+	LIDAR_ERR_TX_DMA_BUSY			= 2,
+	LIDAR_ERR_SENSOR_ERRFLAGS 		= 3,
+	LIDAR_ERR_CHKSUM_OR_ERRFLAGS 		= 4,
+	LIDAR_ERR_UNEXPECTED_REPLY_MOTORSPEED 	= 5,
+	LIDAR_ERR_UNEXPECTED_REPLY_SAMPLERATE 	= 6,
+	LIDAR_ERR_DATASTART_ACK			= 7,
+	LIDAR_ERR_STATE_WATCHDOG		= 8,
+} lidar_error_t;
+
+extern uint8_t lidar_error_flags;
+extern lidar_error_t lidar_error_code;
+
 
 #define LIVELIDAR_INVALID 1
 
@@ -39,12 +83,12 @@ typedef struct
 } live_lidar_scan_t;
 
 
-void sync_lidar();
-void resync_lidar();
 void init_lidar();
-uint16_t lidar_calc_checksum(volatile lidar_datum_t* l);
-void lidar_motor_ctrl_loop();
 void deinit_lidar();
+
+void lidar_on(int fps, int smp);
+void lidar_off();
+void lidar_fsm();
 
 void generate_lidar_ignore();
 void copy_lidar_half1(int16_t* dst_start);
@@ -62,6 +106,8 @@ void lidar_fsm();
 void reset_livelidar_images(int id);
 
 void lidar_mark_invalid();
+
+extern point_t lidar_collision_avoidance[360];
 
 
 /*

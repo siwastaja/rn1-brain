@@ -18,6 +18,8 @@
 #include "lidar_corr.h"
 #include "uart.h"
 
+extern void lidar_test();
+
 void hwtest_main()
 {
 	/*
@@ -160,6 +162,7 @@ void hwtest_main()
 
 		uart_print_string_blocking("[ 8 ]  Test charger subsystem + voltage meas. ADC\r\n");
 		uart_print_string_blocking("[ 9 ]  Try requesting KILL_PWR (does a hard reboot; or a complete shutdown with emptyish battery)\r\n");
+		uart_print_string_blocking("[ a ]  Test lidar subsystem (please enable 5V first)\r\n");
 
 		char buffer[1000];
 
@@ -428,6 +431,150 @@ void hwtest_main()
 			break;
 
 
+			case 'a':
+			{
+				uart_print_string_blocking("0 = off\r\n");
+				uart_print_string_blocking("1 = 1 FPS 500Hz\r\n");
+				uart_print_string_blocking("2 = 2 FPS 500Hz\r\n");
+				uart_print_string_blocking("3 = 3 FPS 500Hz\r\n");
+				uart_print_string_blocking("4 = 4 FPS 500Hz\r\n");
+				uart_print_string_blocking("5 = 1 FPS 1000Hz\r\n");
+				uart_print_string_blocking("6 = 2 FPS 1000Hz\r\n");
+				uart_print_string_blocking("7 = 3 FPS 1000Hz\r\n");
+				uart_print_string_blocking("8 = 4 FPS 1000Hz\r\n");
+				uart_print_string_blocking("q = exit\r\n");
+				delay_ms(500);
+				init_lidar();
+				__enable_irq();
+
+
+				while(1)
+				{
+					extern int lidar_dbg1, lidar_dbg2;
+
+					char *p_buf = buffer;
+					p_buf = o_str_append(p_buf, "STATE = ");
+					p_buf = o_utoa8_fixed(cur_lidar_state, p_buf);
+					p_buf = o_str_append(p_buf, " ERR = ");
+					p_buf = o_utoa8_fixed(lidar_error_code, p_buf);
+					p_buf = o_str_append(p_buf, " SAMPLES = ");
+					p_buf = o_utoa16_fixed(lidar_cur_n_samples, p_buf);
+
+					p_buf = o_str_append(p_buf, " d1 = ");
+					p_buf = o_utoa16_fixed(lidar_dbg1, p_buf);
+					p_buf = o_str_append(p_buf, " d2 = ");
+					p_buf = o_utoa16_fixed(lidar_dbg2, p_buf);
+
+					uart_print_string_blocking(buffer);
+					lidar_fsm();
+					p_buf = buffer;
+
+					p_buf = o_str_append(p_buf, (acq_lidar_scan == &lidar_scans[0])?" *":"  ");
+					p_buf = o_str_append(p_buf, "SCAN0 = ");
+					p_buf = o_utoa16_fixed(lidar_scans[0].n_samples, p_buf);
+
+					p_buf = o_str_append(p_buf, (acq_lidar_scan == &lidar_scans[1])?" *":"  ");
+					p_buf = o_str_append(p_buf, "SCAN1 = ");
+					p_buf = o_utoa16_fixed(lidar_scans[1].n_samples, p_buf);
+
+					uart_print_string_blocking(buffer);
+					lidar_fsm();
+					p_buf = buffer;
+
+					p_buf = o_str_append(p_buf, " PREV IMG = ");
+
+
+					for(int o = 0; o < 360; o+=358)
+					{
+						for(int i = o; i < o+4; i++)
+						{
+							if(prev_lidar_scan->scan[i].valid)
+							{
+								p_buf = o_utoa16_fixed(prev_lidar_scan->scan[i].x, p_buf);
+								p_buf = o_str_append(p_buf, ",");
+								p_buf = o_utoa16_fixed(prev_lidar_scan->scan[i].y, p_buf);
+								p_buf = o_str_append(p_buf, " ");
+							}
+							else
+								p_buf = o_str_append(p_buf, "            ");
+						}
+						p_buf = o_str_append(p_buf, ".. ");
+
+						uart_print_string_blocking(buffer);
+						lidar_fsm();
+						p_buf = buffer;
+
+					}
+
+					uart_print_string_blocking("\r\n");
+
+					for(int i = 0; i < 100; i++)
+					{
+						delay_us(950);
+						lidar_fsm();
+					}
+
+					uint8_t subcmd = 0;
+					if(USART3->SR & (1<<5)) subcmd = USART3->DR;
+					if(subcmd == 'q')
+						break;
+					else if(subcmd == '0')
+					{
+						uart_print_string_blocking("\r\n==> Turn off\r\n\r\n");
+						lidar_off();
+					}
+					else if(subcmd == '1')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 1fps 500Hz\r\n\r\n");
+						lidar_on(1, 1);
+					}
+					else if(subcmd == '2')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 2fps 500Hz\r\n\r\n");
+						lidar_on(2, 1);
+					}
+					else if(subcmd == '3')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 3fps 500Hz\r\n\r\n");
+						lidar_on(3, 1);
+					}
+					else if(subcmd == '4')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 4fps 500Hz\r\n\r\n");
+						lidar_on(4, 1);
+					}
+					else if(subcmd == '5')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 1fps 1000Hz\r\n\r\n");
+						lidar_on(1, 3);
+					}
+					else if(subcmd == '6')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 2fps 1000Hz\r\n\r\n");
+						lidar_on(2, 3);
+					}
+					else if(subcmd == '7')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 3fps 1000Hz\r\n\r\n");
+						lidar_on(3, 3);
+					}
+					else if(subcmd == '8')
+					{
+						uart_print_string_blocking("\r\n==> Turn on 4fps 1000Hz\r\n\r\n");
+						lidar_on(4, 3);
+					}
+
+				}
+				__disable_irq();
+
+			}
+			break;
+
+			case 'b':
+				init_lidar();
+				__enable_irq();
+				lidar_test();
+			break;
 			default:
 			break;
 

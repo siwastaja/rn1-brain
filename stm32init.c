@@ -14,6 +14,7 @@ extern void adc_int_handler();
 extern void i2c1_inthandler();
 extern void timebase_10k_handler();
 extern void motcon_rx_done_inthandler();
+extern void lidar_rx_done_inthandler();
 
 extern unsigned int _STACKTOP;
 

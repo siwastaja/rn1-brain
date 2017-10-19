@@ -14,7 +14,7 @@ MODEL=PULU1
 
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)
 
-#CFLAGS += -DHWTEST
+CFLAGS += -DHWTEST
 #CFLAGS += -DSONARS_INSTALLED
 #CFLAGS += -DOPTFLOW_INSTALLED
 
@@ -23,9 +23,9 @@ CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mt
 ASMFLAGS = -S -fverbose-asm
 LDFLAGS = -mcpu=cortex-m3 -mthumb -nostartfiles -gc-sections
 
-DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h flash.h sonar.h comm.h feedbacks.h sin_lut.h navig.h lidar_corr.h uart.h
-OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o flash.o sonar.o feedbacks.o sin_lut.o navig.o lidar_corr.o uart.o hwtest.o
-ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s flash.s sonar.s feedbacks.s sin_lut.s navig.s lidar_corr.s uart.s
+DEPS = main.h gyro_xcel_compass.h lidar.h optflow.h motcons.h own_std.h flash.h sonar.h comm.h feedbacks.h sin_lut.h navig.h uart.h
+OBJ = stm32init.o main.o gyro_xcel_compass.o lidar.o optflow.o motcons.o own_std.o flash.o sonar.o feedbacks.o sin_lut.o navig.o uart.o hwtest.o
+ASMS = stm32init.s main.s gyro_xcel_compass.s lidar.s optflow.s motcons.s own_std.s flash.s sonar.s feedbacks.s sin_lut.s navig.s uart.s
 
 all: main.bin
 
