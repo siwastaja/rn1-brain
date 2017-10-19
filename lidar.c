@@ -78,29 +78,32 @@ is used to calculate the (x,y) coords, this calculation uses the most recent rob
 #include "sin_lut.h"
 
  
-#define UART_DMA_NO() {USART1->CR3 = 0; USART1->SR = 0;}
-#define UART_DMA_RX() {USART1->CR3 = 1UL<<6; USART1->SR = 0;}
-#define UART_DMA_TX() {USART1->CR3 = 1UL<<7; USART1->SR = 0;}
-#define UART_DMA_RXTX() {USART1->CR3 = 1UL<<6 | 1UL<<7; USART1->SR = 0;}
+#define UART_DMA_NO() //do {USART1->CR3 = 0; USART1->SR = 0;} while(0)
+#define UART_DMA_RX() //do {USART1->CR3 = 1UL<<6; USART1->SR = 0;} while(0)
+#define UART_DMA_TX() //do {USART1->CR3 = 1UL<<7; USART1->SR = 0;} while(0)
+#define UART_DMA_RXTX() //do {USART1->CR3 = 1UL<<6 | 1UL<<7; USART1->SR = 0;} while(0)
+
+volatile int lidar_dbg1, lidar_dbg2;
 
 void rx_dma_off()
 {
-	DMA2_Stream2->CR = 0;
 	USART1->CR3 &= ~(1UL<<6);
-	DMA2->LIFCR = 0b111101UL<<16;
-	USART1->SR = 0;
+	DMA2_Stream2->CR = 0;
 	while(DMA2_Stream2->CR & 1UL)
 		lidar_dbg2++;
+	DMA2->LIFCR = 0b111101UL<<16;
+	USART1->SR;
+	USART1->DR;
+	DMA2->LIFCR = 0b111101UL<<16;
 }
 
 void tx_dma_off()
 {
-	DMA2_Stream7->CR = 0;
 	USART1->CR3 &= ~(1UL<<7);
-	DMA2->HIFCR = 0b111101UL<<22;
-	USART1->SR = 0;
+	DMA2_Stream7->CR = 0;
 	while(DMA2_Stream7->CR & 1UL)
 		lidar_dbg2++;
+	DMA2->HIFCR = 0b111101UL<<22;
 }
 
 
@@ -294,11 +297,11 @@ void lidar_on(int fps, int smp)
 	else
 		cur_lidar_state = S_LIDAR_WAITPOWERED; // This wait also makes sure the RX DMA is finished (or at least there's nothing we can do, anyway)
 }
-int lidar_dbg1, lidar_dbg2;
+
 void lidar_off()
 {
-	lidar_dbg1 = lidar_dbg2 = 0;
 	rx_dma_off();
+	tx_dma_off();
 	LIDAR_DIS();
 	cur_lidar_state = S_LIDAR_OFF;
 	lidar_error_code = LIDAR_NO_ERROR;
@@ -371,7 +374,7 @@ void lidar_fsm()
 				tx_dma_off();
 			}
 
-			if(errorwait_cnt > 7000) // Let's decide that 7 seconds should reset any strange issues.
+			if(errorwait_cnt > 5000) // Let's decide that 5 seconds should reset any strange issues.
 			{
 				LIDAR_ENA();
 				cur_lidar_state = S_LIDAR_WAITPOWERED;
@@ -388,11 +391,34 @@ void lidar_fsm()
 
 	if(prev_lidar_state == cur_lidar_state && cur_lidar_state != S_LIDAR_UNINIT && cur_lidar_state != S_LIDAR_OFF && cur_lidar_state != S_LIDAR_RUNNING)
 	{
-		if(++watchdog > 15000)
+		if(++watchdog > 10000)
 		{
 			watchdog = 0;
 			cur_lidar_state = S_LIDAR_ERROR;
 			lidar_error_code = LIDAR_ERR_STATE_WATCHDOG;
+
+/*
+			char buffer[1000];
+			char *p_buf = buffer;
+			p_buf = o_str_append(p_buf, "\r\nWATCHDOG ERROR uart SR=");
+			p_buf = o_utoa16(USART1->SR, p_buf);
+			p_buf = o_str_append(p_buf, " CR3=");
+			p_buf = o_utoa16(USART1->CR3, p_buf);
+			p_buf = o_str_append(p_buf, " DMA2 LISR=");
+			p_buf = o_utoa32(DMA2->LISR, p_buf);
+			p_buf = o_str_append(p_buf, " HISR=");
+			p_buf = o_utoa32(DMA2->HISR, p_buf);
+			p_buf = o_str_append(p_buf, " St2CR=");
+			p_buf = o_utoa32(DMA2_Stream2->CR, p_buf);
+			p_buf = o_str_append(p_buf, " NDTR=");
+			p_buf = o_utoa32(DMA2_Stream2->NDTR, p_buf);
+			p_buf = o_str_append(p_buf, " St7CR=");
+			p_buf = o_utoa32(DMA2_Stream7->CR, p_buf);
+			p_buf = o_str_append(p_buf, " NDTR=");
+			p_buf = o_utoa32(DMA2_Stream7->NDTR, p_buf);
+			p_buf = o_str_append(p_buf, "\r\n");
+			uart_print_string_blocking(buffer);
+*/
 		}
 	}
 	else
@@ -414,8 +440,8 @@ void lidar_rx_done_inthandler()
 
 	lidar_dbg1++;
 //	lidar_rxbuf[0][dbg_prev_len] = 0;
-/*
-	char kakka[10] = "\r\n#RXxx|";
+
+/*	char kakka[10] = "\r\n#RXxx|";
 	kakka[5] = (cur_lidar_state>9)?('a'+cur_lidar_state):('0'+cur_lidar_state);
 	kakka[6] = '0'+dbg_prev_len;
 	uart_print_string_blocking(kakka);
@@ -699,16 +725,17 @@ void lidar_send_cmd(int tx_len, int rx_len)
 
 	if(rx_len)
 	{
+		rx_dma_off();
 		// Configure for RX:
 		DMA2_Stream2->CR = 4UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
 			           1UL<<10 /*mem increment*/ | 0b00UL<<6 /*periph-to-memory*/ | 1UL<<4 /*transfer complete interrupt*/;
 		DMA2_Stream2->NDTR = rx_len;
-		dbg_prev_len = rx_len;
 
-		if(tx_len)
-			UART_DMA_RXTX();
-		else
-			UART_DMA_RX();
+		USART1->SR;
+		USART1->DR;
+		USART1->CR3 |= (1UL<<6);
+
+		dbg_prev_len = rx_len;
 
 		DMA2->LIFCR = 0b111101UL<<16; // Clear DMA interrupt flags
 		DMA2_Stream2->CR |= 1UL; // Enable RX DMA
@@ -716,33 +743,17 @@ void lidar_send_cmd(int tx_len, int rx_len)
 
 	if(tx_len)
 	{
+		tx_dma_off();
 		// Configure for TX:
 		DMA2_Stream7->CR = 4UL<<25 /*Channel*/ | 0b00UL<<16 /*low prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
 			           1UL<<10 /*mem increment*/ | 0b01UL<<6 /*memory-to-periph*/;
 		DMA2_Stream7->NDTR = tx_len;
 
-		if(rx_len)
-			UART_DMA_RXTX();
-		else
-			UART_DMA_TX();
+		USART1->SR = 0;
+		USART1->CR3 |= (1UL<<7);
 
 		DMA2->HIFCR = 0b111101UL<<22; // Clear DMA interrupt flags
 		DMA2_Stream7->CR |= 1UL; // Enable TX DMA
-
-/*		char kakka[10] = "\r\n#TXxx|";
-		kakka[5] = (cur_lidar_state>9)?('a'+cur_lidar_state):('0'+cur_lidar_state);
-		kakka[6] = '0'+tx_len;
-		uart_print_string_blocking(kakka);
-		for(int i=0; i<tx_len; i++)
-		{
-			char buf[5];
-			o_utoa8_fixed(lidar_txbuf[i], buf);
-			buf[3] = ' ';
-			buf[4] = 0;
-			uart_print_string_blocking(buf);
-		}
-		uart_print_string_blocking("|\r\n");
-*/
 	}
 }
 
@@ -760,9 +771,8 @@ void lidar_start_acq()
 	dbg_prev_len = 7;
 
 	USART1->SR = 0;
-	UART_DMA_RXTX();
+	USART1->CR3 |= (1UL<<7);
 	DMA2->LIFCR = 0b111101UL<<16; // Clear DMA interrupt flags
-
 	DMA2_Stream2->CR |= 1UL; // Enable RX DMA
 }
 
@@ -787,10 +797,13 @@ void init_lidar()
 
 	USART1->BRR = 32UL<<4 | 9UL;
 	USART1->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
-	UART_DMA_NO();
+	USART1->CR3 = 1UL<<6 | 1UL<<7;
+	//UART_DMA_NO();
 
 	cur_lidar_state = S_LIDAR_OFF;
 	NVIC_SetPriority(DMA2_Stream2_IRQn, 0b0101);
 	NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+	tx_dma_off();
+	rx_dma_off();
 }
 

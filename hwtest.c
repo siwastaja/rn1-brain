@@ -570,11 +570,6 @@ void hwtest_main()
 			}
 			break;
 
-			case 'b':
-				init_lidar();
-				__enable_irq();
-				lidar_test();
-			break;
 			default:
 			break;
 
