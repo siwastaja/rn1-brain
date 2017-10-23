@@ -707,8 +707,9 @@ int main()
 
 	int cnt = 0;
 
-	extern int ignore_cmds;
+	init_lidar();
 
+	lidar_on(2, 2);
 
 	while(1)
 	{
@@ -766,6 +767,13 @@ int main()
 		// to mm/sec: / 16.72 = *245 / 4094.183
 //		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 //		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
+
+
+		send_lidar_to_uart(prev_lidar_scan, 0);
+		while(uart_busy()) random++;
+		delay_ms(100);
+		uart_send_fsm(); // send something else.
+		while(uart_busy()) random++;
 
 
 		static int sensors_stabilized = 0;

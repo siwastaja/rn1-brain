@@ -65,8 +65,158 @@ Let's use an array[720] to hold the samples: we'll never try to write to the sam
 We fill the array in the interrupt handler receiving the packets: even though the array step is only 0.5 deg, full 1/16th deg resolution
 is used to calculate the (x,y) coords, this calculation uses the most recent robot coordinates to map the lidar to the world coords.
 
+*/
+
+/*
+
+Scan matching
+
+We provide scan matching on low level. Benefits:
+
+* Offloads some work from the mapping computer
+
+* Reduces the amount of lidar data to send to the computer by combining scan points, an important point currently as we are still using 115200bps UART.
+
+* Provides direct feedback to self-calibrate gyro & wheel measurements all the time. It's good to have them calibrated
+  when we enter an area where visibility is poor so we can't scan match! This provides much less uncertainty for the mapping
+  layer, so it can, for example, use fewer particles (if particle filter is used for SLAM)
+
+Development history:
+
+First version using NEATO lidar used low-level scan matching as well. It was a separate module working with two fully acquired scans.
+There was one particular issue: on long, straight, smooth-walled corridors, it caused severe shift. This was due to the discrete points
+in the lidar scans:
+
+
+*         *
+
+
+
+*         *   
+
+
+*         *
+
+*         *
+
+*         *
+*    O    *
+*         *
+
+*         *
+
+*         *
+
+
+*         *
+
+
+
+*         * <-- think about scoring this point with the next scan, which looks exactly similar! Good scores are attained when
+the scans are shifted on the top of each other, but the points do NOT represent the same point in the actual wall, so wrong data
+association gets good scores. 
+
+This was mitigated by two means:
+* nonlinear scoring function, which gave rather small differences in scores for small alignment errors
+* weighing of total scores, so that no correction was preferred over correction if the differences in scores was small
+* requirement to have enough sample points in all segments of the images before running the algorithm at all, so that if no
+perpendicular walls exist, correction is not done at all.
+
+These mitigations were not enough: if adjusted not to produce unwanted errors, the algorithm simply practically never did
+anything.
+
+
+Instead, the right thing to do is:
+
+*         *
+|         |
+|         |
+|         |
+*         *   
+|         |
+|         |
+*         *
+|         |
+*         *
+|         |
+*         *
+*    O    *
+*         *
+|         |
+*         *
+|         |
+*         *
+|         |
+|         |
+*         *
+|         |
+|         |
+|         |    (where | is interpolated data, given the same value as the direct data points *)
+*         *  <-- now, we still don't know what the right landmark association is, but scoring two of these images together results in
+identical score for all linear shifts. Some weighing should easily take care of this uncertainty. And we can apply correction weighted by
+the certainty of the results (basically forming a kalman filter).
+
+
+What we need to do, is to match points in the latter scan to the _interpolated lines between points_ in the previous scan, instead of
+just the points.
+
+
+Why we do it here, instead of a separate module? Timing and performance.
+
+By definition, the Scance lidar is producing a continuous data flow, with _nearly_ fixed data point interval. Take 2Hz turn rate for example.
+
+Instead of buffering (load-calculate-store-load-calculate-store... in ISR) for 0.5 seconds, then processing (load-calculate-store-load-
+calculate-store... outside the ISR) for another 0.5 seconds, while simultaneously buffering the next scan, why not just do the calculation 
+right when the data arrives? It's already loaded in registers at that point, saving some cycles. Additionally, since we have to time everything
+for the worst case anyway, we have the same fixed time to process each data point in any case.
+
+So, since we need an interrupt handler processing one 7-byte lidar data packet to calculate X,Y coords for a point, we can as well calculate the coords
+for several different potential robot poses, and while at it, score them.
+
+Since we have a fairly good IMU + wheel estimation, and we are self-calibrating it all the time, we are only looking at small corrections
+between the two images. We don't have time to look far, anyway. If the points diverge far away, they'll be removed or marked invalid, and the
+mapping layer needs to figure it out.
+
+
+
+Data Management
+
+Prev img = corrected
+
+Measurement at [ang] arrives
+Loop through different potential robot poses
+	Calculate (xp, yp) for the measured point at that robot pose
+	Loop through prev img[ang-search_ang]..img[ang+search_ang] (in theory, the full image, but no time for that):
+		Find the closest (x1,y1) and the second closest (x2,y2) points
+	Calculate the shortest distance from (xp,yp) to the straight line defined by (x1,y1) and (x2,y2)
+
+
+Distance (from Wikipedia):
+
+abs((y2-y1)*xp - (x2-x1)*yp + x2*y1 - y2*x1)   /   sqrt(sq(y2-y1)+sq(x2-x1))
+
+We don't need absolute distance, only a relative score, so we can as well square the whole thing:
+sq((y2-y1)*xp - (x2-x1)*yp + x2*y1 - y2*x1)    /   (sq(y2-y1)+sq(x2-x1))
+
+Or, why do we need the denominator) at all?
+abs((y2-y1)*xp - (x2-x1)*yp + x2*y1 - y2*x1)
+
+
+
+
+      *           *         *       *
+                 X
+
+           
+
+
+
+
+
+
 
 */
+
 
 #include <stdint.h>
 #include "ext_include/stm32f2xx.h"
@@ -76,6 +226,7 @@ is used to calculate the (x,y) coords, this calculation uses the most recent rob
 #include "main.h"
 #include "lidar.h"
 #include "sin_lut.h"
+#include "comm.h"
 
  
 #define UART_DMA_NO() //do {USART1->CR3 = 0; USART1->SR = 0;} while(0)
@@ -105,6 +256,75 @@ void tx_dma_off()
 		lidar_dbg2++;
 	DMA2->HIFCR = 0b111101UL<<22;
 }
+
+
+void send_lidar_to_uart(lidar_scan_t* in, int significant_for_mapping)
+{
+	uint8_t* buf = txbuf;
+
+	int a_mid = in->pos_at_start.ang>>16;
+	int x_mid = in->pos_at_start.x;
+	int y_mid = in->pos_at_start.y;
+
+	*(buf++) = 0x84;
+	*(buf++) = ((in->status&LIVELIDAR_INVALID)?4:0) | (significant_for_mapping&0b11);
+	*(buf++) = in->id&0x7f;
+
+	*(buf++) = I16_MS(a_mid);
+	*(buf++) = I16_LS(a_mid);
+	*(buf++) = I32_I7_4(x_mid);
+	*(buf++) = I32_I7_3(x_mid);
+	*(buf++) = I32_I7_2(x_mid);
+	*(buf++) = I32_I7_1(x_mid);
+	*(buf++) = I32_I7_0(x_mid);
+	*(buf++) = I32_I7_4(y_mid);
+	*(buf++) = I32_I7_3(y_mid);
+	*(buf++) = I32_I7_2(y_mid);
+	*(buf++) = I32_I7_1(y_mid);
+	*(buf++) = I32_I7_0(y_mid);
+
+	*(buf++) = 0;
+	int tmp = 0>>16;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+	tmp = 0<<2;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+	tmp = 0<<2;
+	*(buf++) = I16_MS(tmp);
+	*(buf++) = I16_LS(tmp);
+
+
+	for(int i = 0; i < 360; i++)
+	{
+		if(in->scan[i*2].valid)
+		{
+			int x = in->scan[i*2].x - x_mid;
+			int y = in->scan[i*2].y - y_mid;
+
+			if(x < -8000 || x > 8000 || y < -8000 || y > 8000)
+			{
+				x = 0;
+				y = 0;
+			}
+
+			*(buf++) = I16_MS(x<<2);
+			*(buf++) = I16_LS(x<<2);
+			*(buf++) = I16_MS(y<<2);
+			*(buf++) = I16_LS(y<<2);
+		}
+		else
+		{
+			*(buf++) = 0;
+			*(buf++) = 0;
+			*(buf++) = 0;
+			*(buf++) = 0;
+		}
+	}
+
+	send_uart(1460);
+}
+
 
 
 extern int dbg[10];

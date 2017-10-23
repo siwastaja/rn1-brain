@@ -23,6 +23,8 @@ typedef struct
 
 typedef struct
 {
+	int status;
+	int id;
 	int n_samples;
 	pos_t pos_at_start;
 	pos_t pos_at_end;
@@ -34,6 +36,8 @@ extern lidar_scan_t *acq_lidar_scan;
 extern lidar_scan_t *prev_lidar_scan;
 
 extern int lidar_cur_n_samples;
+
+void send_lidar_to_uart(lidar_scan_t* in, int significant_for_mapping);
 
 
 typedef enum
