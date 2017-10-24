@@ -264,15 +264,39 @@ void uart_rx_handler()
 int uart_sending;
 int uart_tx_loc;
 int uart_tx_len;
+uint8_t uart_checksum_accum;
+
+#define CRC_INITIAL_REMAINDER 0x00
+#define CRC_POLYNOMIAL 0x07 // As per CRC-8-CCITT
+
+#define CALC_CRC(remainder) \
+	for(int crc__bit = 8; crc__bit > 0; --crc__bit) \
+	{ \
+		if((remainder) & 0b10000000) \
+		{ \
+			(remainder) = ((remainder) << 1) ^ CRC_POLYNOMIAL; \
+		} \
+		else \
+		{ \
+			(remainder) = ((remainder) << 1); \
+		} \
+	}
 
 void uart_10k_fsm()
 {
 	if(uart_sending && (USART3->SR & (1UL<<7)))
 	{
-		USART3->DR = txbuf[uart_tx_loc++];
-		if(uart_tx_loc > uart_tx_len)
+		if(uart_tx_loc == uart_tx_len)
 		{
+			USART3->DR = uart_checksum_accum;
 			uart_sending = 0;
+		}
+		else
+		{
+			uint8_t byte = txbuf[uart_tx_loc++];
+			USART3->DR = byte;
+			uart_checksum_accum ^= byte;
+			CALC_CRC(remainder);
 		}
 	}
 }
@@ -282,9 +306,12 @@ int send_uart(int len)
 	if(uart_sending)
 		return -1;
 
+	__disable_irq();
 	uart_tx_loc = 0;
 	uart_tx_len = len;
+	uart_checksum_accum = CRC_INITIAL_REMAINDER;
 	uart_sending = 1;
+	__enable_irq();
 	return 0;
 }
 
