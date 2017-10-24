@@ -47,7 +47,7 @@ rate	mode	samp.f	samp.f	min	max
 
 We probably don't want to ever run at over 4Hz, since the angular resolution would be compromised too much. (Maybe we'll do it 
 one day as a separate mode, when the environment is well mapped, with lots of easy visual clues, proven IMU reliability, so that
-the localization dependence on good laser data is not crucial. Then we can run at higher speeds and avoid obstacles.
+the localization dependence on good laser data is not crucial. Then we can run at higher speeds and avoid obstacles.)
 
 For mapping large spaces, it's crucial to get enough samples from far-away (say, 10 meters) walls, when seen through
 gaps created by nearby obstacles. The 360 degree resolution of the Neato lidar seemed bare minimum; even with its low 5 meter
@@ -60,10 +60,10 @@ To begin, we'll be using 2Hz sweep with 750-800Hz sample rate, giving us 375 to 
 
 Maximum number of readings per sweep is guaranteed 1075. We'll probably never do that.
 
-Let's use an array[720] to hold the samples: we'll never try to write to the same cell twice (if we don't use 1Hz-02 or 1Hz-03 modes)
-
-We fill the array in the interrupt handler receiving the packets: even though the array step is only 0.5 deg, full 1/16th deg resolution
-is used to calculate the (x,y) coords, this calculation uses the most recent robot coordinates to map the lidar to the world coords.
+We fill the array in the interrupt handler receiving the packets. Full 1/16th deg resolution is used to calculate the (x,y)
+coords, this calculation uses the most recent robot coordinates to map the lidar to the world coords. The array is filled in
+order, and only filled with valid readings, so the number of samples varies depending on scene and settings, and a certain
+angle cannot be found at a certain index. After a (too) long consideration, I found this the best.
 
 */
 
@@ -81,9 +81,11 @@ We provide scan matching on low level. Benefits:
   when we enter an area where visibility is poor so we can't scan match! This provides much less uncertainty for the mapping
   layer, so it can, for example, use fewer particles (if particle filter is used for SLAM)
 
+
 Development history:
 
-First version using NEATO lidar used low-level scan matching as well. It was a separate module working with two fully acquired scans.
+First version using NEATO lidar used low-level scan matching as well.
+
 There was one particular issue: on long, straight, smooth-walled corridors, it caused severe shift. This was due to the discrete points
 in the lidar scans:
 
@@ -116,10 +118,10 @@ in the lidar scans:
 the scans are shifted on the top of each other, but the points do NOT represent the same point in the actual wall, so wrong data
 association gets good scores. 
 
-This was mitigated by two means:
-* nonlinear scoring function, which gave rather small differences in scores for small alignment errors
-* weighing of total scores, so that no correction was preferred over correction if the differences in scores was small
-* requirement to have enough sample points in all segments of the images before running the algorithm at all, so that if no
+This was mitigated by:
+* nonlinear scoring function, which gave rather small differences in scores for small alignment errors (also limiting the amount of correction in good environments!)
+* weighing of total scores, so that zero correction was preferred if the differences in scores were small
+* requirement to have enough sample points in most segments of the images before running the algorithm at all, so that if no
 perpendicular walls exist, correction is not done at all.
 
 These mitigations were not enough: if adjusted not to produce unwanted errors, the algorithm simply practically never did
@@ -151,27 +153,16 @@ Instead, the right thing to do is:
 *         *
 |         |
 |         |
-|         |    (where | is interpolated data, given the same value as the direct data points *)
+|         |    (where | is interpolated data, valued similarly to direct data points *)
 *         *  <-- now, we still don't know what the right landmark association is, but scoring two of these images together results in
-identical score for all linear shifts. Some weighing should easily take care of this uncertainty. And we can apply correction weighted by
-the certainty of the results (basically forming a kalman filter).
+identical score for all linear shifts, which is the correct result; a human couldn't tell, either. Even minor weighing should easily take
+care of this uncertainty and pick zero correction. And we can apply correction weighted by the certainty of the results (basically
+forming a kalman filter).
 
 
 What we need to do, is to match points in the latter scan to the _interpolated lines between points_ in the previous scan, instead of
 just the points.
 
-
-Why we do it here, instead of a separate module? Timing and performance.
-
-By definition, the Scance lidar is producing a continuous data flow, with _nearly_ fixed data point interval. Take 2Hz turn rate for example.
-
-Instead of buffering (load-calculate-store-load-calculate-store... in ISR) for 0.5 seconds, then processing (load-calculate-store-load-
-calculate-store... outside the ISR) for another 0.5 seconds, while simultaneously buffering the next scan, why not just do the calculation 
-right when the data arrives? It's already loaded in registers at that point, saving some cycles. Additionally, since we have to time everything
-for the worst case anyway, we have the same fixed time to process each data point in any case.
-
-So, since we need an interrupt handler processing one 7-byte lidar data packet to calculate X,Y coords for a point, we can as well calculate the coords
-for several different potential robot poses, and while at it, score them.
 
 Since we have a fairly good IMU + wheel estimation, and we are self-calibrating it all the time, we are only looking at small corrections
 between the two images. We don't have time to look far, anyway. If the points diverge far away, they'll be removed or marked invalid, and the
@@ -202,14 +193,12 @@ Or, why do we need the denominator) at all?
 abs((y2-y1)*xp - (x2-x1)*yp + x2*y1 - y2*x1)
 
 
-
-
       *           *         *       *
                  X
 
            
 
-
+Timing:
 
 Acq             11111111222222223333333344444444...
 Match 1st                       11111   22222
@@ -221,7 +210,7 @@ Gen composite scan                    X       X
 Send composite scan                    XXXX    XXXX
 
 
-
+(More scan matching thoughts at the end of the file.)
 
 */
 
@@ -1035,3 +1024,143 @@ void init_lidar()
 	rx_dma_off();
 }
 
+
+/*
+Scan matching
+
+
+Old MCU algorithm (called "livelider correction" in the old code)
+
+Scoring function:
+For each point (of all 360 points) in scan1, find the nearest one in scan2, by angularly scanning 20 points around the expected angle
+(360*20 = 7200 operations, each operation:  dist = (x1-x2)^2 + (y1-y2)^2, if dist < smallest then smallest = dist)   <-- the runtime killer
+Run smallest dist through non-linear shaping function (trivial, 1/(smallest+constant_offset), "only" 360 such operations)
+Sum them up to form the score, bigger = better match
+
+Iterations we used:
+
+Pass 1:
+First, (x,y) iterated together; then, with the winner, angle iterated separately
+
+Ang:
+-1.0 deg      
+ 0
++1.0 deg
+
+X:
+-60 mm
+-30 mm
+  0
++30 mm
++60 mm
+
+Y: same as X
+
+Run as:
+First ang, then
+
+
+
+Pass 2 (added on the top of the winner of pass1)
+First, (x,y) iterated together; then, with the winner, angle iterated separately
+
+Ang:
+-1.0 deg      
+-0.5 deg
+ 0
++0.5 deg
++1.0 deg
+
+X:
+-20 mm
+-10 mm
+  0
++10 mm
++20 mm
+
+Y: same as X
+
+
+Pass 3 (added on the top of the winner of pass2)
+First, (x,y) iterated together; then, with the winner, angle iterated separately
+
+Ang:
+-0.50 deg      
+-0.25 deg
+ 0
++0.25 deg
++0.50 deg
+
+X:
+-10 mm
+ -5 mm
+  0
+ +5 mm
++10 mm
+
+Y: same as X
+
+
+Pass 4:
+X, Y and angle all iterated separately
+
+Ang:
+-0.20 deg
+-0.15 deg
+-0.10 deg
+-0.05 deg
+ 0
++0.05 deg
++0.10 deg
++0.15 deg
++0.20 deg
+
+
+X:
+-4 mm
+-2 mm
+ 0
++2 mm
++4 mm
+
+
+
+
+The new algorithm
+
+* Admit that we'll only fix small drifts.
+* The point in the gyro is that it's accurate short term!
+* Angle is important, and needs to be iterated to high resolution, but not far away
+* Understood that the X&Y are related, no need to stupidly iterate everything. As the angle is almost precise,
+  most of the iteration needs to go in the "forward" direction only
+* As the angle is iterated, sideway drift is expected to be related to the angular drift, as well
+ --> much less iterations to do
+ --> can spend the time to do them properly, i.e., nested
+
+
+* Fix the biggest issue caused by discrete sampling points in featureless corridors
+ --> scoring function complexity goes up, and it's the most important runtime killer :(
+ --> stupid 360*20 two-dimensional search is not going to cut it anymore
+
+* Now we have possibly more samples than 360 (prepare for 720) per scan
+* At the same time, we have more time to process them, so it scales back somewhat
+   * (But not quadratically, so we can't do a stupid 720*40 search)
+
+
+* Correlate each sample in scan2 to an interpolated line of scan1, to fix the discretization issue.
+
+
+By design:
+* Limit scan range to 15 000 mm
+* Limit search range (biggest error) to 0.75 deg, +/-100mm
+-> Furthest away points will shift max 300 mm compared to zero correction (this info is useful in optimization)
+
+
+
+* Pre-process step (for optimization)
+For each point in scan2:
+
+
+
+
+*/
