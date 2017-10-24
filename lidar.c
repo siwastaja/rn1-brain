@@ -211,6 +211,14 @@ abs((y2-y1)*xp - (x2-x1)*yp + x2*y1 - y2*x1)
 
 
 
+Acq             11111111222222223333333344444444...
+Match 1st                       11111   22222
+Match 2nd                       22222   33333
+Correct pose                        X       X
+Replace old scan poses               3       4
+Corr full scan                        2       3
+Gen composite scan                    X       X
+Send composite scan                    XXXX    XXXX
 
 
 
