@@ -11,6 +11,12 @@ typedef struct
 	int32_t y;
 } point_t;
 
+typedef struct
+{
+	int32_t x;
+	int32_t y;
+} xy_i32_t;
+
 
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
 	#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
@@ -21,14 +27,33 @@ typedef struct
 	#define LIDAR_IGNORE_LEN_FRONT 120
 #endif
 
-typedef struct
+/*
+Lidar scan to be transferred to the host computer.
+Keep 32-bit alignment so that the samples are quick to access.
+Make sure the alignment doesn't break when adding/removing variables.
+
+*/
+
+#define LIDAR_MAX_POINTS 720
+
+typedef struct __attribute__((packed))
 {
-	int status;
-	int id;
-	int n_samples;
+	uint8_t status;
+	uint8_t id;
+	int16_t n_points;
 	pos_t pos_at_start;
 	pos_t pos_at_end;
-	point_t scan[720];
+
+	/*
+		All scan points are referenced to refxy instead of the world origin.
+		This has the following benefits:
+		- due to the data size reduction needed for UART output, this was done anyway (32b->16b) - now we can send the raw struct as is!
+		- when processing the data in the scan matching algorithm, 16-bit data allows much faster load + SIMD operations
+
+		refxy may be, but usually isn't the robot pose at any point during the scan, but it's near due to the +/- 32 meter radius limit of 16 bits.
+	*/
+	xy_i32_t refxy;
+	xy_i32_t scan[LIDAR_MAX_POINTS];
 } lidar_scan_t;
 
 extern lidar_scan_t lidar_scans[2];
