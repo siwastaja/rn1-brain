@@ -265,6 +265,7 @@ int uart_sending;
 int uart_tx_loc;
 int uart_tx_len;
 uint8_t uart_checksum_accum;
+void* p_txbuf;
 
 #define CRC_INITIAL_REMAINDER 0x00
 #define CRC_POLYNOMIAL 0x07 // As per CRC-8-CCITT
@@ -293,7 +294,7 @@ void uart_10k_fsm()
 		}
 		else
 		{
-			uint8_t byte = txbuf[uart_tx_loc++];
+			uint8_t byte = (char*)p_txbuf[uart_tx_loc++];
 			USART3->DR = byte;
 			uart_checksum_accum ^= byte;
 			CALC_CRC(remainder);
@@ -301,12 +302,13 @@ void uart_10k_fsm()
 	}
 }
 
-int send_uart(int len)
+int send_uart(void* buf, int len)
 {
 	if(uart_sending)
 		return -1;
 
 	__disable_irq();
+	p_txbuf = buf;
 	uart_tx_loc = 0;
 	uart_tx_len = len;
 	uart_checksum_accum = CRC_INITIAL_REMAINDER;
