@@ -91,7 +91,7 @@ static void handle_maintenance_msg()
 volatile int do_compass_round = 1;
 extern int accurate_turngo;
 
-int ignore_cmds = 1;
+int ignore_cmds = 0;
 
 void handle_uart_message()
 {
@@ -175,7 +175,7 @@ void handle_uart_message()
 			corr.x = I7I7_I16_lossy(process_rx_buf[3],process_rx_buf[4])>>2;
 			corr.y = I7I7_I16_lossy(process_rx_buf[5],process_rx_buf[6])>>2;
 			correct_location_without_moving_external(corr);
-			//reset_livelidar_images(process_rx_buf[7]);
+			set_lidar_id(process_rx_buf[7]);
 		}
 		break;
 
@@ -261,10 +261,11 @@ void uart_rx_handler()
 	}
 }
 
-int uart_sending;
+volatile int uart_sending;
 int uart_tx_loc;
 int uart_tx_len;
-uint8_t uart_checksum_accum;
+uint8_t uart_tx_checksum_accum;
+uint8_t uart_tx_header;
 void* p_txbuf;
 
 #define CRC_INITIAL_REMAINDER 0x00
@@ -285,33 +286,50 @@ void* p_txbuf;
 
 void uart_10k_fsm()
 {
-	if(uart_sending && (USART3->SR & (1UL<<7)))
+	if(uart_sending && (USART3->SR & (1UL<<7)) /*uart tx free*/)
 	{
-		if(uart_tx_loc == uart_tx_len)
+		if(uart_tx_loc == -3)
 		{
-			USART3->DR = uart_checksum_accum;
+			USART3->DR = uart_tx_header;
+			uart_tx_loc++;
+		}
+		else if(uart_tx_loc == -2)
+		{
+			USART3->DR = uart_tx_len & 0xff;
+			uart_tx_loc++;
+		}
+		else if(uart_tx_loc == -1)
+		{
+			USART3->DR = (uart_tx_len & 0xff00)>>8;
+			uart_tx_loc++;
+		}
+		else if(uart_tx_loc == uart_tx_len)
+		{
+			USART3->DR = uart_tx_checksum_accum;
 			uart_sending = 0;
 		}
 		else
 		{
-			uint8_t byte = (char*)p_txbuf[uart_tx_loc++];
+			uint8_t byte = ((char*)p_txbuf)[uart_tx_loc];
 			USART3->DR = byte;
-			uart_checksum_accum ^= byte;
-			CALC_CRC(remainder);
+			uart_tx_checksum_accum ^= byte;
+			CALC_CRC(uart_tx_checksum_accum);
+			uart_tx_loc++;
 		}
 	}
 }
 
-int send_uart(void* buf, int len)
+int send_uart(void* buf, uint8_t header, int len)
 {
 	if(uart_sending)
 		return -1;
 
 	__disable_irq();
 	p_txbuf = buf;
-	uart_tx_loc = 0;
+	uart_tx_header = header;
+	uart_tx_loc = -3;
 	uart_tx_len = len;
-	uart_checksum_accum = CRC_INITIAL_REMAINDER;
+	uart_tx_checksum_accum = CRC_INITIAL_REMAINDER;
 	uart_sending = 1;
 	__enable_irq();
 	return 0;
@@ -362,37 +380,6 @@ void uart_send_fsm()
 
 	switch(send_count)
 	{
-		case 0:
-		{
-			msg_gyro_t msg;
-			msg.status = 1;
-			msg.int_x = I16_I14(latest_gyro->x);
-			msg.int_y = I16_I14(latest_gyro->y);
-			msg.int_z = I16_I14(latest_gyro->z);
-			txbuf[0] = 128;
-			memcpy(txbuf+1, &msg, sizeof(msg_gyro_t));
-			send_uart(sizeof(msg_gyro_t)+1);
-		}
-		break;
-
-		case 2:
-		{
-			txbuf[0] = 0xa1;
-			txbuf[1] = 1;
-			txbuf[2] = I16_MS(optflow_int_x);
-			txbuf[3] = I16_LS(optflow_int_x);
-			txbuf[4] = I16_MS(optflow_int_y);
-			txbuf[5] = I16_LS(optflow_int_y);
-			txbuf[6] = latest_optflow.squal>>1;
-			txbuf[7] = latest_optflow.dx&0x7f;
-			txbuf[8] = latest_optflow.dy&0x7f;
-			txbuf[9] = latest_optflow.max_pixel>>1;
-			txbuf[10] = latest_optflow.dummy>>1;
-			txbuf[11] = latest_optflow.motion>>1;
-			send_uart(12);
-		}
-		break;
-
 		case 4:
 		{
 			int bat_v = get_bat_v();
@@ -400,89 +387,38 @@ void uart_send_fsm()
 			if(bat_percentage < 0) bat_percentage = 0;
 			if(bat_percentage > 127) bat_percentage = 127;
 
-			txbuf[0] = 0xa2;
-			txbuf[1] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
-			txbuf[2] = I16_MS(bat_v);
-			txbuf[3] = I16_LS(bat_v);
-			txbuf[4] = bat_percentage;
-			send_uart(5);
-		}
-		break;
-
-		case 6:
-		{
-			point_t sons[NUM_SONARS];
-			pos_t rpos;
-			get_sonars(sons, &rpos);
-
-			txbuf[0] = 0x85;
-			txbuf[1] = (sons[2].valid<<2) | (sons[1].valid<<1) | (sons[0].valid);
-
-			int tm = rpos.x;
-			txbuf[2] = I32_I7_4(tm);
-			txbuf[3] = I32_I7_3(tm);
-			txbuf[4] = I32_I7_2(tm);
-			txbuf[5] = I32_I7_1(tm);
-			txbuf[6] = I32_I7_0(tm);
-			tm = rpos.y;
-			txbuf[7] = I32_I7_4(tm);
-			txbuf[8] = I32_I7_3(tm);
-			txbuf[9] = I32_I7_2(tm);
-			txbuf[10] = I32_I7_1(tm);
-			txbuf[11] = I32_I7_0(tm);
-
-			for(int i=0; i<3; i++)
-			{
-				tm = sons[i].x;
-				txbuf[10*i+12] = I32_I7_4(tm);
-				txbuf[10*i+13] = I32_I7_3(tm);
-				txbuf[10*i+14] = I32_I7_2(tm);
-				txbuf[10*i+15] = I32_I7_1(tm);
-				txbuf[10*i+16] = I32_I7_0(tm);
-				tm = sons[i].y;
-				txbuf[10*i+17] = I32_I7_4(tm);
-				txbuf[10*i+18] = I32_I7_3(tm);
-				txbuf[10*i+19] = I32_I7_2(tm);
-				txbuf[10*i+20] = I32_I7_1(tm);
-				txbuf[10*i+21] = I32_I7_0(tm);
-			}
-
-			send_uart(42);
-
+			txbuf[0] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
+			txbuf[1] = I16_MS(bat_v);
+			txbuf[2] = I16_LS(bat_v);
+			txbuf[3] = bat_percentage;
+			send_uart(txbuf, 0xa2, 4);
 		}
 		break;
 
 		case 8:
 		{
-			txbuf[0] = 0xd2;
 			for(int i=0; i<10; i++)
 			{
 				int tm = dbg[i];
-				txbuf[5*i+1] = I32_I7_4(tm);
-				txbuf[5*i+2] = I32_I7_3(tm);
-				txbuf[5*i+3] = I32_I7_2(tm);
-				txbuf[5*i+4] = I32_I7_1(tm);
-				txbuf[5*i+5] = I32_I7_0(tm);
+				txbuf[5*i+0] = I32_I7_4(tm);
+				txbuf[5*i+1] = I32_I7_3(tm);
+				txbuf[5*i+2] = I32_I7_2(tm);
+				txbuf[5*i+3] = I32_I7_1(tm);
+				txbuf[5*i+4] = I32_I7_0(tm);
 			}
-			send_uart(51);
-		}
-		break;
-
-		case 10:
-		{
+			send_uart(txbuf, 0xd2, 50);
 		}
 		break;
 
 		case 12:
 		{
 			extern int cur_compass_angle;
-			txbuf[0] = 0xa3;
 			extern volatile int compass_round_on;
-			txbuf[1] = compass_round_on;
+			txbuf[0] = compass_round_on;
 			int tm = cur_compass_angle>>16;
-			txbuf[2] = I16_MS(tm);
-			txbuf[3] = I16_LS(tm);
-			send_uart(4);
+			txbuf[1] = I16_MS(tm);
+			txbuf[2] = I16_LS(tm);
+			send_uart(txbuf, 0xa3, 3);
 		}
 		break;
 
@@ -494,70 +430,76 @@ void uart_send_fsm()
 		case 11:
 		case 13:
 		{
-			txbuf[0] = 0xa5;
-			txbuf[1] = 1;
-			txbuf[2] = get_xy_id();
+			txbuf[0] = 1;
+			txbuf[1] = get_xy_id();
 			int tm = get_xy_left();
 			if(tm < 0) tm*=-1;
 			else if(tm > 30000) tm = 30000;
-			txbuf[3] = I16_MS(tm);
-			txbuf[4] = I16_LS(tm);
+			txbuf[2] = I16_MS(tm);
+			txbuf[3] = I16_LS(tm);
 
 			uint32_t t = get_obstacle_avoidance_stop_flags();
 
-			txbuf[5] = I32_I7_4(t);
-			txbuf[6] = I32_I7_3(t);
-			txbuf[7] = I32_I7_2(t);
-			txbuf[8] = I32_I7_1(t);
-			txbuf[9] = I32_I7_0(t);
+			txbuf[4] = I32_I7_4(t);
+			txbuf[5] = I32_I7_3(t);
+			txbuf[6] = I32_I7_2(t);
+			txbuf[7] = I32_I7_1(t);
+			txbuf[8] = I32_I7_0(t);
 
 			t = get_obstacle_avoidance_action_flags();
 
-			txbuf[10] = I32_I7_4(t);
-			txbuf[11] = I32_I7_3(t);
-			txbuf[12] = I32_I7_2(t);
-			txbuf[13] = I32_I7_1(t);
-			txbuf[14] = I32_I7_0(t);
+			txbuf[9] = I32_I7_4(t);
+			txbuf[10] = I32_I7_3(t);
+			txbuf[11] = I32_I7_2(t);
+			txbuf[12] = I32_I7_1(t);
+			txbuf[13] = I32_I7_0(t);
 
 			extern uint8_t feedback_stop_flags;
 			extern int feedback_stop_param1, feedback_stop_param2;
-			txbuf[15] = feedback_stop_flags&0x7f;
+			txbuf[14] = feedback_stop_flags&0x7f;
 			tm = feedback_stop_param1;
-			txbuf[16] = I16_MS(tm);
-			txbuf[17] = I16_LS(tm);
+			txbuf[15] = I16_MS(tm);
+			txbuf[16] = I16_LS(tm);
 			tm = feedback_stop_param2;
-			txbuf[18] = I16_MS(tm);
-			txbuf[19] = I16_LS(tm);
+			txbuf[17] = I16_MS(tm);
+			txbuf[18] = I16_LS(tm);
 
-			txbuf[20] = 0xa0;
-			txbuf[21] = 1;
+			send_uart(txbuf, 0xa5, 19);
+		}
+		break;
+
+		case 0:
+		case 2:
+		case 6:
+		case 10:
+		{
+			txbuf[0] = 1;
 			__disable_irq();
-			tm = cur_pos.ang;
+			int tm = cur_pos.ang;
 			__enable_irq();
 			tm>>=16;
-			txbuf[22] = I16_MS(tm);
-			txbuf[23] = I16_LS(tm);
+			txbuf[1] = I16_MS(tm);
+			txbuf[2] = I16_LS(tm);
 			__disable_irq();
 			tm = cur_pos.x;
 			__enable_irq();
 			if(tm < -1000000 || tm > 1000000) tm = 123456789;
-			txbuf[24] = I32_I7_4(tm);
-			txbuf[25] = I32_I7_3(tm);
-			txbuf[26] = I32_I7_2(tm);
-			txbuf[27] = I32_I7_1(tm);
-			txbuf[28] = I32_I7_0(tm);
+			txbuf[3] = I32_I7_4(tm);
+			txbuf[4] = I32_I7_3(tm);
+			txbuf[5] = I32_I7_2(tm);
+			txbuf[6] = I32_I7_1(tm);
+			txbuf[7] = I32_I7_0(tm);
 			__disable_irq();
 			tm = cur_pos.y;
 			__enable_irq();
 			if(tm < -1000000 || tm > 1000000) tm = 123456789;
-			txbuf[29] = I32_I7_4(tm);
-			txbuf[30] = I32_I7_3(tm);
-			txbuf[31] = I32_I7_2(tm);
-			txbuf[32] = I32_I7_1(tm);
-			txbuf[33] = I32_I7_0(tm);
+			txbuf[8] = I32_I7_4(tm);
+			txbuf[9] = I32_I7_3(tm);
+			txbuf[10] = I32_I7_2(tm);
+			txbuf[11] = I32_I7_1(tm);
+			txbuf[12] = I32_I7_0(tm);
 
-			send_uart(34);
-
+			send_uart(txbuf, 0xa0, 13);
 		}
 		break;		
 

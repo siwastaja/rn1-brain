@@ -17,8 +17,14 @@ typedef struct
 	int32_t y;
 } xy_i32_t;
 
+typedef struct
+{
+	int16_t x;
+	int16_t y;
+} xy_i16_t;
 
-#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
+
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
 	#define LIDAR_IGNORE_LEN 350 // mm, everything below this is marked in ignore list during ignore scan.
 	#define LIDAR_IGNORE_LEN_FRONT 200 // mm, everything below this is marked in ignore list during ignore scan.
 #endif
@@ -32,11 +38,13 @@ Lidar scan to be transferred to the host computer.
 Keep 32-bit alignment so that the samples are quick to access.
 Make sure the alignment doesn't break when adding/removing variables.
 
+
+
 */
 
 #define LIDAR_MAX_POINTS 720
 
-typedef struct __attribute__((packed))
+typedef struct __attribute__((packed)) __attribute__((aligned(4)))
 {
 	uint8_t status;
 	uint8_t id;
@@ -51,10 +59,15 @@ typedef struct __attribute__((packed))
 		- when processing the data in the scan matching algorithm, 16-bit data allows much faster load + SIMD operations
 
 		refxy may be, but usually isn't the robot pose at any point during the scan, but it's near due to the +/- 32 meter radius limit of 16 bits.
+
+		As scan[] is the last thing in this struct, you can always truncate when sending or copying: use LIDAR_SIZEOF(lidar_scan) macro to get the actual
+		required size for the struct.
 	*/
 	xy_i32_t refxy;
-	xy_i32_t scan[LIDAR_MAX_POINTS];
+	xy_i16_t scan[LIDAR_MAX_POINTS];
 } lidar_scan_t;
+
+#define LIDAR_SIZEOF(scan) (1+1+2+2*sizeof(pos_t)+sizeof(xy_i32_t)+sizeof(xy_i16_t)*((scan).n_points))
 
 extern lidar_scan_t lidar_scans[2];
 extern lidar_scan_t *acq_lidar_scan;
@@ -132,7 +145,7 @@ int lidar_is_half();
 
 void lidar_fsm();
 
-void reset_livelidar_images(int id);
+void set_lidar_id(int id);
 
 void lidar_mark_invalid();
 

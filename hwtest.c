@@ -471,11 +471,11 @@ void hwtest_main()
 
 					p_buf = o_str_append(p_buf, (acq_lidar_scan == &lidar_scans[0])?" *":"  ");
 					p_buf = o_str_append(p_buf, "SCAN0 = ");
-					p_buf = o_utoa16_fixed(lidar_scans[0].n_samples, p_buf);
+					p_buf = o_utoa16_fixed(lidar_scans[0].n_points, p_buf);
 
 					p_buf = o_str_append(p_buf, (acq_lidar_scan == &lidar_scans[1])?" *":"  ");
 					p_buf = o_str_append(p_buf, "SCAN1 = ");
-					p_buf = o_utoa16_fixed(lidar_scans[1].n_samples, p_buf);
+					p_buf = o_utoa16_fixed(lidar_scans[1].n_points, p_buf);
 
 					uart_print_string_blocking(buffer);
 					lidar_fsm();
@@ -484,27 +484,17 @@ void hwtest_main()
 					p_buf = o_str_append(p_buf, " PREV IMG = ");
 
 
-					for(int o = 0; o < 360; o+=358)
+					for(int i = 0; i < 4; i++)
 					{
-						for(int i = o; i < o+4; i++)
-						{
-							if(prev_lidar_scan->scan[i].valid)
-							{
-								p_buf = o_utoa16_fixed(prev_lidar_scan->scan[i].x, p_buf);
-								p_buf = o_str_append(p_buf, ",");
-								p_buf = o_utoa16_fixed(prev_lidar_scan->scan[i].y, p_buf);
-								p_buf = o_str_append(p_buf, " ");
-							}
-							else
-								p_buf = o_str_append(p_buf, "            ");
-						}
-						p_buf = o_str_append(p_buf, ".. ");
-
-						uart_print_string_blocking(buffer);
-						lidar_fsm();
-						p_buf = buffer;
-
+						p_buf = o_itoa16_fixed(prev_lidar_scan->scan[i].x, p_buf);
+						p_buf = o_str_append(p_buf, ",");
+						p_buf = o_itoa16_fixed(prev_lidar_scan->scan[i].y, p_buf);
+						p_buf = o_str_append(p_buf, "  ");
 					}
+
+					uart_print_string_blocking(buffer);
+					lidar_fsm();
+					p_buf = buffer;
 
 					uart_print_string_blocking("\r\n");
 

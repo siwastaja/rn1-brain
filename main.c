@@ -1,4 +1,4 @@
-#if (!RN1P4 && !PULU1 && !RN1P6 && !RN1P5)
+#if (!RN1P4 && !PULU1 && !RN1P6 && !RN1P7)
 #error "Unsupported robot model"
 #endif
 
@@ -507,6 +507,8 @@ int get_bat_v() // in mv
 
 volatile uint32_t random = 123;
 
+extern volatile int lidar_scan_ready;
+
 int main()
 {
 	/*
@@ -709,7 +711,7 @@ int main()
 
 	init_lidar();
 
-	lidar_on(2, 2);
+	lidar_on(2, 1);
 
 	while(1)
 	{
@@ -742,7 +744,7 @@ int main()
 			#ifdef RN1P6
 			if(lidar_full_rev[0].idx != 161)
 			#endif
-			#ifdef RN1P5
+			#ifdef RN1P7
 			if(lidar_full_rev[0].idx != 161)
 			#endif
 			#ifdef PULU1
@@ -768,23 +770,35 @@ int main()
 //		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 //		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
-
-		send_lidar_to_uart(prev_lidar_scan, 0);
 		while(uart_busy()) random++;
-		delay_ms(100);
+		static uint8_t sync_packet[8] = {0xff,0xff,0xff,0xff,  0xff,0xff,0x12,0xab};
+		send_uart(sync_packet, 0xaa, 8);
+		while(uart_busy()) random++;
+
+		if(lidar_scan_ready)
+		{
+			LED_ON();
+			lidar_scan_ready = 0;
+			send_uart(prev_lidar_scan, 0x84, LIDAR_SIZEOF(*prev_lidar_scan));
+		}
+		while(uart_busy()) random++;
 		uart_send_fsm(); // send something else.
+		delay_ms(50);
 		while(uart_busy()) random++;
+		LED_OFF();
+
+		dbg[4] = cur_pos.x;
+		dbg[5] = cur_pos.y;
 
 
+/*
 		static int sensors_stabilized = 0;
 		if(!sensors_stabilized && seconds > 10)
 		{
-//			dbg[2] = dbg[3] = dbg[4] = dbg[5] = dbg[6] = dbg[7] = 0;
 			sensors_stabilized = 1;
 			enable_collision_detection();
 		}
-
-		CHARGER_ENA();
+*/
 	}
 
 

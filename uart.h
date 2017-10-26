@@ -19,7 +19,7 @@ void handle_uart_message();
 // The uart ISR, should be of high priority to data register overruns (there is no DMA for UART in the lousy STM32!)
 void uart_rx_handler();
 
-int send_uart(int len);
+int send_uart(void* buf, uint8_t header, int len);
 
 void uart_10k_fsm();
 

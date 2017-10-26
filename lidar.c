@@ -225,7 +225,6 @@ Send composite scan                    XXXX    XXXX
 #include "sin_lut.h"
 #include "comm.h"
 
- 
 #define UART_DMA_NO() //do {USART1->CR3 = 0; USART1->SR = 0;} while(0)
 #define UART_DMA_RX() //do {USART1->CR3 = 1UL<<6; USART1->SR = 0;} while(0)
 #define UART_DMA_TX() //do {USART1->CR3 = 1UL<<7; USART1->SR = 0;} while(0)
@@ -255,75 +254,6 @@ void tx_dma_off()
 }
 
 
-void send_lidar_to_uart(lidar_scan_t* in, int significant_for_mapping)
-{
-	uint8_t* buf = txbuf;
-
-	int a_mid = in->pos_at_start.ang>>16;
-	int x_mid = in->pos_at_start.x;
-	int y_mid = in->pos_at_start.y;
-
-	*(buf++) = 0x84;
-	*(buf++) = ((in->status&LIVELIDAR_INVALID)?4:0) | (significant_for_mapping&0b11);
-	*(buf++) = in->id&0x7f;
-
-	*(buf++) = I16_MS(a_mid);
-	*(buf++) = I16_LS(a_mid);
-	*(buf++) = I32_I7_4(x_mid);
-	*(buf++) = I32_I7_3(x_mid);
-	*(buf++) = I32_I7_2(x_mid);
-	*(buf++) = I32_I7_1(x_mid);
-	*(buf++) = I32_I7_0(x_mid);
-	*(buf++) = I32_I7_4(y_mid);
-	*(buf++) = I32_I7_3(y_mid);
-	*(buf++) = I32_I7_2(y_mid);
-	*(buf++) = I32_I7_1(y_mid);
-	*(buf++) = I32_I7_0(y_mid);
-
-	*(buf++) = 0;
-	int tmp = 0>>16;
-	*(buf++) = I16_MS(tmp);
-	*(buf++) = I16_LS(tmp);
-	tmp = 0<<2;
-	*(buf++) = I16_MS(tmp);
-	*(buf++) = I16_LS(tmp);
-	tmp = 0<<2;
-	*(buf++) = I16_MS(tmp);
-	*(buf++) = I16_LS(tmp);
-
-
-	for(int i = 0; i < 360; i++)
-	{
-		if(in->scan[i*2].valid)
-		{
-			int x = in->scan[i*2].x - x_mid;
-			int y = in->scan[i*2].y - y_mid;
-
-			if(x < -8000 || x > 8000 || y < -8000 || y > 8000)
-			{
-				x = 0;
-				y = 0;
-			}
-
-			*(buf++) = I16_MS(x<<2);
-			*(buf++) = I16_LS(x<<2);
-			*(buf++) = I16_MS(y<<2);
-			*(buf++) = I16_LS(y<<2);
-		}
-		else
-		{
-			*(buf++) = 0;
-			*(buf++) = 0;
-			*(buf++) = 0;
-			*(buf++) = 0;
-		}
-	}
-
-	send_uart(1460);
-}
-
-
-
 extern int dbg[10];
 
 extern void delay_us(uint32_t i);
@@ -337,119 +267,12 @@ point_t lidar_collision_avoidance[360];
 
 
 
-uint8_t lidar_ignore[360];
-
-const int lidar_ignore_len[32] =
-#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
-{
-100,
-(100+170)/2,
-170,
-(170+200)/2,
-200,
-(200+220)/2,
-220,
-(220+200)/2,
-200,
-(200+250)/2,
-250,
-(250+300)/2,
-300,
-(300+390)/2,
-390,
-(390+350)/2,
-350,
-(350+390)/2,
-390,
-(390+300)/2,
-300,
-(300+250)/2,
-250,
-(250+200)/2,
-200,
-(200+220)/2,
-220,
-(220+200)/2,
-200,
-(200+170)/2,
-170,
-(170+100)/2
-};
-#endif
-
-#ifdef PULU1
-{
-30,
-(30+55)/2,
-55,
-(55+70)/2,
-70,
-(70+90)/2,
-90,
-(90+70)/2,
-70,
-(70+90)/2,
-90,
-(90+120)/2,
-120,
-(120+210)/2,
-210,
-(210+190)/2,
-190,
-(190+210)/2,
-210,
-(210+120)/2,
-120,
-(120+90)/2,
-90,
-(90+70)/2,
-70,
-(70+90)/2,
-90,
-(90+70)/2,
-70,
-(70+55)/2,
-55,
-(55+30)/2
-};
-#endif
-
-
 /*
 	Call lidar_fsm() at 1 kHz.
 */
 
 int reset;
-int cur_lidar_id;
-
-
-/*
-void generate_lidar_ignore()
-{
-	int i;
-	for(i = 0; i < 360; i++) lidar_ignore[i] = 0;
-
-	for(i = 0; i < 90; i++)
-	{
-		int o;
-		for(o = 0; o < 4; o++)
-		{
-			if(!(lidar_full_rev[i].d[o].flags_distance&(1<<15)))
-			{
-				if((int)(lidar_full_rev[i].d[o].flags_distance&0x3fff) < ((i<12||i>=78)?LIDAR_IGNORE_LEN_FRONT:LIDAR_IGNORE_LEN))
-				{
-					int cur = i*4+o;
-					int next = cur+1; if(next > 359) next = 0;
-					int prev = cur-1; if(prev < 0) prev = 359;
-					lidar_ignore[prev] = 1;
-					lidar_ignore[cur] = 1;
-					lidar_ignore[next] = 1;
-				}
-			}
-		}
-	}
-}
-*/
+volatile int cur_lidar_id;
 
 lidar_state_t cur_lidar_state;
 
@@ -523,6 +346,33 @@ void lidar_off()
 	cur_lidar_state = S_LIDAR_OFF;
 	lidar_error_code = LIDAR_NO_ERROR;
 }
+
+void set_lidar_id(int id)
+{
+	cur_lidar_id = id;
+}
+
+
+typedef struct  // These angles in 1/16th degrees!
+{
+	int32_t start;
+	int32_t end;
+} ignore_area_t;
+
+#define IGN(mid, width) {(int32_t)(((mid)-((width)/2.0))*16.0), (int32_t)(((mid)+((width)/2.0))*16.0)}
+
+// too many ignore areas could slow down the ISR too much... Sensible amount is 6.
+#define N_IGNORE_AREAS 6
+const ignore_area_t ignore_areas[N_IGNORE_AREAS] =
+{
+	IGN(58.80 , 6.80+5.0),
+	IGN(121.20, 6.00+5.0),
+	IGN(151.17, 3.46+5.0),
+	IGN(208.83, 3.46+5.0),
+	IGN(238.80, 6.00+10.0),  // cable hole
+	IGN(301.20, 6.80+5.0)
+};
+
 
 int wait_ready_poll_cnt;
 
@@ -647,6 +497,8 @@ void lidar_fsm()
 
 int lidar_cur_n_samples;
 int dbg_prev_len;
+
+volatile int lidar_scan_ready;
 
 // Undocumented bug in Scanse Sweep: while the motor is stabilizing / calibrating, it also ignores the "Adjust LiDAR Sample rate" command (completely, no reply).
 
@@ -859,53 +711,69 @@ void lidar_rx_done_inthandler()
 				break;
 			}
 
-
 			if(chk_err_cnt) chk_err_cnt--;
 			if(lidar_rxbuf[buf_idx][0]) // non-zero = sync. (error flags have been handled already)
 			{
-				acq_lidar_scan->n_samples = lidar_cur_n_samples;
+				acq_lidar_scan->n_points = lidar_cur_n_samples;
 				COPY_POS(acq_lidar_scan->pos_at_end, cur_pos);
 				lidar_scan_t* swptmp;
 				swptmp = prev_lidar_scan;
 				prev_lidar_scan = acq_lidar_scan;
 				acq_lidar_scan = swptmp;
+				lidar_scan_ready = 1;
 				COPY_POS(acq_lidar_scan->pos_at_start, cur_pos);
+				// Right now, refxy is simply the robot pose at the start of the scan.
+				acq_lidar_scan->refxy.x = cur_pos.x;
+				acq_lidar_scan->refxy.y = cur_pos.y;
 				lidar_cur_n_samples = 0;
-				acq_lidar_scan->n_samples = lidar_cur_n_samples;
+				acq_lidar_scan->id = cur_lidar_id;
+				acq_lidar_scan->status = 0;
+				acq_lidar_scan->n_points = 0;
 			}
 
-			lidar_cur_n_samples++;
+			if(lidar_cur_n_samples > LIDAR_MAX_POINTS-1)
+			{
+				break; // Ignore excess data - wait for the sync data.
+			}
+
 
 			// optimization todo: we are little endian like the sensor: align rxbuf properly and directly access as uint16
 			int32_t degper16 = (lidar_rxbuf[buf_idx][2]<<8) | lidar_rxbuf[buf_idx][1];
 			int32_t len      = (lidar_rxbuf[buf_idx][4]<<8) | lidar_rxbuf[buf_idx][3];
 //			int snr      = lidar_rxbuf[buf_idx][5];
 
-			unsigned int degper2 = degper16>>3;
-			if(degper2 > 719)
+			if(len < 10)
 			{
-				chk_err_cnt+=20;
+				// "1 cm" signifies no signal. "0 cm" is undefined.
 				break;
 			}
 
-			if(len < 2)
+			for(int i=0; i<N_IGNORE_AREAS; i++)
 			{
-				acq_lidar_scan->scan[degper2].valid = 0;
-				break;
+				if(degper16 > ignore_areas[i].start && degper16 < ignore_areas[i].end)
+				{
+					goto IGNORE_SAMPLE;
+				}
 			}
 
 			len *= 10; // cm --> mm
 
-			uint32_t ang32 = (uint32_t)cur_pos.ang + degper16*ANG_1PER16_DEG;
+			uint32_t ang32 = (uint32_t)cur_pos.ang - degper16*ANG_1PER16_DEG;
 			int32_t y_idx = (ang32)>>SIN_LUT_SHIFT;
 			int32_t x_idx = (1073741824-ang32)>>SIN_LUT_SHIFT;
 
-			acq_lidar_scan->scan[degper2].valid = 1;
-			acq_lidar_scan->scan[degper2].x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)len)>>15);
-			acq_lidar_scan->scan[degper2].y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)len)>>15);
-			
+			int32_t x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)len)>>15) - acq_lidar_scan->refxy.x;
+			int32_t y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)len)>>15) - acq_lidar_scan->refxy.y;
 
-				
+			if(x < -30000 || x > 30000 || y < -30000 || y > 30000)
+				break;
+
+			acq_lidar_scan->scan[lidar_cur_n_samples].x = x;
+			acq_lidar_scan->scan[lidar_cur_n_samples].y = y;
+			
+			lidar_cur_n_samples++;
+
+			IGNORE_SAMPLE: break;
 		}
 		break;
 

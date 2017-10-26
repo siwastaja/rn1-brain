@@ -8,8 +8,8 @@ OBJCOPY = arm-none-eabi-objcopy
 
 
 #MODEL=RN1P4
-#MODEL=RN1P5
-MODEL=RN1P6
+MODEL=RN1P7
+#MODEL=RN1P6
 #MODEL=PULU1
 
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)

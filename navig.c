@@ -283,7 +283,7 @@ void navig_fsm1()
 }
 
 
-#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
 #define ROBOT_YS_TIGHT (480)
 #define ROBOT_XS_TIGHT (524)
 #define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)

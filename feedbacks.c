@@ -13,7 +13,7 @@ Keeps track of position & angle, controls the motors.
 	#define A_MC_IDX 3
 	#define B_MC_IDX 0
 #endif
-#ifdef RN1P5
+#ifdef RN1P7
 	#define A_MC_IDX 3
 	#define B_MC_IDX 2
 #endif
@@ -142,7 +142,7 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
-#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
 #define ANG_SPEED_MUL 4700
 #define ANG_SPEED_MAX 360000
 #endif
@@ -371,7 +371,7 @@ int64_t gyro_mul_neg = 763300LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
 
-#ifdef RN1P5
+#ifdef RN1P7
 int64_t gyro_mul_neg = 763300LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
@@ -406,7 +406,7 @@ void correct_location_without_moving_external(pos_t corr)
 {
 	if(corr.x < -2000 || corr.x > 2000 || corr.y < -2000 || corr.y > 2000)
 	{
-		dbg[4]++;
+//		dbg[4]++;
 		return;
 	}
 
@@ -455,7 +455,7 @@ void compass_fsm(int cmd)
 	#ifdef RN1P4
 		latest_compass->y;
 	#endif
-	#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
+	#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
 		-1*latest_compass->y;
 	#endif
 
@@ -704,6 +704,10 @@ void run_feedbacks(int sens_status)
 
 	static int32_t prev_cur_ang = 0;
 
+//	dbg[2]++;
+//	dbg[3] = motcon_rx[A_MC_IDX].pos;
+//	dbg[4] = motcon_rx[B_MC_IDX].pos;
+
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[A_MC_IDX].pos;
 	wheel_counts[1] = -1*motcon_rx[B_MC_IDX].pos;
@@ -728,7 +732,7 @@ void run_feedbacks(int sens_status)
 	#ifdef RN1P4
 		278528; 
 	#endif
-	#ifdef RN1P5
+	#ifdef RN1P7
 		278528; 
 	#endif
 	#ifdef RN1P6
@@ -740,7 +744,7 @@ void run_feedbacks(int sens_status)
 
 
 	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*
-	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P5)
+	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
 		15500000;
 	#endif
 	#ifdef PULU1
@@ -857,7 +861,7 @@ void run_feedbacks(int sens_status)
 		#ifdef RN1P4
 			{latest_gyro->x, latest_gyro->y, latest_gyro->z};
 		#endif
-		#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
 			{latest_gyro->x, latest_gyro->y, -1*latest_gyro->z}; 
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
@@ -921,7 +925,7 @@ void run_feedbacks(int sens_status)
 		#ifdef RN1P4
 			{latest_xcel->x, latest_xcel->y, latest_xcel->z};
 		#endif
-		#if defined(PULU1) || defined(RN1P6) || defined(RN1P5)
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
 			{latest_xcel->x, latest_xcel->y, -1*latest_xcel->z}; // todo: fix x, y
 		#endif
 
