@@ -711,7 +711,7 @@ int main()
 
 	init_lidar();
 
-	lidar_on(2, 1);
+	lidar_on(4, 1);
 
 	while(1)
 	{

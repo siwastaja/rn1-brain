@@ -27,7 +27,11 @@ extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 extern volatile int dbg[10];
 
-#define XY_DONT_AT_END_LEN 200 /*don't recalculate ang,straight at this many last millimeters to (x,y) dstination*/
+#define XY_DONT_AT_END_LEN 200 /*don't recalculate ang,straight at this many last millimeters to (x,y) destination*/
+
+
+static int navi_speed;
+#define MAXSPEED(x) do{if((x) < navi_speed) navi_speed = (x);} while(0)
 
 
 typedef enum {
@@ -86,7 +90,7 @@ void move_fsm()
 			auto_disallow(0);
 			rotate_abs(cur_move.abs_ang);
 			straight_rel(cur_move.rel_fwd);
-			set_top_speed(speedlim_hommel);
+			set_top_speed(navi_speed);
 			cur_move.state = MOVE_WAIT_STRAIGHT;
 		}
 		break;
@@ -111,7 +115,7 @@ void move_fsm()
 		{
 			change_angle_abs(cur_move.abs_ang);
 			change_straight_rel(cur_move.rel_fwd);
-			set_top_speed_max(speedlim_hommel);
+			set_top_speed(navi_speed);
 		}
 
 		if(!correcting_either())
@@ -280,32 +284,54 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 void navig_fsm1()
 {
 	xy_fsm();
+
+	static int speed_incr_cnt;
+
+	if(speed_incr_cnt > 250)
+	{
+		speed_incr_cnt = 0;
+		if(navi_speed < speedlim_hommel)
+		{
+			if(navi_speed < 10)
+				navi_speed+=1;
+			else if(navi_speed < 20)
+				navi_speed+=2;
+			else if(navi_speed < 30)
+				navi_speed+=3;
+			else if(navi_speed < 40)
+				navi_speed+=4;
+			else
+				navi_speed+=5;
+		}
+		if(navi_speed > speedlim_hommel)
+			navi_speed = speedlim_hommel;
+	}
 }
 
 
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
-#define ROBOT_YS_TIGHT (480)
-#define ROBOT_XS_TIGHT (524)
-#define ROBOT_ORIGIN_TO_FRONT_TIGHT (150)
-#define ROBOT_ORIGIN_TO_BACK_TIGHT  (390)
+#define robot_ys_TIGHT (480)
+#define robot_xs_TIGHT (524)
+#define robot_origin_to_front_TIGHT (150)
+#define robot_origin_to_back_TIGHT  (390)
 #endif
 
 #ifdef PULU1
-#define ROBOT_YS_TIGHT (300)
-#define ROBOT_XS_TIGHT (340)
-#define ROBOT_ORIGIN_TO_FRONT_TIGHT (60)
-#define ROBOT_ORIGIN_TO_BACK_TIGHT  (250)
+#define robot_ys_TIGHT (300)
+#define robot_xs_TIGHT (340)
+#define robot_origin_to_front_TIGHT (60)
+#define robot_origin_to_back_TIGHT  (250)
 #endif
 
 
-int ROBOT_YS, ROBOT_XS, ROBOT_ORIGIN_TO_FRONT, ROBOT_ORIGIN_TO_BACK;
+int robot_ys, robot_xs, robot_origin_to_front, robot_origin_to_back;
 
 void set_obstacle_avoidance_margin(int cm)
 {
-	ROBOT_YS = ROBOT_YS_TIGHT + 20*cm;
-	ROBOT_XS = ROBOT_XS_TIGHT + 20*cm;
-	ROBOT_ORIGIN_TO_FRONT = ROBOT_ORIGIN_TO_FRONT_TIGHT + 10*cm;
-	ROBOT_ORIGIN_TO_BACK = ROBOT_ORIGIN_TO_BACK_TIGHT + 10*cm;
+	robot_ys = robot_ys_TIGHT + 20*cm;
+	robot_xs = robot_xs_TIGHT + 20*cm;
+	robot_origin_to_front = robot_origin_to_front_TIGHT + 10*cm;
+	robot_origin_to_back = robot_origin_to_back_TIGHT + 10*cm;
 }
 
 uint32_t get_obstacle_avoidance_stop_flags()
@@ -564,7 +590,7 @@ void navig_fsm2_for_charger()
 			if(!correcting_either())
 			{
 				set_top_speed_max(11);
-				straight_rel(x_dist_to_charger-ROBOT_ORIGIN_TO_FRONT_TIGHT+20);
+				straight_rel(x_dist_to_charger-robot_origin_to_front_TIGHT+20);
 				chafind_state++;
 			}
 		}
@@ -643,9 +669,9 @@ void daiju_meininki_fsm()
 		{
 			if(!lidar_collision_avoidance[i].valid) continue;
 
-			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
+			int dist_to_front = lidar_collision_avoidance[i].x - robot_origin_to_front;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+10) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+10))
+			if(lidar_collision_avoidance[i].y > -1*(robot_ys/2+10) && lidar_collision_avoidance[i].y < (robot_ys/2+10))
 			{
 				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
 			}
@@ -654,9 +680,9 @@ void daiju_meininki_fsm()
 		{
 			if(!lidar_collision_avoidance[i].valid) continue;
 
-			int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
+			int dist_to_front = lidar_collision_avoidance[i].x - robot_origin_to_front;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+10) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+10))
+			if(lidar_collision_avoidance[i].y > -1*(robot_ys/2+10) && lidar_collision_avoidance[i].y < (robot_ys/2+10))
 			{
 				if(dist_to_front < nearest_colliding_front) nearest_colliding_front = dist_to_front;
 			}
@@ -665,9 +691,9 @@ void daiju_meininki_fsm()
 		{
 			if(!lidar_collision_avoidance[i].valid) continue;
 
-			int dist_to_back  = -1*lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_BACK;
+			int dist_to_back  = -1*lidar_collision_avoidance[i].x - robot_origin_to_back;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+0) && lidar_collision_avoidance[i].y < (ROBOT_YS/2+0))
+			if(lidar_collision_avoidance[i].y > -1*(robot_ys/2+0) && lidar_collision_avoidance[i].y < (robot_ys/2+0))
 			{
 				if(dist_to_back  < nearest_colliding_back) nearest_colliding_back = dist_to_back;
 			}
@@ -684,9 +710,9 @@ void daiju_meininki_fsm()
 		{
 			if(!lidar_collision_avoidance[i].valid) continue;
 
-			if(lidar_collision_avoidance[i].y < ROBOT_YS/2+40)
+			if(lidar_collision_avoidance[i].y < robot_ys/2+40)
 			{
-				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
+				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -robot_origin_to_back)
 				{
 					can_do[TURN_LEFT] = 0;
 					break;
@@ -700,9 +726,9 @@ void daiju_meininki_fsm()
 		{
 			if(!lidar_collision_avoidance[i].valid) continue;
 
-			if(lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+40))
+			if(lidar_collision_avoidance[i].y > -1*(robot_ys/2+40))
 			{
-				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -(ROBOT_ORIGIN_TO_BACK+10))
+				if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -(robot_origin_to_back+10))
 				{
 					can_do[TURN_RIGHT] = 0;
 					break;
@@ -824,461 +850,242 @@ void navig_fsm2()
 	}
 
 	move_fsm();
+}
 
-	if(!collision_avoidance_on)
-	{
-		lidar_collision_avoidance_new = 0;
-		return;
-	}
-
-	if(lidar_collision_avoidance_new)
-	{
-		lidar_collision_avoidance_new = 0;
-
-
-		int fwd_remain = get_fwd();
-
-		int reverse = 0;
-
-		if(fwd_remain < 0)
-		{
-			reverse = 1;
-			fwd_remain *= -1;
-		}
-
-		if(fwd_remain > 1200) fwd_remain = 1200; // Don't do any decisions based on a far-away destination.
-
-		if(fwd_remain < 50) // Don't avoid obstacles when we are near to our destination anyway.
-			return;
 
 /*
-		lidar_collision_avoidance[360] is the latest lidar scan converted to 2d XY plane, referenced to the
-		robot origin, always in this orientation:
-                      ...
-	  ##########   ...
-	  ##########    idx359
-	y #######O##     idx0
-	  ##########    idx1
-	  ##########   ...
-               x      ...
-
+	Call this function right after any sensor has observed a point at (x, y) in robot coord frame (+x = forward).
+	Adjusts max speed, stops if necessary.
 */
 
-		uint32_t stop_flags = 0;
-		uint32_t action_flags = 0;
+void micronavi_point_in(int32_t x, int32_t y)
+{
+	int fwd_remain = get_fwd();
+	int reverse;
+	int dist_to_hit;
 
-		int limited = 0;
-		int stop = 0;
-		int turn[2] = {0, 0}; // to left, right
-		int do_not_turn[2] = {0, 0};   // to right, left
-		int sonar_assumption_made = 0;
+	if(cur_move.state != MOVE_WAIT_STRAIGHT)
+		return;
 
-		if(!reverse)
-		{
-			for(int d = 0; d < 2; d++)
-			{
-				for(int i = (d?297:17); i < (d?343:63); i+=2)
-				{
-					int ang = d?(360-i):(i);
+	dbg[8]++;
 
-					if(!lidar_collision_avoidance[i].valid) continue;
-
-					int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
-
-					if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2) ||
-					   ( d && lidar_collision_avoidance[i].y > -1*ROBOT_YS/2))
-					{
-						if(fwd_remain < dist_to_front)
-						{
-							// No need to avoid this point, we are going to stop anyway.
-							continue;
-						}
-
-						if(dist_to_front < 70)
-						{
-							set_top_speed_max(16);
-
-							if(ang < 55)
-							{
-								stop_flags |= 1UL<<(0+(d?16:0));
-								stop = 1; break;
-							}
-						}
-						else if(dist_to_front < 110)
-						{
-							set_top_speed_max(16);
-							if(ang > 38) {action_flags |= 1UL<<(1+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(1+(d?16:0)); stop = 1; break;}
-						}
-						else if(dist_to_front < 140)
-						{
-							set_top_speed_max(16);
-							if(ang > 30) {action_flags |= 1UL<<(2+(d?16:0)); turn[d] = 4;} else {stop_flags |= 1UL<<(2+(d?16:0)); stop = 1; break;}
-						}
-						else if(dist_to_front < 300)
-						{
-							set_top_speed_max(16);
-							action_flags |= 1UL<<(4+(d?16:0)); 
-							turn[d] = 4;
-						}
-						else if(dist_to_front < 450)
-						{
-							set_top_speed_max(16);
-							if(ang < 30)
-							{
-								turn[d] = 4;
-							}
-							else
-							{if(turn[d] < 2) turn[d] = 2;}
-							action_flags |= 1UL<<(5+(d?16:0)); 
-						}
-						else if(dist_to_front < 1000)
-						{
-							set_top_speed_max(25);
-							limited = 1;
-						}
-					}
-					else 
-					if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+60) ||
-					   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+60)))
-					{
-						if(dist_to_front < 450)
-						{
-							set_top_speed_max(16);
-							if(turn[d]<1) turn[d] = 1;
-							action_flags |= 1UL<<(6+(d?16:0)); 
-						}
-						else if(dist_to_front < 500)
-						{
-							set_top_speed_max(16);
-							limited = 1;
-						}
-						else if(dist_to_front < 1000)
-						{
-							set_top_speed_max(25);
-							limited = 1;
-						}
-
-						if(dist_to_front < ((fwd_remain>350)?350:fwd_remain) && dist_to_front > -190)
-						{
-							action_flags |= 1UL<<(7+(d?16:0)); 
-							do_not_turn[d] = 1;
-						}
-
-					}
-					else 
-					if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2+160) ||
-					   ( d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+160)))
-					{
-						if(dist_to_front < 500)
-						{
-							set_top_speed_max(20);
-							limited = 1;
-						}
-						else if(dist_to_front < 1000)
-						{
-							set_top_speed_max(30);
-							limited = 1;
-						}
-					}
-
-				}
-
-
-				// Check the arse, to avoid hitting when turning.
-				for(int i = (d?(90+1):(180+37)); i < (d?(90+33):(180+90-1)); i+=2)
-				{
-					if(!lidar_collision_avoidance[i].valid) continue;
-
-					//int ang = d?(360-i):(i);
-
-					if((!d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+60)) ||
-					   ( d && lidar_collision_avoidance[i].y < ROBOT_YS/2+60))
-					{
-						if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -ROBOT_ORIGIN_TO_BACK)
-						{
-							set_top_speed_max(22);
-							do_not_turn[d] |= 2;
-							action_flags |= 1UL<<(9+(d?16:0)); 
-							break;
-						}
-
-					}
-					else
-					if((!d && lidar_collision_avoidance[i].y > -1*(ROBOT_YS/2+200)) ||
-					   ( d && lidar_collision_avoidance[i].y < ROBOT_YS/2+200))
-					{
-						if(lidar_collision_avoidance[i].x < 0 && lidar_collision_avoidance[i].x > -1*(ROBOT_ORIGIN_TO_BACK+150))
-						{
-							set_top_speed_ang_max(30);
-							limited = 1;
-						}
-
-					}
-
-
-
-				}
-
-				for(int i = (d?347:0); i < (d?360:13); i+=2)
-				{
-					if(!lidar_collision_avoidance[i].valid) continue;
-
-					if((!d && lidar_collision_avoidance[i].y < ROBOT_YS/2) ||
-					   ( d && lidar_collision_avoidance[i].y > -1*ROBOT_YS/2))
-					{
-						int dist_to_front = lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_FRONT;
-
-						if(fwd_remain > dist_to_front)
-						{
-							if(dist_to_front < 100)
-							{
-								stop_flags |= 1UL<<(4+(d?16:0));
-								stop = 1;
-							}
-							else if(dist_to_front < 500)
-							{
-								set_top_speed_max(16);
-								limited = 1;
-							}
-							else if(dist_to_front < 1000)
-							{
-								set_top_speed_max(25);
-								limited = 1;
-							}
-						}
-					}
-
-				}
-			}
-
-			/*
-			Use sonars for secondary information.
-		
-			We can maneuver left or right to avoid an obstacle, but we won't know how long it takes to actually pass it, since
-			it disappears from the sonar's view when we turn, so we just make assumptions.
-			*/
-
-			#ifdef SONARS_INSTALLED
-
-			if(angle_almost_corrected())
-			{
-				int nearest_son = nearest_sonar();
-				if(nearest_son < 80)
-				{ set_top_speed_max(25); limited = 1; avoidance_in_action = 5;}
-				else if(nearest_son < 45)
-				{ set_top_speed_max(16); limited = 1; avoidance_in_action = 5;}
-				else if(nearest_son < 10)
-				{
-					stop_flags |= 1UL<<5;
-					stop = 1;
-				}
-
-				int fwd_remain_or = fwd_remain; if(fwd_remain_or > 400) fwd_remain_or = 400;
-
-				if(latest_sonars[0] && (latest_sonars[0]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
-				   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
-				   (!latest_sonars[2] || latest_sonars[2]*10 > fwd_remain))
-				{
-					// Leftmost sonar sees an obstacle, two other do not; turn right if we already won't by the lidar.
-					if(turn[1] < 4) turn[1] = 4;
-					action_flags |= 1UL<<11; 
-					set_top_speed_max(16);
-					sonar_assumption_made = 1;
-				} 
-				else
-				if(latest_sonars[2] && (latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT) < fwd_remain_or &&
-				   (!latest_sonars[1] || latest_sonars[1]*10 > fwd_remain) &&
-				   (!latest_sonars[0] || latest_sonars[0]*10 > fwd_remain))
-				{
-					// Same, but opposite -> turn left.
-					if(turn[0] < 4) turn[0] = 4;
-					action_flags |= 1UL<<12; 
-					set_top_speed_max(16);
-					sonar_assumption_made = 1;
-				}
-
-				fwd_remain_or = fwd_remain-50; if(fwd_remain_or > 200) fwd_remain_or = 200;
-
-				if((latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or) ||
-				   (latest_sonars[1] && latest_sonars[1]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or &&
-				   latest_sonars[2] && latest_sonars[2]*10-ROBOT_ORIGIN_TO_FRONT < fwd_remain_or))
-				{
-					// Stop if middle sonar sees an obstacle, or if both left and right see it.
-					stop = 1;
-					stop_flags |= 1UL<<6;
-				}
-			}
-			#endif
-		}
-		else // reverse
-		{
-			for(int i = 180-35; i < 180+35; i+=2)
-			{
-				if(!lidar_collision_avoidance[i].valid) continue;
-
-				if((lidar_collision_avoidance[i].y < (ROBOT_YS/2-30)) &&
-				   (lidar_collision_avoidance[i].y > (-1*ROBOT_YS/2+30)))
-				{
-					int dist_to_back = -1*lidar_collision_avoidance[i].x - ROBOT_ORIGIN_TO_BACK;
-
-					if(fwd_remain > dist_to_back)
-					{
-						if(dist_to_back < 100)
-						{
-							stop_flags |= 1UL<<(24);
-							stop = 1;
-						}
-						else if(dist_to_back < 250)
-						{
-							// Try to avoid:
-							if(lidar_collision_avoidance[i].y > ROBOT_YS/2-150)
-							{
-								if(turn[1] < 2) turn[1] = 2;
-								action_flags |= 1UL<<29; 
-
-							}
-							else if (lidar_collision_avoidance[i].y < -1*ROBOT_YS/2+150)
-							{
-								if(turn[0] < 2) turn[0] = 2;
-								action_flags |= 1UL<<28; 
-							}
-
-							set_top_speed_max(13);
-							limited = 1;
-						}
-						else if(dist_to_back < 350)
-						{
-							// Try to avoid:
-							if(lidar_collision_avoidance[i].y > ROBOT_YS/2-150)
-							{
-								if(turn[1] < 1) turn[1] = 1;
-								action_flags |= 1UL<<29; 
-
-							}
-							else if (lidar_collision_avoidance[i].y < -1*ROBOT_YS/2+150)
-							{
-								if(turn[0] < 1) turn[0] = 1;
-								action_flags |= 1UL<<28; 
-							}
-
-							set_top_speed_max(13);
-							limited = 1;
-						}
-						else if(dist_to_back < 500)
-						{
-							set_top_speed_max(16);
-							limited = 1;
-						}
-						else if(dist_to_back < 1000)
-						{
-							set_top_speed_max(25);
-							limited = 1;
-						}
-					}
-				}
-
-			}
-
-		}
-
-		if(turn[0] && turn[1])
-		{
-//			if(turn[0] + turn[1] > 7)
-//			{
-//				stop = 1;
-//				stop_flags |= 1UL<<7;
-//			}
-//			else
-			{
-				action_flags |= 1UL<<13; 
-				if(turn[0] > turn[1]) turn[0] -= turn[1];
-				else turn[1] -= turn[0];
-			}
-		}
-
-		if((turn[0] && do_not_turn[1]) || (turn[1] && do_not_turn[0]))
-		{
-			set_top_speed_max(16);
-		}
-
-		int ang_err = get_ang_err();
-
-		static int see_if_this_goes_away2 = 0;
-
-		if((do_not_turn[1]&2) && ang_err > 8*ANG_1_DEG) // || (do_not_turn[1] && ang_err > 8*ANG_1_DEG))
-		{
-			see_if_this_goes_away2++;
-			do_not_turn[1] |= 1; // prevent turning
-			if(see_if_this_goes_away2 > 5)
-			{
-				stop_flags |= 1UL<<8;
-				stop = 1;
-			}
-		}
-		else
-			see_if_this_goes_away2 = 0;
-
-		static int see_if_this_goes_away1 = 0;
-		if((do_not_turn[0]&2) && ang_err < -8*ANG_1_DEG) // || (do_not_turn[0] && ang_err < -8*ANG_1_DEG))
-		{
-			see_if_this_goes_away1++;
-			do_not_turn[0] |= 1; // prevent turning
-			if(see_if_this_goes_away1 > 5)
-			{
-				stop_flags |= 1UL<<9;
-				stop = 1;
-			}
-		}
-		else
-			see_if_this_goes_away1 = 0;
-
-		if(cur_move.state && stop)
-		{
-			store_stop_flags = stop_flags;
-			store_action_flags = action_flags;
-		}
-
-		if(stop)
-		{
-			reset_movement();
-			cur_move.state = 0;
-		}
-		else if(turn[0] && fwd_remain < 200)
-		{
-			set_top_speed_fwd_max(25);
-			set_top_speed_ang_max(26 + turn[0]*3);
-			change_angle_rel(turn[0]*-5*ANG_0_25_DEG);
-			correct_xy = 0;
-			avoidance_in_action = 1+turn[0]+sonar_assumption_made*2;
-		}
-		else if(turn[1] && fwd_remain < 200)
-		{
-			set_top_speed_fwd_max(25);
-			set_top_speed_ang_max(26 + turn[1]*3);
-			change_angle_rel(turn[1]*5*ANG_0_25_DEG);
-			correct_xy = 0;
-			avoidance_in_action = 1+turn[1]+sonar_assumption_made*2;
-		}
-		else if((do_not_turn[0]&1) || (do_not_turn[1]&1))
-		{
-			avoidance_in_action = 3;
-		} // &2 is relevant only when turning fast (and going to actually hit right now), and would hinder obstacle passing.
-		else
-		{
-			if(avoidance_in_action)
-				avoidance_in_action--;
-			else
-				correct_xy = was_correcting_xy;
-		}
-
-		if(!stop && !turn[0] && !turn[1] && !do_not_turn[0] && !do_not_turn[1] && !limited && !avoidance_in_action)
-		{
-			// Reset the original speed limit.
-			set_top_speed(speedlim_hommel);
-		}
-
+	if(fwd_remain < 0)
+	{
+		reverse = 1;
+		fwd_remain *= -1;
+		dist_to_hit = -1*x - robot_origin_to_back;
 	}
+	else
+	{
+		reverse = 0;
+		dist_to_hit = x - robot_origin_to_front;
+	}
+
+	if(y < (robot_ys/2+0) && y > (-1*robot_ys/2-0))  // Direct collision course
+	{
+		if(dist_to_hit > -100) // skip things behind our way
+		{
+			if(dist_to_hit < 250)
+			{
+				if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(20);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(10);
+				}
+				else // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
+				{
+					dbg[6] = x; dbg[7] = y;
+					int amount = dist_to_hit-30;
+					if(amount < 0) amount = 0;
+					change_straight_rel((reverse?-1:1)*amount);
+					cur_move.state = 0;
+					store_stop_flags |= 1;
+				}
+			}
+			if(dist_to_hit < 500)
+			{
+				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				{
+					MAXSPEED(40);
+				}
+				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(30);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(20);
+				}
+				else // gonna hit
+				{
+					dbg[6] = x; dbg[7] = y;
+
+					// Stop carefully, 5cm before the obstacle:
+					change_straight_rel((reverse?-1:1)*(dist_to_hit-50));
+					cur_move.state = 0;
+					store_stop_flags |= 2;
+				}
+			}
+			else if(dist_to_hit < 1200)
+			{
+				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				{
+					MAXSPEED(50);
+				}
+				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(40);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(35);
+				}
+				else // gonna hit
+				{
+					MAXSPEED(30);
+				}
+			}
+		}
+	}
+	else if(y < (robot_ys/2+80) && y > (-1*robot_ys/2-80))  // Obstacle very close to either side
+	{
+		if(dist_to_hit > -100) // skip things behind our way
+		{
+			if(dist_to_hit < 250)
+			{
+				if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(25);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(15);
+				}
+				else
+				{
+					MAXSPEED(10); // Corner of the robot will almost hit, go very slowly
+				}
+			}
+			if(dist_to_hit < 500)
+			{
+				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				{
+					MAXSPEED(45);
+				}
+				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(35);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(25);
+				}
+				else
+				{
+					MAXSPEED(20);
+				}
+			}
+			else if(dist_to_hit < 1200)
+			{
+				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				{
+					MAXSPEED(50);
+				}
+				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(45);
+				}
+				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				{
+					MAXSPEED(40);
+				}
+				else
+				{
+					MAXSPEED(35);
+				}
+			}
+		}
+	}
+	else if(y < (robot_ys/2+160) && y > (-1*robot_ys/2-160))  // Obstacle kinda close to either side
+	{
+		if(dist_to_hit > -100) // skip things behind our way
+		{
+			if(dist_to_hit < 250)
+			{
+				if(fwd_remain < dist_to_hit-150)
+				{
+					MAXSPEED(30);
+				}
+				else if(fwd_remain < dist_to_hit)
+				{
+					MAXSPEED(20);
+				}
+				else
+				{
+					MAXSPEED(15);
+				}
+			}
+			if(dist_to_hit < 500)
+			{
+				if(fwd_remain < dist_to_hit-300)
+				{
+					MAXSPEED(50);
+				}
+				else if(fwd_remain < dist_to_hit-150)
+				{
+					MAXSPEED(40);
+				}
+				else if(fwd_remain < dist_to_hit)
+				{
+					MAXSPEED(30);
+				}
+				else
+				{
+					MAXSPEED(25);
+				}
+			}
+			else if(dist_to_hit < 1200)
+			{
+				if(fwd_remain < dist_to_hit-150)
+				{
+					MAXSPEED(55);
+				}
+				else if(fwd_remain < dist_to_hit)
+				{
+					MAXSPEED(45);
+				}
+				else
+				{
+					MAXSPEED(40);
+				}
+			}
+		}
+	}
+	else if(y < (robot_ys/2+240) && y > (-1*robot_ys/2-240))  // Some obstacle not so close
+	{
+		if(dist_to_hit > -100) // skip things behind our way
+		{
+			if(dist_to_hit < 250)
+			{
+				MAXSPEED(40);
+			}
+			if(dist_to_hit < 500)
+			{
+				MAXSPEED(50);
+			}
+			else if(dist_to_hit < 1200)
+			{
+				MAXSPEED(60);
+			}
+		}
+	}
+
+	set_top_speed(navi_speed);
 }
+
 
 void stop_movement()
 {
@@ -1289,6 +1096,6 @@ void stop_movement()
 void limit_speed(int speed)
 {
 	speedlim_hommel = speed;
-	set_top_speed(speedlim_hommel);
+	set_top_speed_max(speedlim_hommel);
 }
 

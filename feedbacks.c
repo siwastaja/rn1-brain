@@ -70,7 +70,7 @@ int ang_p = 1000; //1350; // 1500
 
 int aim_fwd;
 int final_fwd_accel = 400;
-int fwd_accel = 350; // was 250, kinda sluggish
+int fwd_accel = 350;
 int fwd_top_speed = 600000;
 int fwd_p = 1600; // 3100 gives rather strong deceleration; 1600 feels sluggish. 2200 oscillates sometimes.
 
@@ -95,7 +95,7 @@ int robot_moving()
 static int host_alive_watchdog;
 void host_alive()
 {
-	host_alive_watchdog = 15000;
+	host_alive_watchdog = 5000;
 }
 
 void host_dead()
@@ -191,6 +191,7 @@ void set_top_speed_fwd_max(int speed)
 
 void set_top_speed(int speed)
 {
+	dbg[9] = speed;
 	set_top_speed_fwd(speed);
 	set_top_speed_ang(speed);
 }
@@ -623,7 +624,7 @@ void run_feedbacks(int sens_status)
 				do_correct_fwd = 1;
 			else if(ang_err < (-30*ANG_1_DEG) && ang_err > (30*ANG_1_DEG))
 				do_correct_fwd = 0;
-		}		
+		}
 	}
 	if(!straight_allowed || (fwd_err > -15*65536 && fwd_err < 15*65536))
 	{
@@ -826,7 +827,7 @@ void run_feedbacks(int sens_status)
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
 		if(fwd_speed_limit < top_speed) fwd_speed_limit += fwd_accel;
-		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= 1*fwd_accel;
+		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= fwd_accel;
 		else fwd_speed_limit = top_speed;
 
 		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;

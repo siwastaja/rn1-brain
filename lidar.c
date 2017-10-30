@@ -225,6 +225,8 @@ Send composite scan                    XXXX    XXXX
 #include "sin_lut.h"
 #include "comm.h"
 
+#include "navig.h" // to inject points in micronavigation
+
 #define UART_DMA_NO() //do {USART1->CR3 = 0; USART1->SR = 0;} while(0)
 #define UART_DMA_RX() //do {USART1->CR3 = 1UL<<6; USART1->SR = 0;} while(0)
 #define UART_DMA_TX() //do {USART1->CR3 = 1UL<<7; USART1->SR = 0;} while(0)
@@ -772,6 +774,13 @@ void lidar_rx_done_inthandler()
 			acq_lidar_scan->scan[lidar_cur_n_samples].y = y;
 			
 			lidar_cur_n_samples++;
+
+			uint32_t ang32_robot_frame = -1*degper16*ANG_1PER16_DEG;
+			int32_t y_idx_robot_frame = (ang32_robot_frame)>>SIN_LUT_SHIFT;
+			int32_t x_idx_robot_frame = (1073741824-ang32_robot_frame)>>SIN_LUT_SHIFT;
+			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)len)>>15;
+			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)len)>>15;
+			micronavi_point_in(x_robot_frame, y_robot_frame);
 
 			IGNORE_SAMPLE: break;
 		}
