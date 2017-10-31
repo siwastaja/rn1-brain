@@ -7,8 +7,8 @@ typedef struct
 {
 	int32_t x;
 	int32_t y;
-	int8_t c;
-} xyc_t;
+	int16_t z;
+} sonar_xyz_t;
 
 
 void sonar_fsm_10k();

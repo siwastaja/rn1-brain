@@ -26,6 +26,7 @@ typedef struct
 	##################
                      -<-->+  x_offs  
 
+	z offset: positive up, 0 = floor level
 
 	            +
                     ^  
@@ -38,8 +39,9 @@ typedef struct
 */
 	int x_offs;
 	int y_offs;
+	int z_offs;
 	int32_t side_angle;
-	int32_t cos_up_angle_x32768; // 32768 = 1.0 = sensor points directly forward
+	int32_t up_angle;
 } sonar_cfg_t;
 
 
@@ -49,11 +51,11 @@ typedef struct
 
 
 sonar_cfg_t sonar_cfgs[NUM_SONARS] =
-{
-//	/* 0: (front view) left  : Trig IO1, Echo IO2 */ {GPIOE,  7,  GPIOE,  8},
-//	/* 1: (front view) right : Trig IO7, Echo IO8 */ {GPIOE, 13,  GPIOE, 14},
-	/* 2:         top middle : Trig IO3, Echo IO4 */ {GPIOE,  9,  GPIOE, 10,     140,   0,           0,   23170 /*45 deg = 0.707*/},
-	/* 3:      bottom middle : Trig IO5, Echo IO6 */ {GPIOE, 11,  GPIOE, 12,     140,   0,           0,   32768 /*directly fwd  */}
+{                                                   //       TRIG      ECHO    offs:x     y     z      side_angle      up_angle
+	/* 0: (front view) left  : Trig IO1, Echo IO2 */ {GPIOE, 7,  GPIOE, 8,     140,  150,  120,    -5*ANG_1_DEG,   0           }
+	/* 1: (front view) right : Trig IO7, Echo IO8 */ {GPIOE,13,  GPIOE,14,     140, -150,  120,     5*ANG_1_DEG,   0           }
+	/* 2:         top middle : Trig IO3, Echo IO4 */ {GPIOE, 9,  GPIOE,10,     140,    0,  200,     0,             45*ANG_1_DEG},
+	/* 3:      bottom middle : Trig IO5, Echo IO6 */ {GPIOE,11,  GPIOE,12,     140,    0,  120,     0,             0           }
 };
 
 void init_sonars()
@@ -71,20 +73,20 @@ void init_sonars()
 
 #define SONAR_FIFO_LEN 16 // 960ms worth of samples at 60 ms
 
-xyc_t sonar_point_fifo[SONAR_FIFO_LEN];
+sonar_xyz_t sonar_point_fifo[SONAR_FIFO_LEN];
 int sonar_wr, sonar_rd;
 
-xyc_t* get_sonar_point()
+sonar_xyz_t* get_sonar_point()
 {
 	if(sonar_wr == sonar_rd)
 		return 0;
 
-	xyc_t* ret = &sonar_point_fifo[sonar_rd];
+	sonar_xyz_t* ret = &sonar_point_fifo[sonar_rd];
 	sonar_rd++; if(sonar_rd >= SONAR_FIFO_LEN) sonar_rd = 0;
 	return ret;
 }
 
-void put_sonar_point(int32_t x, int32_t y, int8_t c)
+void put_sonar_point(int32_t x, int32_t y, int16_t z)
 {
 	// overrun detection:
 	// int next = sonar_wr+1; if(next >= SONAR_FIFO_LEN) next = 0;
@@ -92,7 +94,7 @@ void put_sonar_point(int32_t x, int32_t y, int8_t c)
 
 	sonar_point_fifo[sonar_wr].x = x;
 	sonar_point_fifo[sonar_wr].y = y;
-	sonar_point_fifo[sonar_wr].c = c;
+	sonar_point_fifo[sonar_wr].z = z;
 
 	dbg[0]++;
 	dbg[1] = x;
@@ -110,15 +112,20 @@ void process_sonar_point(int idx, int mm)
 	int x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
 	int sensor_x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)(sonar_cfgs[idx].x_offs))>>15);
 	int sensor_y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)(sonar_cfgs[idx].y_offs))>>15);
+	int sensor_z = sonar_cfgs[idx].z_offs;
 
 	angle += sonar_cfgs[idx].side_angle;
 	y_idx = (angle)>>SIN_LUT_SHIFT;
 	x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
-	int x = sensor_x + (((int32_t)sin_lut[x_idx] * (int32_t)mm)>>15);
-	int y = sensor_y + (((int32_t)sin_lut[y_idx] * (int32_t)mm)>>15);
 
-	// todo: classify based on approximated height (now 1)
-	put_sonar_point(x, y, 1);
+	int sin_up_ang_idx = ((uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
+	int cos_up_ang_idx = (1073741824-(uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
+	
+	int x = sensor_x + (((int64_t)sin_lut[x_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
+	int y = sensor_y + (((int64_t)sin_lut[y_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
+	int z = sensor_z + (((int32_t)mm * (int32_t)sin_lut[sin_up_ang_idx])>>15);
+
+	put_sonar_point(x, y, z);
 	// todo: give it to the obstacle avoidance
 }
 
