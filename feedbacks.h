@@ -39,6 +39,8 @@ void reset_speed_limits();
 
 void enable_collision_detection();
 
+void change_angle_to_cur();
+
 
 int get_fwd();
 

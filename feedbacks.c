@@ -5,6 +5,10 @@ Keeps track of position & angle, controls the motors.
 */
 
 
+#define STEP_FEEDFORWARD_ANG 22000  // was 22 000 for a long time
+#define STEP_FEEDFORWARD_FWD 100000  // was 100 000 for a long time
+
+
 #ifdef RN1P4
 	#define A_MC_IDX 2
 	#define B_MC_IDX 3
@@ -142,6 +146,11 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
+#define MIN_SPEED_ANG 90000  // was 100000 for a long time
+#define MIN_SPEED_FWD 110000  // was 120000 for a long time
+
+#define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
+
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
 #define ANG_SPEED_MUL 4700
 #define ANG_SPEED_MAX 360000
@@ -155,7 +164,7 @@ int speed_limit_status()
 void set_top_speed_ang(int speed)
 {
 	int new_speed = speed*ANG_SPEED_MUL;
-	if(new_speed < 100000) new_speed = 100000;
+	if(new_speed < MIN_SPEED_ANG) new_speed = MIN_SPEED_ANG;
 	else if(new_speed > ANG_SPEED_MAX) new_speed = ANG_SPEED_MAX;
 	ang_top_speed = new_speed;	
 }
@@ -163,7 +172,7 @@ void set_top_speed_ang(int speed)
 void set_top_speed_ang_max(int speed)
 {
 	int new_speed = speed*ANG_SPEED_MUL;
-	if(new_speed < 100000) new_speed = 100000;
+	if(new_speed < MIN_SPEED_ANG) new_speed = MIN_SPEED_ANG;
 	else if(new_speed > ANG_SPEED_MAX) new_speed = ANG_SPEED_MAX;
 
 	if(new_speed < ang_top_speed)
@@ -172,16 +181,16 @@ void set_top_speed_ang_max(int speed)
 
 void set_top_speed_fwd(int speed)
 {
-	int new_speed = speed*12000;
-	if(new_speed < 120000) new_speed = 120000;
+	int new_speed = speed*FWD_SPEED_MUL;
+	if(new_speed < MIN_SPEED_FWD) new_speed = MIN_SPEED_FWD;
 	else if(new_speed > 1200000) new_speed = 1200000;
 	fwd_top_speed = new_speed;	
 }
 
 void set_top_speed_fwd_max(int speed)
 {
-	int new_speed = speed*12000;
-	if(new_speed < 120000) new_speed = 120000;
+	int new_speed = speed*FWD_SPEED_MUL;
+	if(new_speed < MIN_SPEED_FWD) new_speed = MIN_SPEED_FWD;
 	else if(new_speed > 1200000) new_speed = 1200000;
 
 	if(new_speed < fwd_top_speed)
@@ -191,7 +200,6 @@ void set_top_speed_fwd_max(int speed)
 
 void set_top_speed(int speed)
 {
-	dbg[9] = speed;
 	set_top_speed_fwd(speed);
 	set_top_speed_ang(speed);
 }
@@ -254,6 +262,10 @@ void change_angle_rel(int angle)
 	aim_angle += angle;
 }
 
+void change_angle_to_cur()
+{
+	aim_angle = cur_pos.ang;
+}
 
 void straight_rel(int fwd /*in mm*/)
 {
@@ -691,7 +703,7 @@ void run_feedbacks(int sens_status)
 		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= 2*ang_accel;
 		else ang_speed_limit = ang_top_speed;
 
-		int new_ang_speed = (ang_err>>20)*ang_p + ((ang_err>0)?22000:-22000) /*step-style feedforward for minimum speed*/;
+		int new_ang_speed = (ang_err>>20)*ang_p + ((ang_err>0)?STEP_FEEDFORWARD_ANG:(-STEP_FEEDFORWARD_ANG)) /*step-style feedforward for minimum speed*/;
 		if(new_ang_speed < 0 && new_ang_speed < -1*ang_speed_limit) new_ang_speed = -1*ang_speed_limit;
 		if(new_ang_speed > 0 && new_ang_speed > ang_speed_limit) new_ang_speed = ang_speed_limit;
 
@@ -805,7 +817,6 @@ void run_feedbacks(int sens_status)
 	cur_pos.x = cur_x>>16;
 	cur_pos.y = cur_y>>16;
 
-
 	int tmp_expected_accel = -1*fwd_speed;
 
 	if(!manual_control && do_correct_fwd)
@@ -830,7 +841,7 @@ void run_feedbacks(int sens_status)
 		else if(fwd_speed_limit > top_speed+fwd_accel+1) fwd_speed_limit -= fwd_accel;
 		else fwd_speed_limit = top_speed;
 
-		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?100000:-100000) /*step-style feedforward for minimum speed*/;
+		int new_fwd_speed = (fwd_err>>16)*fwd_p + ((fwd_err>0)?STEP_FEEDFORWARD_FWD:(-STEP_FEEDFORWARD_FWD)) /*step-style feedforward for minimum speed*/;
 		if(new_fwd_speed < 0 && new_fwd_speed < -1*fwd_speed_limit) new_fwd_speed = -1*fwd_speed_limit;
 		if(new_fwd_speed > 0 && new_fwd_speed > fwd_speed_limit) new_fwd_speed = fwd_speed_limit;
 
