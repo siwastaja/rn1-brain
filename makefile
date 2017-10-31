@@ -15,7 +15,7 @@ MODEL=RN1P7
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)
 
 #CFLAGS += -DHWTEST
-#CFLAGS += -DSONARS_INSTALLED
+CFLAGS += -DSONARS_INSTALLED
 #CFLAGS += -DOPTFLOW_INSTALLED
 
 

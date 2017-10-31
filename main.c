@@ -479,11 +479,11 @@ void timebase_10k_handler()
 	cnt_10k++;
 	if(cnt_10k > 9) cnt_10k = 0;
 	int tooktime = TIM6->CNT - starttime;
-	if(tooktime > dbg[0])
-	{
-		dbg[0] = tooktime;
-		dbg[1] = cnt_10k; // which takes longest.
-	}
+//	if(tooktime > dbg[0])
+//	{
+//		dbg[0] = tooktime;
+//		dbg[1] = cnt_10k; // which takes longest.
+//	}
 }
 
 
@@ -508,6 +508,8 @@ int get_bat_v() // in mv
 volatile uint32_t random = 123;
 
 extern volatile int lidar_scan_ready;
+
+volatile int dbg_sending_lidar = 0;
 
 int main()
 {
@@ -711,58 +713,12 @@ int main()
 
 	init_lidar();
 
-	lidar_on(4, 1);
+	lidar_on(2, 1);
 
 	while(1)
 	{
 		random++;
 		cnt++;
-
-			/*
-				livelidar_fsm(1) will check if there is a pending calculation request. If there is, it
-				sends the previous image to uart (only if the uart is free; if it isn't, the image will
-				be skipped and lost). Then it starts processing the latest two images, to calculate
-				the corrections. These corrections are automatically applied in the 1k ISR lidar_fsm().
-			*/
-
-		/*
-			int starttime = millisec;
-
-			dbg_error_num = 1;
-			livelidar_fsm(1);
-			int tooktime = millisec - starttime;
-//			if(tooktime > dbg[1]) dbg[1] = tooktime;
-			if(tooktime < 30) delay_ms(30); // temporary shit
-
-			uart_send_fsm(); // send something else.
-			while(uart_busy()) random++;
-
-			dbg[8] = lidar_full_rev[0].idx;
-			#ifdef RN1P4
-			if(lidar_full_rev[0].idx != 183) // syncing at 0xa0 hw offset + 90/4 degrees results in this.
-			#endif
-			#ifdef RN1P6
-			if(lidar_full_rev[0].idx != 161)
-			#endif
-			#ifdef RN1P7
-			if(lidar_full_rev[0].idx != 161)
-			#endif
-			#ifdef PULU1
-			if(lidar_full_rev[0].idx != 183+45)
-			#endif
-			{
-				dbg[2]++;
-				host_dead();
-				ignore_cmds = 1;
-				lidar_ready = 0;
-				deinit_lidar();
-				delay_ms(500);
-				init_lidar();
-				delay_ms(200);
-				sync_lidar();
-			}
-		*/
-
 
 		// calc from xcel integral
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
@@ -775,21 +731,29 @@ int main()
 		send_uart(sync_packet, 0xaa, 8);
 		while(uart_busy()) random++;
 
-		if(lidar_scan_ready)
-		{
-			LED_ON();
-			lidar_scan_ready = 0;
-			send_uart(prev_lidar_scan, 0x84, LIDAR_SIZEOF(*prev_lidar_scan));
-		}
+		LED_ON();
+		lidar_scan_ready = 0;
+		while(!lidar_scan_ready) ;
+		LED_OFF();
+		dbg_sending_lidar = 1;
+		send_uart(prev_lidar_scan, 0x84, LIDAR_SIZEOF(*prev_lidar_scan));
+		dbg_sending_lidar = 0;
+
 		while(uart_busy()) random++;
 		uart_send_fsm(); // send something else.
 		delay_ms(50);
 		while(uart_busy()) random++;
-		LED_OFF();
 
-		dbg[4] = cur_pos.x;
-		dbg[5] = cur_pos.y;
 
+#ifdef SONARS_INSTALLED
+		{
+			xyc_t* sonar;
+			while( (sonar = get_sonar_point()) )
+			{
+				send_uart(sonar, 0x85, sizeof(xyc_t));
+			}
+		}
+#endif
 
 /*
 		static int sensors_stabilized = 0;

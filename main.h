@@ -44,7 +44,5 @@ typedef struct  __attribute__ ((__packed__))
 int get_bat_v();
 extern volatile adc_data_t adc_data[ADC_SAMPLES];
 
-extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
-
 
 #endif
