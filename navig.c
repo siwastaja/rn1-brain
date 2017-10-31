@@ -8,6 +8,7 @@ Collision avoidance, simple mechanical tasks.
 #include <stdint.h>
 #include <math.h>
 
+#include "sin_lut.h"
 #include "lidar.h"
 #include "sonar.h"
 #include "navig.h"
@@ -22,8 +23,6 @@ int collision_avoidance_on;
 uint32_t store_stop_flags = 0;
 uint32_t store_action_flags = 0;
 
-
-extern int latest_sonars[MAX_NUM_SONARS]; // in cm, 0 = no echo
 
 extern volatile int dbg[10];
 
@@ -59,15 +58,6 @@ static int avoidance_in_action;
 static int xy_left;
 static int xy_id;
 
-
-int nearest_sonar()
-{
-	int n = 99999;
-	if(latest_sonars[0] && latest_sonars[0] < n) n = latest_sonars[0];
-	if(latest_sonars[1] && latest_sonars[1] < n) n = latest_sonars[1];
-	if(latest_sonars[2] && latest_sonars[2] < n) n = latest_sonars[2];
-	return n;
-}
 
 static int back_mode_hommel = 0;
 static int speedlim_hommel = 50;
@@ -286,7 +276,7 @@ void navig_fsm1()
 	xy_fsm();
 
 	static int speed_incr_cnt;
-
+	speed_incr_cnt++;
 	if(speed_incr_cnt > 250)
 	{
 		speed_incr_cnt = 0;
@@ -313,7 +303,7 @@ void navig_fsm1()
 #define robot_ys_TIGHT (480)
 #define robot_xs_TIGHT (524)
 #define robot_origin_to_front_TIGHT (150)
-#define robot_origin_to_back_TIGHT  (390)
+#define robot_origin_to_back_TIGHT  (400)
 #endif
 
 #ifdef PULU1
@@ -738,9 +728,6 @@ void daiju_meininki_fsm()
 		}
 
 		#ifdef SONARS_INSTALLED
-		if((latest_sonars[0] && latest_sonars[0] < 7) || (latest_sonars[2] && latest_sonars[2] < 7) ||
-		   (latest_sonars[1] && latest_sonars[1] < 10))
-			can_do[GO_FWD] = 0;
 		#endif
 
 		int can_do_cnt = can_do[0]+can_do[1]+can_do[2]+can_do[3];
@@ -860,225 +847,333 @@ void navig_fsm2()
 
 void micronavi_point_in(int32_t x, int32_t y)
 {
-	int fwd_remain = get_fwd();
-	int reverse;
-	int dist_to_hit;
-
-	if(cur_move.state != MOVE_WAIT_STRAIGHT)
-		return;
-
-	dbg[8]++;
-
-	if(fwd_remain < 0)
+	if(correcting_straight())
 	{
-		reverse = 1;
-		fwd_remain *= -1;
-		dist_to_hit = -1*x - robot_origin_to_back;
-	}
-	else
-	{
-		reverse = 0;
-		dist_to_hit = x - robot_origin_to_front;
-	}
+		int fwd_remain = get_fwd();
+		int reverse;
+		int dist_to_hit;
 
-	if(y < (robot_ys/2+0) && y > (-1*robot_ys/2-0))  // Direct collision course
-	{
-		if(dist_to_hit > -100) // skip things behind our way
+		if(fwd_remain < 0)
 		{
-			if(dist_to_hit < 250)
+			reverse = 1;
+			fwd_remain *= -1;
+			dist_to_hit = -1*x - robot_origin_to_back;
+		}
+		else
+		{
+			reverse = 0;
+			dist_to_hit = x - robot_origin_to_front;
+		}
+
+		if(y < (robot_ys/2+0) && y > (-1*robot_ys/2-0))  // Direct collision course
+		{
+			if(dist_to_hit > -100) // skip things behind our way
 			{
-				if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				if(dist_to_hit < 250)
 				{
-					MAXSPEED(20);
+					if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(20);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(10);
+					}
+					else // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
+					{
+						//dbg[6] = x; dbg[7] = y;
+						int amount = dist_to_hit-30;
+						if(amount < 0) amount = 0;
+						change_straight_rel((reverse?-1:1)*amount);
+						cur_move.state = 0;
+						store_stop_flags |= 1;
+					}
 				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+				if(dist_to_hit < 500)
 				{
-					MAXSPEED(10);
+					if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+					{
+						MAXSPEED(40);
+					}
+					else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(30);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(20);
+					}
+					else // gonna hit
+					{
+						//dbg[6] = x; dbg[7] = y;
+
+						// Stop carefully, 5cm before the obstacle:
+						change_straight_rel((reverse?-1:1)*(dist_to_hit-50));
+						cur_move.state = 0;
+						store_stop_flags |= 2;
+					}
 				}
-				else // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
+				else if(dist_to_hit < 1200)
 				{
-					dbg[6] = x; dbg[7] = y;
-					int amount = dist_to_hit-30;
-					if(amount < 0) amount = 0;
-					change_straight_rel((reverse?-1:1)*amount);
-					cur_move.state = 0;
-					store_stop_flags |= 1;
+					if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+					{
+						MAXSPEED(50);
+					}
+					else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(40);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(35);
+					}
+					else // gonna hit
+					{
+						MAXSPEED(30);
+					}
 				}
 			}
-			if(dist_to_hit < 500)
+		}
+		else if(y < (robot_ys/2+80) && y > (-1*robot_ys/2-80))  // Obstacle very close to either side
+		{
+			if(dist_to_hit > -100) // skip things behind our way
 			{
-				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				if(dist_to_hit < 250)
+				{
+					if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(25);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(15);
+					}
+					else
+					{
+						MAXSPEED(10); // Corner of the robot will almost hit, go very slowly
+					}
+				}
+				if(dist_to_hit < 500)
+				{
+					if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+					{
+						MAXSPEED(45);
+					}
+					else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(35);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(25);
+					}
+					else
+					{
+						MAXSPEED(20);
+					}
+				}
+				else if(dist_to_hit < 1200)
+				{
+					if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+					{
+						MAXSPEED(50);
+					}
+					else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(45);
+					}
+					else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
+					{
+						MAXSPEED(40);
+					}
+					else
+					{
+						MAXSPEED(35);
+					}
+				}
+			}
+		}
+		else if(y < (robot_ys/2+160) && y > (-1*robot_ys/2-160))  // Obstacle kinda close to either side
+		{
+			if(dist_to_hit > -100) // skip things behind our way
+			{
+				if(dist_to_hit < 250)
+				{
+					if(fwd_remain < dist_to_hit-150)
+					{
+						MAXSPEED(30);
+					}
+					else if(fwd_remain < dist_to_hit)
+					{
+						MAXSPEED(20);
+					}
+					else
+					{
+						MAXSPEED(15);
+					}
+				}
+				if(dist_to_hit < 500)
+				{
+					if(fwd_remain < dist_to_hit-300)
+					{
+						MAXSPEED(50);
+					}
+					else if(fwd_remain < dist_to_hit-150)
+					{
+						MAXSPEED(40);
+					}
+					else if(fwd_remain < dist_to_hit)
+					{
+						MAXSPEED(30);
+					}
+					else
+					{
+						MAXSPEED(25);
+					}
+				}
+				else if(dist_to_hit < 1200)
+				{
+					if(fwd_remain < dist_to_hit-150)
+					{
+						MAXSPEED(55);
+					}
+					else if(fwd_remain < dist_to_hit)
+					{
+						MAXSPEED(45);
+					}
+					else
+					{
+						MAXSPEED(40);
+					}
+				}
+			}
+		}
+		else if(y < (robot_ys/2+240) && y > (-1*robot_ys/2-240))  // Some obstacle not so close
+		{
+			if(dist_to_hit > -100) // skip things behind our way
+			{
+				if(dist_to_hit < 250)
 				{
 					MAXSPEED(40);
 				}
-				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(30);
-				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(20);
-				}
-				else // gonna hit
-				{
-					dbg[6] = x; dbg[7] = y;
-
-					// Stop carefully, 5cm before the obstacle:
-					change_straight_rel((reverse?-1:1)*(dist_to_hit-50));
-					cur_move.state = 0;
-					store_stop_flags |= 2;
-				}
-			}
-			else if(dist_to_hit < 1200)
-			{
-				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				if(dist_to_hit < 500)
 				{
 					MAXSPEED(50);
 				}
-				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				else if(dist_to_hit < 1200)
 				{
-					MAXSPEED(40);
-				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(35);
-				}
-				else // gonna hit
-				{
-					MAXSPEED(30);
+					MAXSPEED(60);
 				}
 			}
 		}
 	}
-	else if(y < (robot_ys/2+80) && y > (-1*robot_ys/2-80))  // Obstacle very close to either side
+
+
+/*
+
+
+       ###############################
+       ###############################
+       ###############################
+       ###############################
+       #######################O#######
+       ###############################
+       ###############################
+       ###############################
+       ###############################
+             |
+             |
+             |  hit_remain_mm
+             |
+             |
+             |
+             X  <--obstacle seen (variables x,y)
+
+
+
+
+
+       ###############################
+       ###############################
+       ###############################
+       ###############################
+       #######################O#######
+       ###############################
+       ###############################
+       ###############################
+       ###############################
+             |
+             |
+             |
+             |
+             |
+             |
+             X  <--obstacle seen (variables x,y)
+             |
+             |
+             |   turn_remain_mm (projected 90 deg from the robot, through x,y)
+                 can be longer or shorter than hit_remain_mm. If longer, obviously going to hit.
+
+*/
+
+
+	if(correcting_angle())
 	{
-		if(dist_to_hit > -100) // skip things behind our way
+		int ang_remain = get_ang_err();
+
+		if(ang_remain > 5*ANG_1_DEG || ang_remain < -5*ANG_1_DEG)
 		{
-			if(dist_to_hit < 250)
+			int hit_remain_mm;
+			if(ang_remain > 0)
 			{
-				if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(25);
-				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(15);
-				}
-				else
-				{
-					MAXSPEED(10); // Corner of the robot will almost hit, go very slowly
-				}
+				hit_remain_mm = y - robot_ys/2;
 			}
-			if(dist_to_hit < 500)
+			else
 			{
-				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
-				{
-					MAXSPEED(45);
-				}
-				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(35);
-				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(25);
-				}
-				else
-				{
-					MAXSPEED(20);
-				}
+				hit_remain_mm = -1*y - robot_ys/2;
 			}
-			else if(dist_to_hit < 1200)
+
+			uint32_t ang32 = ang_remain;
+			int turn_remain_mm = (sin_lut[ang32>>SIN_LUT_SHIFT] * (-1*x))>>15;
+			if(turn_remain_mm < 0) turn_remain_mm *= -1;
+
+			if(hit_remain_mm > -150) // skip things behind
 			{
-				if(fwd_remain < dist_to_hit-300) // going to stop well in time anyway
+				if(x > (-1*robot_origin_to_back)          && x < -20 && hit_remain_mm < 200) // arse in direct collision course, and soon.
 				{
-					MAXSPEED(50);
+					if(turn_remain_mm < hit_remain_mm-150)
+					{
+						MAXSPEED(20);
+					}
+					if(turn_remain_mm < hit_remain_mm) // barely not going to hit, still go carefully
+					{
+						MAXSPEED(10);
+					}
+					else   // going to hit, stop
+					{
+						//dbg[4] = hit_remain_mm;
+						//dbg[5] = turn_remain_mm;
+						//dbg[6] = x;
+						//dbg[7] = y;
+						change_angle_to_cur();
+						store_stop_flags |= (1UL<<2);
+					}
 				}
-				else if(fwd_remain < dist_to_hit-150) // going to stop, but don't want to scare anyone, limit speed.
+				else if(x > (-1*robot_origin_to_back)-60  && x < 0 && hit_remain_mm < 300) // arse getting close
 				{
-					MAXSPEED(45);
+					if(turn_remain_mm < hit_remain_mm-250)
+					{
+						MAXSPEED(40);
+					}
+					if(turn_remain_mm < hit_remain_mm-150)
+					{
+						MAXSPEED(30);
+					}
+					else   // going to hit, in theory, let's see what happens later
+					{
+						MAXSPEED(20);
+					}
 				}
-				else if(fwd_remain < dist_to_hit) // going to barely stop, but don't want to scare anyone, limit speed.
-				{
-					MAXSPEED(40);
-				}
-				else
-				{
-					MAXSPEED(35);
-				}
-			}
-		}
-	}
-	else if(y < (robot_ys/2+160) && y > (-1*robot_ys/2-160))  // Obstacle kinda close to either side
-	{
-		if(dist_to_hit > -100) // skip things behind our way
-		{
-			if(dist_to_hit < 250)
-			{
-				if(fwd_remain < dist_to_hit-150)
-				{
-					MAXSPEED(30);
-				}
-				else if(fwd_remain < dist_to_hit)
-				{
-					MAXSPEED(20);
-				}
-				else
-				{
-					MAXSPEED(15);
-				}
-			}
-			if(dist_to_hit < 500)
-			{
-				if(fwd_remain < dist_to_hit-300)
-				{
-					MAXSPEED(50);
-				}
-				else if(fwd_remain < dist_to_hit-150)
-				{
-					MAXSPEED(40);
-				}
-				else if(fwd_remain < dist_to_hit)
-				{
-					MAXSPEED(30);
-				}
-				else
-				{
-					MAXSPEED(25);
-				}
-			}
-			else if(dist_to_hit < 1200)
-			{
-				if(fwd_remain < dist_to_hit-150)
-				{
-					MAXSPEED(55);
-				}
-				else if(fwd_remain < dist_to_hit)
-				{
-					MAXSPEED(45);
-				}
-				else
-				{
-					MAXSPEED(40);
-				}
-			}
-		}
-	}
-	else if(y < (robot_ys/2+240) && y > (-1*robot_ys/2-240))  // Some obstacle not so close
-	{
-		if(dist_to_hit > -100) // skip things behind our way
-		{
-			if(dist_to_hit < 250)
-			{
-				MAXSPEED(40);
-			}
-			if(dist_to_hit < 500)
-			{
-				MAXSPEED(50);
-			}
-			else if(dist_to_hit < 1200)
-			{
-				MAXSPEED(60);
 			}
 		}
 	}
