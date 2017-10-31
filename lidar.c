@@ -500,12 +500,17 @@ void lidar_fsm()
 int lidar_cur_n_samples;
 int dbg_prev_len;
 
+volatile int lidar_near_filter_on = 1;
+volatile int lidar_midlier_filter_on = 1;
+
 volatile int lidar_scan_ready;
 
 // Undocumented bug in Scanse Sweep: while the motor is stabilizing / calibrating, it also ignores the "Adjust LiDAR Sample rate" command (completely, no reply).
 
 void lidar_rx_done_inthandler()
 {
+	int starttime = TIM6->CNT;
+
 	DMA2->LIFCR = 0b111101UL<<16; // Clear DMA interrupt flags
 	USART1->SR = 0;
 
@@ -698,6 +703,7 @@ void lidar_rx_done_inthandler()
 				  lidar_rxbuf[buf_idx][3]+lidar_rxbuf[buf_idx][4]+lidar_rxbuf[buf_idx][5]) % 255;
 			if(chk != lidar_rxbuf[buf_idx][6] /*checksum fail*/ || (lidar_rxbuf[buf_idx][0]&0b11111110) /* any error bit*/)
 			{
+				dbg[6]++;
 				chk_err_cnt+=20;
 
 				if(chk_err_cnt > 100)
@@ -716,7 +722,14 @@ void lidar_rx_done_inthandler()
 			if(chk_err_cnt) chk_err_cnt--;
 			if(lidar_rxbuf[buf_idx][0]) // non-zero = sync. (error flags have been handled already)
 			{
+
+				extern volatile int dbg_sending_lidar;
+				if(dbg_sending_lidar)
+					dbg[5]++;
+
+
 				acq_lidar_scan->n_points = lidar_cur_n_samples;
+				dbg[9] = lidar_cur_n_samples;
 				COPY_POS(acq_lidar_scan->pos_at_end, cur_pos);
 				lidar_scan_t* swptmp;
 				swptmp = prev_lidar_scan;
@@ -742,12 +755,97 @@ void lidar_rx_done_inthandler()
 			// optimization todo: we are little endian like the sensor: align rxbuf properly and directly access as uint16
 			int32_t degper16 = (lidar_rxbuf[buf_idx][2]<<8) | lidar_rxbuf[buf_idx][1];
 			int32_t len      = (lidar_rxbuf[buf_idx][4]<<8) | lidar_rxbuf[buf_idx][3];
-//			int snr      = lidar_rxbuf[buf_idx][5];
+			//int snr      = lidar_rxbuf[buf_idx][5];
+			/*
+				Filtering low-snr results was tested:
+				Seems useless. When high-noise near-field results are looked at, snr thresholding seems to reduce
+				the number of points quite a bit, but mostly in the middle; the worst case wrong points are still there!
+				So, having a high number of noisy points is better. -> no snr-based filtering
+			*/
 
-			if(len < 10)
+			/*
+				Remove "midliers", erroneous average points between two readings:
+
+				#############################################
+
+				                      <-- at least 25cm gap
+
+				                 .    <-- midlier
+
+				                      <-- at least 25cm gap
+
+				##################
+
+
+				                   O
+
+			*/
+
+			if(len < 20)
 			{
 				// "1 cm" signifies no signal. "0 cm" is undefined.
+				// Points too near are garbage anyway, just ignore them and hope that a small obstacle near
+				// the front is not unseen by this.
 				break;
+			}
+
+			#define MIDLIER_LEN 25 // in cm
+			if(lidar_midlier_filter_on)
+			{
+
+				static int midlier_prev3_len, midlier_prev2_len, midlier_prev_len;
+
+				if(midlier_prev2_len > 1 && midlier_prev_len > 1 && len > 1)  //  -VxV       -=invalid, V=valid, x=potential midlier
+				{
+					if( (midlier_prev_len > midlier_prev2_len+MIDLIER_LEN && midlier_prev_len < len-MIDLIER_LEN) ||
+					    (midlier_prev_len < midlier_prev2_len-MIDLIER_LEN && midlier_prev_len > len+MIDLIER_LEN))
+					{
+						// Remove (overwrite) the previous point as a midlier.
+						if(lidar_cur_n_samples) lidar_cur_n_samples--;
+					}
+				}
+				else if(midlier_prev3_len > 1 && midlier_prev_len > 1 && len > 1)  // V-xV
+				{
+					if( (midlier_prev_len > midlier_prev3_len+MIDLIER_LEN && midlier_prev_len < len-MIDLIER_LEN) ||
+					    (midlier_prev_len < midlier_prev3_len-MIDLIER_LEN && midlier_prev_len > len+MIDLIER_LEN))
+					{
+						// Remove (overwrite) the previous point as a midlier.
+						if(lidar_cur_n_samples) lidar_cur_n_samples--;
+					}
+				}
+				else if(midlier_prev3_len > 1 && midlier_prev2_len > 1 && midlier_prev_len > 1) // VxV-
+				{
+					if( (midlier_prev2_len > midlier_prev3_len+MIDLIER_LEN && midlier_prev2_len < midlier_prev_len-MIDLIER_LEN) ||
+					    (midlier_prev2_len < midlier_prev3_len-MIDLIER_LEN && midlier_prev2_len > midlier_prev_len+MIDLIER_LEN))
+					{
+						// Remove the point before the previous point as a midlier.
+						if(lidar_cur_n_samples > 1)
+						{
+							acq_lidar_scan->scan[lidar_cur_n_samples-2].x = acq_lidar_scan->scan[lidar_cur_n_samples-1].x;
+							acq_lidar_scan->scan[lidar_cur_n_samples-2].y = acq_lidar_scan->scan[lidar_cur_n_samples-1].y;
+							lidar_cur_n_samples--;
+						}
+					}
+				}
+				else if(midlier_prev3_len > 1 && midlier_prev2_len > 1 && len > 1) // Vx-V
+				{
+					if( (midlier_prev2_len > midlier_prev3_len+MIDLIER_LEN && midlier_prev2_len < len-MIDLIER_LEN) ||
+					    (midlier_prev2_len < midlier_prev3_len-MIDLIER_LEN && midlier_prev2_len > len+MIDLIER_LEN))
+					{
+						// Remove the point before the previous point as a midlier.
+						if(lidar_cur_n_samples > 1)
+						{
+							acq_lidar_scan->scan[lidar_cur_n_samples-2].x = acq_lidar_scan->scan[lidar_cur_n_samples-1].x;
+							acq_lidar_scan->scan[lidar_cur_n_samples-2].y = acq_lidar_scan->scan[lidar_cur_n_samples-1].y;
+							lidar_cur_n_samples--;
+						}
+					}
+				}
+
+				midlier_prev3_len = midlier_prev2_len;
+				midlier_prev2_len = midlier_prev_len;
+				midlier_prev_len = len;
+
 			}
 
 			for(int i=0; i<N_IGNORE_AREAS; i++)
@@ -760,12 +858,65 @@ void lidar_rx_done_inthandler()
 
 			len *= 10; // cm --> mm
 
+			/*
+				Data of nearby points is very noisy, and gets noisier the nearer we see. In addition,
+				we don't need so many points packed near each other -> average them together.
+			*/
+
+			int flt_len;
+			static int prev_len, prev2_len, prev3_len, skip_averaging;
+
+			if(lidar_near_filter_on && skip_averaging == 0)
+			{
+				if(len < 600 && (prev_len < 600 || prev2_len < 600 || prev3_len < 600))
+				{
+					// Average the four:
+					flt_len = (len + prev_len + prev2_len + prev3_len)>>2;
+
+					// Overwrite the previous, 4->1
+					if(lidar_cur_n_samples > 2) lidar_cur_n_samples-=3;
+					skip_averaging = 3;
+				}
+				else if(len < 800 && (prev_len < 800 || prev2_len < 800))
+				{
+					// Average the three:
+					flt_len = (len + prev_len + prev2_len)/3;
+
+					// Overwrite the previous, 3->1
+					if(lidar_cur_n_samples > 1) lidar_cur_n_samples-=2;
+					skip_averaging = 2;
+				}
+				else if(len < 1100)
+				{
+					// Average the two.
+					flt_len = (len+prev_len)>>1;
+					// 2->1
+					if(lidar_cur_n_samples) lidar_cur_n_samples--;
+					skip_averaging = 1;
+				}
+				else
+				{
+					flt_len = len;
+					if(skip_averaging) skip_averaging--;
+				}
+			}
+			else
+			{
+				flt_len = len;
+				if(skip_averaging) skip_averaging--;
+			}
+
+			prev3_len = prev2_len;
+			prev2_len = prev_len;
+			prev_len = len;
+
+
 			uint32_t ang32 = (uint32_t)cur_pos.ang - degper16*ANG_1PER16_DEG;
 			int32_t y_idx = (ang32)>>SIN_LUT_SHIFT;
 			int32_t x_idx = (1073741824-ang32)>>SIN_LUT_SHIFT;
 
-			int32_t x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)len)>>15) - acq_lidar_scan->refxy.x;
-			int32_t y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)len)>>15) - acq_lidar_scan->refxy.y;
+			int32_t x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)flt_len)>>15) - acq_lidar_scan->refxy.x;
+			int32_t y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)flt_len)>>15) - acq_lidar_scan->refxy.y;
 
 			if(x < -30000 || x > 30000 || y < -30000 || y > 30000)
 				break;
@@ -775,12 +926,14 @@ void lidar_rx_done_inthandler()
 			
 			lidar_cur_n_samples++;
 
+
 			uint32_t ang32_robot_frame = -1*degper16*ANG_1PER16_DEG;
 			int32_t y_idx_robot_frame = (ang32_robot_frame)>>SIN_LUT_SHIFT;
 			int32_t x_idx_robot_frame = (1073741824-ang32_robot_frame)>>SIN_LUT_SHIFT;
-			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)len)>>15;
-			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)len)>>15;
+			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)flt_len)>>15;
+			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)flt_len)>>15;
 			micronavi_point_in(x_robot_frame, y_robot_frame);
+
 
 			IGNORE_SAMPLE: break;
 		}
@@ -792,6 +945,7 @@ void lidar_rx_done_inthandler()
 
 	}
 
+	int tooktime = TIM6->CNT - starttime;
 }
 
 /*

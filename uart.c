@@ -210,17 +210,19 @@ void handle_uart_message()
 
 		// debug/dev messages
 		case 0xd1:
-		zero_angle();
+		lidar_near_filter_on = 1;
 		break;
 
 		case 0xd2:
-		zero_coords();
+		lidar_near_filter_on = 0;
 		break;
 
 		case 0xd3:
+		lidar_midlier_filter_on = 1;
 		break;
 
 		case 0xd4:
+		lidar_midlier_filter_on = 0;
 		break;
 
 		default:

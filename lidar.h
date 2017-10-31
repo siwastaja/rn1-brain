@@ -151,29 +151,7 @@ void lidar_mark_invalid();
 
 extern point_t lidar_collision_avoidance[360];
 
-
-/*
- Lidar-based 2D MAP on uart:
-
-num_bytes
- 1	uint8 start byte
- 1	uint7 status
- 1      uint7 id to identify when new robot coordinates have been applied.
- 2	int14 cur_ang (at the middle point of the lidar scan)  (not used for turning the image, just to include robot coords)
- 5	int32 cur_x   ( " " )
- 5	int32 cur_y   ( " " )
- 1	int7  correction return value
- 2	int14 ang_corr (for information only)
- 2	int14 x_corr (for information only)
- 2	int14 y_corr (for information only) 
-1440	360 * point
-	  2	int14  x referenced to cur_x
-	  2	int14  y referenced to cur_y
-
-	Total: 1461
-	Time to tx at 115200: ~130 ms
-
-*/
-
+extern volatile int lidar_near_filter_on;
+extern volatile int lidar_midlier_filter_on;
 
 #endif
