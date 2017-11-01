@@ -747,10 +747,10 @@ int main()
 
 #ifdef SONARS_INSTALLED
 		{
-			xyc_t* sonar;
+			sonar_xyz_t* sonar;
 			while( (sonar = get_sonar_point()) )
 			{
-				send_uart(sonar, 0x85, sizeof(xyc_t));
+				send_uart(sonar, 0x85, sizeof(sonar_xyz_t));
 			}
 		}
 #endif

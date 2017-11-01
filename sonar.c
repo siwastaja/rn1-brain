@@ -2,6 +2,7 @@
 
 #include "feedbacks.h" // for robot position
 #include "sonar.h"
+#include "navig.h"
 #include "sin_lut.h"
 
 extern volatile int dbg[10];
@@ -52,9 +53,9 @@ typedef struct
 
 sonar_cfg_t sonar_cfgs[NUM_SONARS] =
 {                                                   //       TRIG      ECHO    offs:x     y     z      side_angle      up_angle
-	/* 0: (front view) left  : Trig IO1, Echo IO2 */ {GPIOE, 7,  GPIOE, 8,     140,  150,  120,    -5*ANG_1_DEG,   0           }
-	/* 1: (front view) right : Trig IO7, Echo IO8 */ {GPIOE,13,  GPIOE,14,     140, -150,  120,     5*ANG_1_DEG,   0           }
-	/* 2:         top middle : Trig IO3, Echo IO4 */ {GPIOE, 9,  GPIOE,10,     140,    0,  200,     0,             45*ANG_1_DEG},
+	/* 0: (front view) left  : Trig  A9, Echo A10 */ {GPIOC, 0,  GPIOC, 1,     140,  150,  135,    -5*ANG_1_DEG,   0           },
+	/* 1: (front view) right : Trig I11, Echo I12 */ {GPIOA, 0,  GPIOA, 1,     140, -150,  135,     5*ANG_1_DEG,   0           },
+	/* 2:         top middle : Trig IO3, Echo IO4 */ {GPIOE, 9,  GPIOE,10,     140,    0,  190,     0,             45*ANG_1_DEG},
 	/* 3:      bottom middle : Trig IO5, Echo IO6 */ {GPIOE,11,  GPIOE,12,     140,    0,  120,     0,             0           }
 };
 
@@ -86,7 +87,7 @@ sonar_xyz_t* get_sonar_point()
 	return ret;
 }
 
-void put_sonar_point(int32_t x, int32_t y, int16_t z)
+void put_sonar_point(int32_t x, int32_t y, int16_t z, int8_t c)
 {
 	// overrun detection:
 	// int next = sonar_wr+1; if(next >= SONAR_FIFO_LEN) next = 0;
@@ -95,6 +96,7 @@ void put_sonar_point(int32_t x, int32_t y, int16_t z)
 	sonar_point_fifo[sonar_wr].x = x;
 	sonar_point_fifo[sonar_wr].y = y;
 	sonar_point_fifo[sonar_wr].z = z;
+	sonar_point_fifo[sonar_wr].c = c;
 
 	dbg[0]++;
 	dbg[1] = x;
@@ -105,28 +107,61 @@ void put_sonar_point(int32_t x, int32_t y, int16_t z)
 
 void process_sonar_point(int idx, int mm)
 {
-	mm = (mm * sonar_cfgs[idx].cos_up_angle_x32768) >> 15; // Distance to the obstacle projected to the floor plane.
+	int sin_up_ang_idx = ((uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
+	int cos_up_ang_idx = (1073741824-(uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
 
 	uint32_t angle = cur_pos.ang;
 	int y_idx = (angle)>>SIN_LUT_SHIFT;
 	int x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
 	int sensor_x = cur_pos.x + (((int32_t)sin_lut[x_idx] * (int32_t)(sonar_cfgs[idx].x_offs))>>15);
-	int sensor_y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)(sonar_cfgs[idx].y_offs))>>15);
+	int sensor_y = cur_pos.y + (((int32_t)sin_lut[y_idx] * (int32_t)(sonar_cfgs[idx].x_offs))>>15);
+	uint32_t ang2 = angle + 90*ANG_1_DEG;
+	y_idx = (ang2)>>SIN_LUT_SHIFT;
+	x_idx = (1073741824-ang2)>>SIN_LUT_SHIFT;
+	sensor_x += (((int32_t)sin_lut[x_idx] * (int32_t)(sonar_cfgs[idx].y_offs))>>15);
+	sensor_y += (((int32_t)sin_lut[y_idx] * (int32_t)(sonar_cfgs[idx].y_offs))>>15);
+
 	int sensor_z = sonar_cfgs[idx].z_offs;
 
-	angle += sonar_cfgs[idx].side_angle;
+	angle -= sonar_cfgs[idx].side_angle;
 	y_idx = (angle)>>SIN_LUT_SHIFT;
 	x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
-
-	int sin_up_ang_idx = ((uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
-	int cos_up_ang_idx = (1073741824-(uint32_t)sonar_cfgs[idx].up_angle)>>SIN_LUT_SHIFT;
 	
 	int x = sensor_x + (((int64_t)sin_lut[x_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
 	int y = sensor_y + (((int64_t)sin_lut[y_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
 	int z = sensor_z + (((int32_t)mm * (int32_t)sin_lut[sin_up_ang_idx])>>15);
 
-	put_sonar_point(x, y, z);
-	// todo: give it to the obstacle avoidance
+	int8_t c;
+	switch(idx)
+	{
+		case 0:
+		case 1:
+		case 3:
+		{
+			if(mm < 200) c = 3;
+			else if(mm < 250) c = 2;
+			else c = 1;
+		}
+		break;
+
+		default:
+			c = 3;
+		break;
+	}
+
+	put_sonar_point(x, y, z, c);
+
+	// Calculate in robot coord frame for micronavi:
+
+	angle = sonar_cfgs[idx].side_angle;
+	y_idx = (angle)>>SIN_LUT_SHIFT;
+	x_idx = (1073741824-angle)>>SIN_LUT_SHIFT;
+	
+	x = sonar_cfgs[idx].x_offs + (((int64_t)sin_lut[x_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
+	y = sonar_cfgs[idx].y_offs + (((int64_t)sin_lut[y_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
+	z = sonar_cfgs[idx].z_offs + (((int32_t)mm * (int32_t)sin_lut[sin_up_ang_idx])>>15);
+
+	micronavi_point_in(x, y, z, c-1);
 }
 
 

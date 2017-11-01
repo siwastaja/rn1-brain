@@ -303,7 +303,11 @@ void navig_fsm1()
 #define robot_ys_TIGHT (480)
 #define robot_xs_TIGHT (524)
 #define robot_origin_to_front_TIGHT (150)
-#define robot_origin_to_back_TIGHT  (400)
+	#ifdef DELIVERY_APP
+	#define robot_origin_to_back_TIGHT  (526)
+	#else
+	#define robot_origin_to_back_TIGHT  (400)
+	#endif
 #endif
 
 #ifdef PULU1
@@ -315,6 +319,7 @@ void navig_fsm1()
 
 
 int robot_ys, robot_xs, robot_origin_to_front, robot_origin_to_back;
+int robot_height = 1600;
 
 void set_obstacle_avoidance_margin(int cm)
 {
@@ -845,8 +850,11 @@ void navig_fsm2()
 	Adjusts max speed, stops if necessary.
 */
 
-void micronavi_point_in(int32_t x, int32_t y)
+void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 {
+	if(z < 35 || z > robot_height)
+		goto SKIP_MICRONAVI;
+
 	if(correcting_straight())
 	{
 		int fwd_remain = get_fwd();
@@ -879,7 +887,7 @@ void micronavi_point_in(int32_t x, int32_t y)
 					{
 						MAXSPEED(10);
 					}
-					else // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
+					else if(stop_if_necessary) // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
 					{
 						//dbg[6] = x; dbg[7] = y;
 						int amount = dist_to_hit-30;
@@ -888,6 +896,8 @@ void micronavi_point_in(int32_t x, int32_t y)
 						cur_move.state = 0;
 						store_stop_flags |= 1;
 					}
+					else
+						MAXSPEED(10);
 				}
 				if(dist_to_hit < 500)
 				{
@@ -903,7 +913,7 @@ void micronavi_point_in(int32_t x, int32_t y)
 					{
 						MAXSPEED(20);
 					}
-					else // gonna hit
+					else if(stop_if_necessary) // gonna hit
 					{
 						//dbg[6] = x; dbg[7] = y;
 
@@ -912,6 +922,8 @@ void micronavi_point_in(int32_t x, int32_t y)
 						cur_move.state = 0;
 						store_stop_flags |= 2;
 					}
+					else
+						MAXSPEED(15);
 				}
 				else if(dist_to_hit < 1200)
 				{
@@ -1149,7 +1161,7 @@ void micronavi_point_in(int32_t x, int32_t y)
 					{
 						MAXSPEED(10);
 					}
-					else   // going to hit, stop
+					else if(stop_if_necessary)  // going to hit, stop
 					{
 						//dbg[4] = hit_remain_mm;
 						//dbg[5] = turn_remain_mm;
@@ -1158,6 +1170,8 @@ void micronavi_point_in(int32_t x, int32_t y)
 						change_angle_to_cur();
 						store_stop_flags |= (1UL<<2);
 					}
+					else
+						MAXSPEED(10);
 				}
 				else if(x > (-1*robot_origin_to_back)-60  && x < 0 && hit_remain_mm < 300) // arse getting close
 				{
@@ -1177,6 +1191,8 @@ void micronavi_point_in(int32_t x, int32_t y)
 			}
 		}
 	}
+
+	SKIP_MICRONAVI:
 
 	set_top_speed(navi_speed);
 }

@@ -1,19 +1,20 @@
 #ifndef _SONAR_H
 #define _SONAR_H
 
-#define NUM_SONARS 2
+#define NUM_SONARS 4
 
 typedef struct
 {
 	int32_t x;
 	int32_t y;
-	int16_t z;
+	int16_t z; // from robot floor level
+	int8_t  c; // classification
 } sonar_xyz_t;
 
 
 void sonar_fsm_10k();
 void init_sonars();
 
-xyc_t* get_sonar_point();
+sonar_xyz_t* get_sonar_point();
 
 #endif

@@ -932,7 +932,7 @@ void lidar_rx_done_inthandler()
 			int32_t x_idx_robot_frame = (1073741824-ang32_robot_frame)>>SIN_LUT_SHIFT;
 			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)flt_len)>>15;
 			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)flt_len)>>15;
-			micronavi_point_in(x_robot_frame, y_robot_frame);
+			micronavi_point_in(x_robot_frame, y_robot_frame, 150, 1);
 
 
 			IGNORE_SAMPLE: break;
