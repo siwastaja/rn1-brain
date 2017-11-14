@@ -225,6 +225,12 @@ void handle_uart_message()
 		lidar_midlier_filter_on = 0;
 		break;
 
+		case 0xd5:
+		break;
+
+		case 0xd6:
+		break;
+
 		default:
 		break;
 	}

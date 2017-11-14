@@ -419,7 +419,6 @@ void correct_location_without_moving_external(pos_t corr)
 {
 	if(corr.x < -2000 || corr.x > 2000 || corr.y < -2000 || corr.y > 2000)
 	{
-//		dbg[4]++;
 		return;
 	}
 
@@ -625,9 +624,9 @@ void run_feedbacks(int sens_status)
 	{
 		if(accurate_turngo)
 		{
-			if(ang_err > (-4*ANG_1_DEG) && ang_err < (4*ANG_1_DEG))
+			if(ang_err > (-3*ANG_1_DEG) && ang_err < (3*ANG_1_DEG))
 				do_correct_fwd = 1;
-			else if(ang_err < (-7*ANG_1_DEG) && ang_err > (7*ANG_1_DEG))
+			else if(ang_err < (-5*ANG_1_DEG) && ang_err > (5*ANG_1_DEG))
 				do_correct_fwd = 0;
 		}
 		else
@@ -654,20 +653,40 @@ void run_feedbacks(int sens_status)
 	- Start doing the tighter angular control after 300 ms of straight segment
 	*/
 
-	if(angular_allowed && 
-		(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
-		 || (                    (ang_err < (-3*ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
+	if(accurate_turngo)
 	{
-		do_correct_angle = 1;
-	}
+		if(angular_allowed && 
+			(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
+			 || (                    (ang_err < (-1*ANG_1_DEG) || ang_err > 1*ANG_1_DEG)) ) )
+		{
+			do_correct_angle = 1;
+		}
 
-	if(!angular_allowed || 
-		    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
-		|| (                    (ang_err > (-2*ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
+		if(!angular_allowed || 
+			    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
+			|| (                    (ang_err > (-ANG_0_5_DEG)   && ang_err < (ANG_0_5_DEG))) )
+		{
+			do_correct_angle = 0;
+		}
+
+	}
+	else
 	{
-		do_correct_angle = 0;
-	}
+		if(angular_allowed && 
+			(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
+			 || (                    (ang_err < (-3*ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
+		{
+			do_correct_angle = 1;
+		}
 
+		if(!angular_allowed || 
+			    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
+			|| (                    (ang_err > (-2*ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
+		{
+			do_correct_angle = 0;
+		}
+
+	}
 
 	if(ang_err > (-10*ANG_1_DEG) && ang_err < (10*ANG_1_DEG) && !fwd_idle)
 		rear_wheels_in_line++;
@@ -716,10 +735,6 @@ void run_feedbacks(int sens_status)
 	}
 
 	static int32_t prev_cur_ang = 0;
-
-//	dbg[2]++;
-//	dbg[3] = motcon_rx[A_MC_IDX].pos;
-//	dbg[4] = motcon_rx[B_MC_IDX].pos;
 
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[A_MC_IDX].pos;
@@ -778,9 +793,6 @@ void run_feedbacks(int sens_status)
 	else                                  turn_wheels_gyro_err_integral -= 3*ANG_0_001_DEG;
 
 	prev_cur_ang = cur_pos.ang;
-
-//	dbg[4] += turned_by_wheels;
-//	dbg[5] = dbg[4]/ANG_0_1_DEG;
 
 	if(reset_wheel_slip_det)
 	{

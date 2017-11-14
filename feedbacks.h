@@ -44,6 +44,7 @@ void change_angle_to_cur();
 
 int get_fwd();
 
+#define ANG_90_DEG  1073741824
 #define ANG_2_5_DEG   29826162
 #define ANG_1_DEG     11930465
 #define ANG_0_5_DEG    5965232

@@ -703,7 +703,6 @@ void lidar_rx_done_inthandler()
 				  lidar_rxbuf[buf_idx][3]+lidar_rxbuf[buf_idx][4]+lidar_rxbuf[buf_idx][5]) % 255;
 			if(chk != lidar_rxbuf[buf_idx][6] /*checksum fail*/ || (lidar_rxbuf[buf_idx][0]&0b11111110) /* any error bit*/)
 			{
-				dbg[6]++;
 				chk_err_cnt+=20;
 
 				if(chk_err_cnt > 100)
@@ -723,13 +722,7 @@ void lidar_rx_done_inthandler()
 			if(lidar_rxbuf[buf_idx][0]) // non-zero = sync. (error flags have been handled already)
 			{
 
-				extern volatile int dbg_sending_lidar;
-				if(dbg_sending_lidar)
-					dbg[5]++;
-
-
 				acq_lidar_scan->n_points = lidar_cur_n_samples;
-				dbg[9] = lidar_cur_n_samples;
 				COPY_POS(acq_lidar_scan->pos_at_end, cur_pos);
 				lidar_scan_t* swptmp;
 				swptmp = prev_lidar_scan;
@@ -932,7 +925,7 @@ void lidar_rx_done_inthandler()
 			int32_t x_idx_robot_frame = (1073741824-ang32_robot_frame)>>SIN_LUT_SHIFT;
 			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)flt_len)>>15;
 			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)flt_len)>>15;
-			micronavi_point_in(x_robot_frame, y_robot_frame, 150, 1);
+			micronavi_point_in(x_robot_frame, y_robot_frame, 150, 1, 0);
 
 
 			IGNORE_SAMPLE: break;

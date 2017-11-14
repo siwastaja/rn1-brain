@@ -98,10 +98,6 @@ void put_sonar_point(int32_t x, int32_t y, int16_t z, int8_t c)
 	sonar_point_fifo[sonar_wr].z = z;
 	sonar_point_fifo[sonar_wr].c = c;
 
-	dbg[0]++;
-	dbg[1] = x;
-	dbg[2] = y;
-
 	sonar_wr++; if(sonar_wr >= SONAR_FIFO_LEN) sonar_wr = 0;
 }
 
@@ -161,7 +157,7 @@ void process_sonar_point(int idx, int mm)
 	y = sonar_cfgs[idx].y_offs + (((int64_t)sin_lut[y_idx] * (int64_t)mm * (int64_t)sin_lut[cos_up_ang_idx])>>30);
 	z = sonar_cfgs[idx].z_offs + (((int32_t)mm * (int32_t)sin_lut[sin_up_ang_idx])>>15);
 
-	micronavi_point_in(x, y, z, c-1);
+	micronavi_point_in(x, y, z, c-1, 1);
 }
 
 

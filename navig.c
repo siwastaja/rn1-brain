@@ -340,301 +340,7 @@ uint32_t get_obstacle_avoidance_action_flags()
 }
 
 
-int lr_diff, y_diff, x_dist_to_charger;
-
-// -100: no lidar image, try again
-// -99: Mark not found.
-int chafind_middle_mark()
-{
-	int nearest_ang = -100;
-	if(lidar_collision_avoidance_new)
-	{
-		lidar_collision_avoidance_new = 0;
-
-		int nearest_x = 400;
-		int y_at_nearest_x = 0;
-//		int avg_x = 0;
-//		int avg_cnt = 0;
-		for(int i = 0; i < 80; i++)
-		{
-			int ang = i-40;
-			int ang_minus2 = i-40-2;
-			if(ang < 0) ang += 360;
-			if(ang_minus2 < 0) ang_minus2 += 360;
-
-			if(!lidar_collision_avoidance[ang].valid) continue;
-
-//			avg_x += lidar_collision_avoidance[ang].x;
-//			avg_cnt++;
-
-			if(lidar_collision_avoidance[ang].x < nearest_x)
-			{
-				// nearest point (the mark) must have clearly farther away points before it. If it's invalid, skip the test.
-				if(!lidar_collision_avoidance[ang_minus2].valid || lidar_collision_avoidance[ang_minus2].x > (lidar_collision_avoidance[ang].x+7))
-				{
-					nearest_x = lidar_collision_avoidance[ang].x;
-					y_at_nearest_x = lidar_collision_avoidance[ang].y;
-					nearest_ang = ang;
-				}
-			}
-		}
-
-//		avg_x /= avg_cnt;
-
-		if(nearest_x == 400 || (nearest_ang > 30 && nearest_ang < 330))
-			return -1;
-
-		int widen = 15;
-		if(nearest_x < 200) widen = 30;
-		else if(nearest_x < 280) widen = 22;
-		else widen = 19;
-
-		int x_right_avg = 0;
-		int x_right_avg_cnt = 0;
-		for(int find = -3; find <=3; find++)
-		{
-			int idx = nearest_ang + widen + find;
-			if(idx > 359) idx-= 360;
-			else if(idx < 0) idx += 360;
-
-			if(!lidar_collision_avoidance[idx].valid) continue;
-			x_right_avg += lidar_collision_avoidance[idx].x;
-			x_right_avg_cnt++;
-		}
-
-
-		if(x_right_avg_cnt < 2)
-		{
-			return -1;	
-		}
-		x_right_avg /= x_right_avg_cnt;
-
-		int x_left_avg = 0;
-		int x_left_avg_cnt = 0;
-		for(int find = -3; find <=3; find++)
-		{
-			int idx = nearest_ang - widen + find;
-			if(idx > 359) idx-= 360;
-			else if(idx < 0) idx += 360;
-
-			if(!lidar_collision_avoidance[idx].valid) continue;
-			x_left_avg += lidar_collision_avoidance[idx].x;
-			x_left_avg_cnt++;
-		}
-
-		if(x_left_avg_cnt < 2)
-		{
-			return -1;	
-		}
-		x_left_avg /= x_left_avg_cnt;
-
-		x_dist_to_charger = (x_left_avg + x_right_avg)/2;
-
-		lr_diff = x_left_avg - x_right_avg;  // Defines angle to be turned
-
-		if(lr_diff < -80 || lr_diff > 80)
-		{
-			return -1;
-		}
-
-		y_diff = y_at_nearest_x; // Defines distance to go sideways.
-
-		if(y_diff < -150 || y_diff > 150)
-			return -1;
-
-		return 0;
-	}
-
-	return -2;
-}
-
-
-typedef enum {
-	CHAFIND_IDLE 		= 0,
-	CHAFIND_START          	= 1,
-	CHAFIND_WAIT_ROTATED	= 2,
-	CHAFIND_WAIT_BACK	= 3,
-	CHAFIND_WAIT_FWD	= 4,
-	CHAFIND_PUSH		= 5,
-	CHAFIND_WAIT_PUSH	= 6,
-	CHAFIND_FINISH		= 7,
-	CHAFIND_FAIL		= 8
-} chafind_state_t;
-
-chafind_state_t chafind_state;
-
-volatile int start_charger = 0;
-
-
-void navig_fsm2_for_charger()
-{
-	static int rot_dir;
-	static int back_amount;
-	switch(chafind_state)
-	{
-		case CHAFIND_START:
-		{
-			set_top_speed_max(20);
-
-			int ret = chafind_middle_mark();
-			if(ret == 0)
-			{
-				auto_disallow(0);
-				allow_angular(1);
-				allow_straight(1);
-				rotate_rel(lr_diff*2*ANG_0_1_DEG);
-				chafind_state++;
-			}
-			else if(ret==-1)
-				chafind_state = CHAFIND_FAIL;
-
-		}
-		break;
-
-		case CHAFIND_WAIT_ROTATED:
-		{
-			if(!correcting_angle())
-			{
-				int ret = chafind_middle_mark();
-				if(ret == 0)
-				{
-					if(y_diff > 15)
-					{
-						rot_dir = 0;
-						// if we were to turn 45 deg, we would need to back off 1mm for each 1mm error.
-						auto_disallow(0);
-						allow_angular(1);
-						allow_straight(1);
-						rotate_rel(-10*ANG_1_DEG);
-
-						int amount_fwd = -6*y_diff;
-						if(amount_fwd < -500) amount_fwd = -500;
-						back_amount = amount_fwd;
-						straight_rel(amount_fwd);
-						chafind_state++;
-					}
-					else if(y_diff < -15)
-					{
-						rot_dir = 1;
-						auto_disallow(0);
-						allow_angular(1);
-						allow_straight(1);
-						rotate_rel(10*ANG_1_DEG);
-
-						int amount_fwd = 6*y_diff;
-						if(amount_fwd < -500) amount_fwd = -500;
-						back_amount = amount_fwd;
-						straight_rel(amount_fwd);
-						chafind_state++;
-					}
-					else
-						chafind_state = CHAFIND_PUSH;
-				}
-				else if(ret == -1)
-				{
-					chafind_state = CHAFIND_FAIL;
-				}
-
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_BACK:
-		{
-			if(!correcting_either())
-			{
-				chafind_state++;
-
-				// Rotate back to where we were before backing.
-				if(rot_dir == 0)
-					rotate_rel(10*ANG_1_DEG);
-				else
-					rotate_rel(-10*ANG_1_DEG);
-
-				straight_rel((-1*back_amount));
-
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_FWD:
-		{
-			if(!correcting_either())
-			{
-				int ret = chafind_middle_mark();
-				if(ret == 0)
-				{
-					if(y_diff < -20 || y_diff > 20 || lr_diff < -10 || lr_diff > 10)
-					{
-						// Try again.
-						chafind_state = CHAFIND_START;
-					}
-					else
-						chafind_state++;
-				}
-				else if(ret == -1)
-				{
-					chafind_state = CHAFIND_FAIL;
-				}
-			}
-		}
-		break;
-
-		case CHAFIND_PUSH:
-		{
-			if(!correcting_either())
-			{
-				set_top_speed_max(11);
-				straight_rel(x_dist_to_charger-robot_origin_to_front_TIGHT+20);
-				chafind_state++;
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_PUSH:
-		{
-			if(!correcting_either())
-			{
-				chafind_state++;
-
-			}
-		}
-		break;
-
-		default:
-		case CHAFIND_FINISH:
-		{
-			reset_movement();
-			start_charger = 1;
-			chafind_state = 0;
-		}
-		break;
-
-		case CHAFIND_FAIL:
-		{
-			reset_movement();
-			chafind_state = 0;
-		}
-		break;
-
-	}
-
-}
-
 extern int accurate_turngo;
-
-void find_charger()
-{
-	accurate_turngo = 1;
-	chafind_state = CHAFIND_START;
-}
-
-void stop_navig_fsms()
-{
-	cur_move.state = 0;
-	chafind_state = 0;
-}
-
 
 #define GO_FWD 0
 #define GO_BACK 1
@@ -826,31 +532,12 @@ void daiju_mode_off()
 	stop_navig_fsms();
 }
 
-void navig_fsm2()
-{
-
-	if(daiju_meininki)
-	{
-		daiju_meininki_fsm();
-		return;
-	}
-
-	if(chafind_state)
-	{
-		navig_fsm2_for_charger();
-		return;
-	}
-
-	move_fsm();
-}
-
-
 /*
 	Call this function right after any sensor has observed a point at (x, y) in robot coord frame (+x = forward).
 	Adjusts max speed, stops if necessary.
 */
 
-void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
+void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 {
 	if(z < 35 || z > robot_height)
 		goto SKIP_MICRONAVI;
@@ -889,7 +576,6 @@ void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 					}
 					else if(stop_if_necessary) // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
 					{
-						//dbg[6] = x; dbg[7] = y;
 						int amount = dist_to_hit-30;
 						if(amount < 0) amount = 0;
 						change_straight_rel((reverse?-1:1)*amount);
@@ -915,8 +601,6 @@ void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 					}
 					else if(stop_if_necessary) // gonna hit
 					{
-						//dbg[6] = x; dbg[7] = y;
-
 						// Stop carefully, 5cm before the obstacle:
 						change_straight_rel((reverse?-1:1)*(dist_to_hit-50));
 						cur_move.state = 0;
@@ -1163,10 +847,6 @@ void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 					}
 					else if(stop_if_necessary)  // going to hit, stop
 					{
-						//dbg[4] = hit_remain_mm;
-						//dbg[5] = turn_remain_mm;
-						//dbg[6] = x;
-						//dbg[7] = y;
 						change_angle_to_cur();
 						store_stop_flags |= (1UL<<2);
 					}
@@ -1195,6 +875,581 @@ void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary)
 	SKIP_MICRONAVI:
 
 	set_top_speed(navi_speed);
+}
+
+
+int chafind_nearest_hit_x;
+int chafind_nearest_hit_y;
+int chafind_left_accum, chafind_left_accum_cnt;
+int chafind_right_accum, chafind_right_accum_cnt;
+int chafind_middle_min_y, chafind_middle_max_y;
+int chafind_middle_cnt;
+int chafind_total_front_accum, chafind_total_front_accum_cnt;
+
+#define CHAFIND_FIRST_DIST 520
+#define CHAFIND_MIDDLE_BAR_DEPTH 80
+#define CHAFIND_MIDDLE_BAR_WIDTH 40
+#define CHAFIND_FIRST_DIST_TOLERANCE 50
+#define CHAFIND_LOOK_SIDEWAY_MAX 180
+#define CHAFIND_LOOK_SIDEWAY_MIN 120
+#define CHAFIND_SIDE (CHAFIND_LOOK_SIDEWAY_MAX+CHAFIND_LOOK_SIDEWAY_MIN)  //  /2 * 2  // y dist between the two side points looked at
+
+//#define CHAFIND_PASS1_ACCEPT_ANGLE (2*ANG_1_DEG)
+//#define CHAFIND_PASS1_ACCEPT_SHIFT 25
+
+#define CHAFIND_PASS1_ACCEPT_ANGLE (1*ANG_1_DEG)
+#define CHAFIND_PASS1_ACCEPT_SHIFT 12
+
+#define CHAFIND_PUSH_TUNE 120 // in mm, lower number = go further
+
+#define CHAFIND_AIM_Y_TUNE 10  // Positive = go more right
+
+
+void chafind_empty_accum1()
+{
+	chafind_nearest_hit_x = 9999;
+	chafind_nearest_hit_y = 0;
+}
+
+void chafind_empty_accum2()
+{
+	chafind_left_accum = chafind_left_accum_cnt = 0;
+	chafind_right_accum = chafind_right_accum_cnt = 0;
+	chafind_middle_min_y = 9999;
+	chafind_middle_max_y = -9999;
+	chafind_middle_cnt = 0;
+	chafind_total_front_accum = 0;
+	chafind_total_front_accum_cnt = 0;
+}
+
+
+void micronavi_point_in_chafind(int32_t x, int32_t y, int16_t z, int stop_if_necessary, int source)
+{
+	if(source != 0)
+		return;
+
+	y += CHAFIND_AIM_Y_TUNE;
+
+//	int dist_to_hit;
+
+//	dist_to_hit = x - robot_origin_to_front_TIGHT;
+
+	if(y < (robot_ys_TIGHT/2+80) && y > (-1*robot_ys_TIGHT/2-80) && x > robot_origin_to_front_TIGHT+150)
+	{
+		// Look at area in front of the robot
+		if(x < chafind_nearest_hit_x)
+		{
+			chafind_nearest_hit_x = x;
+			chafind_nearest_hit_y = y;
+		}
+	}
+
+//	dbg[] = chafind_nearest_hit_x;
+//	dbg[] = chafind_nearest_hit_y;
+
+	if(y < (chafind_nearest_hit_y-CHAFIND_LOOK_SIDEWAY_MIN) && y > (chafind_nearest_hit_y-CHAFIND_LOOK_SIDEWAY_MAX) &&
+//		x > CHAFIND_FIRST_DIST-CHAFIND_FIRST_TOLERANCE-100+CHAFIND_MIDDLE_BAR_DEPTH && x < CHAFIND_FIRST_DIST+CHAFIND_FIRST_TOLERANCE+100+CHAFIND_MIDDLE_BAR_DEPTH)
+		x > 100 && x < 700)
+	{
+		chafind_left_accum += x;
+		chafind_left_accum_cnt++;
+//		dbg[] = chafind_left_accum/chafind_left_accum_cnt;
+//		dbg[] = chafind_left_accum_cnt;
+	
+	}
+	else if(y > (chafind_nearest_hit_y+CHAFIND_LOOK_SIDEWAY_MIN) && y < (chafind_nearest_hit_y+CHAFIND_LOOK_SIDEWAY_MAX) &&
+//		x > CHAFIND_FIRST_DIST-CHAFIND_FIRST_TOLERANCE-100+CHAFIND_MIDDLE_BAR_DEPTH && x < CHAFIND_FIRST_DIST+CHAFIND_FIRST_TOLERANCE+100+CHAFIND_MIDDLE_BAR_DEPTH)
+		x > 100 && x < 700)
+	{
+		chafind_right_accum += x;
+		chafind_right_accum_cnt++;
+//		dbg[] = chafind_right_accum/chafind_right_accum_cnt;
+//		dbg[] = chafind_right_accum_cnt;
+	}
+
+	if(x >= chafind_nearest_hit_x && x < chafind_nearest_hit_x+60 && y > chafind_nearest_hit_y-CHAFIND_MIDDLE_BAR_WIDTH-15 && y < chafind_nearest_hit_y+CHAFIND_MIDDLE_BAR_WIDTH+15)
+	{
+		chafind_middle_cnt++;
+		if(y < chafind_middle_min_y) chafind_middle_min_y = y;
+		if(y > chafind_middle_max_y) chafind_middle_max_y = y;
+//		dbg[] = chafind_middle_cnt;
+	}
+
+	if(y < (robot_ys_TIGHT/2) && y > -1*(robot_ys_TIGHT/2) && x > 200 && x < 1000)
+	{
+		chafind_total_front_accum += x;
+		chafind_total_front_accum_cnt++;
+	}
+
+}
+
+int chafind_calc(int* p_ang, int* p_shift, int* p_dist)
+{
+	int left = chafind_left_accum/chafind_left_accum_cnt;
+	int right = chafind_right_accum/chafind_right_accum_cnt;
+	//int avgdist = (left+right+(chafind_nearest_hit_x+CHAFIND_MIDDLE_BAR_DEPTH))/3;
+
+	int ang = atan2(right-left, CHAFIND_SIDE)*(4294967296.0/(2.0*M_PI));
+	*p_ang = ang;
+	dbg[1] = ang/ANG_0_1_DEG;
+
+	int midmark_x = chafind_nearest_hit_x;
+	int midmark_y = (chafind_middle_min_y + chafind_middle_max_y)/2;
+
+	//dbg[] = midmark_x;
+	//dbg[] = midmark_y;
+	// Rotate middle mark coordinates to find required sideway drift
+
+	int rotcos = sin_lut[(uint32_t)(ANG_90_DEG-ang)>>SIN_LUT_SHIFT];
+	int rotsin = sin_lut[(uint32_t)(ang)>>SIN_LUT_SHIFT];
+
+	int midmark_rot_x = (midmark_x * rotcos - midmark_y * rotsin)>>15;
+	int midmark_rot_y = (midmark_x * rotsin + midmark_y * rotcos)>>15;
+
+	*p_shift = midmark_rot_y;
+	*p_dist = midmark_rot_x-robot_origin_to_front_TIGHT;
+
+	dbg[2] = *p_shift;
+	dbg[3] = *p_dist;
+
+	return 0;
+}
+
+
+typedef enum {
+	CHAFIND_IDLE 			= 0,
+	CHAFIND_START          		= 1,
+	CHAFIND_WAIT_DISTANCE		= 2,
+	CHAFIND_WAIT_FWD1		= 3,
+	CHAFIND_WAIT_FWD1_STOPEXTRA1	= 4,
+	CHAFIND_WAIT_FWD1_STOPEXTRA2	= 5,
+	CHAFIND_ACCUM_DATA		= 6,
+	CHAFIND_WAIT_BACKING		= 7,
+	CHAFIND_START_REBACKING		= 8,
+	CHAFIND_WAIT_REBACKING		= 9,
+	CHAFIND_WAIT_FWD2		= 10,
+	CHAFIND_WAIT_FWD2_STOPEXTRA1	= 11,
+	CHAFIND_ACCUM_FRONTAVG		= 12,
+	CHAFIND_WAIT_PUSH		= 13,
+	CHAFIND_FAIL			= 99
+} chafind_state_t;
+
+chafind_state_t chafind_state = CHAFIND_START;
+
+volatile int start_charger = 0;
+
+void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary, int source)
+{
+	dbg[0] = chafind_state;
+	if(chafind_state)
+	{
+		micronavi_point_in_chafind(x,y,z,stop_if_necessary, source);
+	}
+	else
+	{
+		micronavi_point_in_normal(x,y,z,stop_if_necessary);
+	}
+}
+
+
+void navig_fsm2_for_charger()
+{
+	static int pass;
+	static int timer;
+	static int store_back, store_shift_ang;
+	switch(chafind_state)
+	{
+		case CHAFIND_START:
+		{
+			pass = 0;
+			dbg[1] = dbg[2] = dbg[3] = dbg[5] = dbg[5] = dbg[6] = dbg[7] = 0;
+			chafind_empty_accum1();
+			timer = 1000;
+			chafind_state++;
+		}
+		break;
+
+		case CHAFIND_WAIT_DISTANCE:
+		{
+			if(--timer == 0)
+			{
+				if(chafind_nearest_hit_x < 200 || chafind_nearest_hit_x > 1200) // todo: also check obstacles from back
+				{
+					chafind_state = CHAFIND_FAIL;
+				}
+				else
+				{
+					int movement = chafind_nearest_hit_x - CHAFIND_FIRST_DIST;
+					if(movement < -CHAFIND_FIRST_DIST_TOLERANCE || movement > CHAFIND_FIRST_DIST_TOLERANCE)
+					{
+						set_top_speed_max(10);
+						straight_rel(movement);
+						chafind_state = CHAFIND_WAIT_FWD1;
+					}
+					else
+					{
+						chafind_empty_accum2();
+						chafind_state = CHAFIND_ACCUM_DATA;
+					}
+				}
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD1:
+		{
+			if(!correcting_either())
+			{
+				timer = 200;
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD1_STOPEXTRA1:
+		{
+			if(--timer == 0)
+			{
+				timer = 2700;
+				chafind_empty_accum1();
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD1_STOPEXTRA2:
+		{
+			if(--timer == 0)
+			{
+				chafind_empty_accum2();
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_ACCUM_DATA:
+		{
+			if((pass == 0 && chafind_left_accum_cnt > 40 && chafind_right_accum_cnt > 40 && chafind_middle_cnt > 20) ||
+			   (pass  > 0 && chafind_left_accum_cnt > 80 && chafind_right_accum_cnt > 80 && chafind_middle_cnt > 50) )
+			{
+				pass++;
+				int ang, shift, dist;
+				chafind_calc(&ang, &shift, &dist);
+
+				if(ang > -1*CHAFIND_PASS1_ACCEPT_ANGLE && ang < CHAFIND_PASS1_ACCEPT_ANGLE &&
+					shift > -1*CHAFIND_PASS1_ACCEPT_SHIFT && shift < CHAFIND_PASS1_ACCEPT_SHIFT)
+				{
+					dbg[4] = 11111;
+					dbg[5] = dbg[6] = 0;
+					set_top_speed_max(5);
+
+					int dist2 = chafind_total_front_accum/chafind_total_front_accum_cnt;
+					straight_rel(dist2-robot_origin_to_front_TIGHT-270);
+					chafind_state = CHAFIND_WAIT_FWD2;
+				}
+				else
+				{
+					set_top_speed_max(6);
+
+					allow_angular(1);
+					auto_disallow(0);
+					if(shift > -1*CHAFIND_PASS1_ACCEPT_SHIFT && shift < CHAFIND_PASS1_ACCEPT_SHIFT) // Only turning needed
+					{
+						dbg[4] = 22222;
+						dbg[5] = ang/ANG_0_1_DEG;
+						dbg[6] = 0;
+						rotate_rel(-1*ang);
+						chafind_state = CHAFIND_WAIT_REBACKING;
+
+					}
+					else // vexling needed
+					{
+						dbg[4] = 33333;
+						allow_straight(1);
+						int shift_ang;
+						if(shift > 170)       shift_ang = 30*ANG_1_DEG;
+						else if(shift > 70)   shift_ang = 15*ANG_1_DEG;
+						else if(shift > 0)    shift_ang =  8*ANG_1_DEG;
+						else if(shift < -170) shift_ang = -30*ANG_1_DEG;
+						else if(shift < -70)  shift_ang = -15*ANG_1_DEG;
+						else                  shift_ang =  -8*ANG_1_DEG;
+
+						int d = ((float)shift)/tan((float)shift_ang*(2.0*M_PI)/4294967296.0);
+						rotate_rel(-1*(ang+shift_ang));
+						dbg[5] = (-1*(ang+shift_ang))/ANG_0_1_DEG;
+						dbg[6] = (-1*shift_ang)/ANG_0_1_DEG;
+						dbg[7] = d;
+						straight_rel(-1*d);
+						store_back = d;
+						store_shift_ang = shift_ang;
+						chafind_state = CHAFIND_WAIT_BACKING;
+					}
+				}
+				
+			}
+			else
+			{
+				dbg[4] = chafind_left_accum_cnt;
+				dbg[5] = chafind_right_accum_cnt;
+				dbg[6] = chafind_middle_cnt;
+			}
+	
+		}
+		break;
+
+		case CHAFIND_WAIT_BACKING:
+		{
+			if(!correcting_either())
+			{
+				timer=200;
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_START_REBACKING:
+		{
+			if(--timer == 0)
+			{
+				rotate_rel(store_shift_ang);
+				straight_rel(store_back);
+				chafind_state++;
+			}
+		}
+		break;
+
+
+		case CHAFIND_WAIT_REBACKING:
+		{
+			if(!correcting_either())
+			{
+				timer = 200;
+				chafind_state = CHAFIND_WAIT_FWD1_STOPEXTRA1;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD2:
+		{
+			if(!correcting_either())
+			{
+				timer = 200;
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD2_STOPEXTRA1:
+		{
+			if(--timer == 0)
+			{
+				chafind_state++;
+				chafind_total_front_accum = 0;
+				chafind_total_front_accum_cnt = 0;
+			}
+		}
+		break;
+
+		case CHAFIND_ACCUM_FRONTAVG:
+		{
+			if(chafind_total_front_accum_cnt > 2000)
+			{
+				int dist = chafind_total_front_accum/chafind_total_front_accum_cnt;
+				set_top_speed_max(0);
+				straight_rel(dist-robot_origin_to_front_TIGHT-CHAFIND_PUSH_TUNE);
+				chafind_state = CHAFIND_WAIT_PUSH;
+			}
+			else
+			{
+				dbg[4] = chafind_total_front_accum_cnt;
+			}
+		}
+		break;
+
+
+		case CHAFIND_WAIT_PUSH:
+		{
+			if(!correcting_either())
+			{
+				chafind_state = 0;
+			}
+		}
+		break;
+/*
+				int ret = chafind_middle_mark();
+				if(ret == 0)
+				{
+					auto_disallow(0);
+					allow_angular(1);
+					allow_straight(1);
+					rotate_rel(lr_diff*2*ANG_0_1_DEG);
+					chafind_state++;
+				}
+				else if(ret==-1)
+					chafind_state = CHAFIND_FAIL;
+
+		case CHAFIND_WAIT_ROTATED:
+		{
+			if(!correcting_angle())
+			{
+				int ret = chafind_middle_mark();
+				if(ret == 0)
+				{
+					if(y_diff > 15)
+					{
+						rot_dir = 0;
+						// if we were to turn 45 deg, we would need to back off 1mm for each 1mm error.
+						auto_disallow(0);
+						allow_angular(1);
+						allow_straight(1);
+						rotate_rel(-10*ANG_1_DEG);
+
+						int amount_fwd = -6*y_diff;
+						if(amount_fwd < -500) amount_fwd = -500;
+						back_amount = amount_fwd;
+						straight_rel(amount_fwd);
+						chafind_state++;
+					}
+					else if(y_diff < -15)
+					{
+						rot_dir = 1;
+						auto_disallow(0);
+						allow_angular(1);
+						allow_straight(1);
+						rotate_rel(10*ANG_1_DEG);
+
+						int amount_fwd = 6*y_diff;
+						if(amount_fwd < -500) amount_fwd = -500;
+						back_amount = amount_fwd;
+						straight_rel(amount_fwd);
+						chafind_state++;
+					}
+					else
+						chafind_state = CHAFIND_PUSH;
+				}
+				else if(ret == -1)
+				{
+					chafind_state = CHAFIND_FAIL;
+				}
+
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_BACK:
+		{
+			if(!correcting_either())
+			{
+				chafind_state++;
+
+				// Rotate back to where we were before backing.
+				if(rot_dir == 0)
+					rotate_rel(10*ANG_1_DEG);
+				else
+					rotate_rel(-10*ANG_1_DEG);
+
+				straight_rel((-1*back_amount));
+
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_FWD:
+		{
+			if(!correcting_either())
+			{
+				int ret = chafind_middle_mark();
+				if(ret == 0)
+				{
+					if(y_diff < -20 || y_diff > 20 || lr_diff < -10 || lr_diff > 10)
+					{
+						// Try again.
+						chafind_state = CHAFIND_START;
+					}
+					else
+						chafind_state++;
+				}
+				else if(ret == -1)
+				{
+					chafind_state = CHAFIND_FAIL;
+				}
+			}
+		}
+		break;
+
+		case CHAFIND_PUSH:
+		{
+			if(!correcting_either())
+			{
+				set_top_speed_max(11);
+				straight_rel(x_dist_to_charger-robot_origin_to_front_TIGHT+20);
+				chafind_state++;
+			}
+		}
+		break;
+
+		case CHAFIND_WAIT_PUSH:
+		{
+			if(!correcting_either())
+			{
+				chafind_state++;
+
+			}
+		}
+		break;
+
+		default:
+		case CHAFIND_FINISH:
+		{
+			reset_movement();
+			start_charger = 1;
+			chafind_state = 0;
+		}
+		break;
+
+*/
+		case CHAFIND_FAIL:
+		{
+			reset_movement();
+			chafind_state = 0;
+		}
+		break;
+
+		default:
+		break;
+	}
+
+}
+
+
+void find_charger()
+{
+	accurate_turngo = 1;
+	chafind_state = CHAFIND_START;
+}
+
+void stop_navig_fsms()
+{
+	cur_move.state = 0;
+	chafind_state = 0;
+}
+
+void navig_fsm2()
+{
+
+	if(daiju_meininki)
+	{
+		daiju_meininki_fsm();
+		return;
+	}
+
+	if(chafind_state)
+	{
+		navig_fsm2_for_charger();
+		return;
+	}
+
+	move_fsm();
 }
 
 

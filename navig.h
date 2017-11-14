@@ -34,7 +34,7 @@ void dis_coll_avoid();
 void stop_movement();
 
 void limit_speed(int speed);
-void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary);
+void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary, int source);
 
 
 #endif
