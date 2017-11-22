@@ -726,8 +726,8 @@ int main()
 //		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
 //		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
 
-		while(uart_busy()) random++;
 		static uint8_t sync_packet[8] = {0xff,0xff,0xff,0xff,  0xff,0xff,0x12,0xab};
+		while(uart_busy()) random++;
 		send_uart(sync_packet, 0xaa, 8);
 		while(uart_busy()) random++;
 
@@ -739,21 +739,28 @@ int main()
 		send_uart(prev_lidar_scan, 0x84, LIDAR_SIZEOF(*prev_lidar_scan));
 		dbg_sending_lidar = 0;
 
+		// Send stuff required to be sent often:
+		while(uart_busy()) random++;
+		uart_send_critical1(); 
+		while(uart_busy()) random++;
+		uart_send_critical2(); 
 		while(uart_busy()) random++;
 		uart_send_fsm(); // send something else.
-		delay_ms(50);
-		while(uart_busy()) random++;
-
 
 #ifdef SONARS_INSTALLED
 		{
 			sonar_xyz_t* sonar;
 			while( (sonar = get_sonar_point()) )
 			{
+				while(uart_busy()) random++;
 				send_uart(sonar, 0x85, sizeof(sonar_xyz_t));
 			}
 		}
 #endif
+
+		while(uart_busy()) random++;
+		uart_send_critical1(); // Send stuff required to be sent often.
+
 
 /*
 		static int sensors_stabilized = 0;

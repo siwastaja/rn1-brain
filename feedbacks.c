@@ -68,7 +68,6 @@ int xcel_timing_issues;
 int cur_compass_angle = 0;
 int aim_angle = 0;
 
-int ang_accel = 300; // was 220
 int ang_top_speed = 170000;
 int ang_p = 1000; //1350; // 1500
 
@@ -152,13 +151,21 @@ int speed_limit_status()
 #define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
 
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
-#define ANG_SPEED_MUL 4700
+	#ifdef DELIVERY_APP
+		#define ANG_SPEED_MUL 2820
+		#define ANG_ACCEL 150
+
+	#else
+		#define ANG_SPEED_MUL 3760
+		#define ANG_ACCEL 220
+	#endif
 #define ANG_SPEED_MAX 360000
 #endif
 
 #ifdef PULU1
 #define ANG_SPEED_MUL 3900
 #define ANG_SPEED_MAX 300000
+#define ANG_ACCEL 250
 #endif
 
 void set_top_speed_ang(int speed)
@@ -712,14 +719,14 @@ void run_feedbacks(int sens_status)
 		if(ang_idle)
 		{
 			ang_idle = 0;
-			ang_speed_limit = ang_accel*20; // use starting speed that equals to 20ms of acceleration
+			ang_speed_limit = ANG_ACCEL*20; // use starting speed that equals to 20ms of acceleration
 		}
 
 		// Calculate angular speed with P loop from the gyro integral.
 		// Limit the value by using acceleration ramp. P loop handles the deceleration.
 
-		if(ang_speed_limit < ang_top_speed) ang_speed_limit += ang_accel;
-		else if(ang_speed_limit > ang_top_speed+ang_accel+1) ang_speed_limit -= 2*ang_accel;
+		if(ang_speed_limit < ang_top_speed) ang_speed_limit += ANG_ACCEL;
+		else if(ang_speed_limit > ang_top_speed+ANG_ACCEL+1) ang_speed_limit -= 2*ANG_ACCEL;
 		else ang_speed_limit = ang_top_speed;
 
 		int new_ang_speed = (ang_err>>20)*ang_p + ((ang_err>0)?STEP_FEEDFORWARD_ANG:(-STEP_FEEDFORWARD_ANG)) /*step-style feedforward for minimum speed*/;
@@ -825,10 +832,6 @@ void run_feedbacks(int sens_status)
 	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
 	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
 
-	// Copy accurate accumulation variables to cur_pos here:
-	cur_pos.x = cur_x>>16;
-	cur_pos.y = cur_y>>16;
-
 	int tmp_expected_accel = -1*fwd_speed;
 
 	if(!manual_control && do_correct_fwd)
@@ -890,9 +893,9 @@ void run_feedbacks(int sens_status)
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
 
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 800
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 600
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 400
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 500
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 400
+#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 300
 		if(latest[0] < -GYRO_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_MOVEMENT_DETECT_THRESHOLD_X ||
 		   latest[1] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_MOVEMENT_DETECT_THRESHOLD_Y ||
 		   latest[2] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_MOVEMENT_DETECT_THRESHOLD_Z)
@@ -936,10 +939,16 @@ void run_feedbacks(int sens_status)
 
 		gyro_avgd = ((latest[2]<<8) + 7*gyro_avgd)>>3;
 
+		// Don't let any higher-priority ISR read cur_pos while
+		__disable_irq();
+		// Copy accurate accumulation variables to cur_pos here:
+		cur_pos.x = cur_x>>16;
+		cur_pos.y = cur_y>>16;
 		if(latest[2] < -1*gyro_blank)  // Negative = left
 			cur_pos.ang += ((int64_t)latest[2]*(int64_t)(gyro_mul_neg>>16))>>13;
 		else if(latest[2] > gyro_blank) // Positive = right
 			cur_pos.ang += ((int64_t)latest[2]*(int64_t)(gyro_mul_pos>>16))>>13;
+		__enable_irq();
 	}
 
 

@@ -84,6 +84,9 @@ static void handle_maintenance_msg()
 		NVIC_SystemReset();
 		while(1);
 
+//		case 0x60:
+//		run_profiler();
+
 		default: break;
 	}
 }
@@ -349,32 +352,85 @@ int uart_busy()
 }
 
 
+// These functions send data required often.
+void uart_send_critical2()
+{
+	if(uart_busy())
+		return;
+
+	txbuf[0] = 1;
+	txbuf[1] = get_xy_id();
+	int tm = get_xy_left();
+	if(tm < 0) tm*=-1;
+	else if(tm > 30000) tm = 30000;
+	txbuf[2] = I16_MS(tm);
+	txbuf[3] = I16_LS(tm);
+
+	uint32_t t = get_obstacle_avoidance_stop_flags();
+
+	txbuf[4] = I32_I7_4(t);
+	txbuf[5] = I32_I7_3(t);
+	txbuf[6] = I32_I7_2(t);
+	txbuf[7] = I32_I7_1(t);
+	txbuf[8] = I32_I7_0(t);
+
+	t = get_obstacle_avoidance_action_flags();
+
+	txbuf[9] = I32_I7_4(t);
+	txbuf[10] = I32_I7_3(t);
+	txbuf[11] = I32_I7_2(t);
+	txbuf[12] = I32_I7_1(t);
+	txbuf[13] = I32_I7_0(t);
+
+	extern uint8_t feedback_stop_flags;
+	extern int feedback_stop_param1, feedback_stop_param2;
+	txbuf[14] = feedback_stop_flags&0x7f;
+	tm = feedback_stop_param1;
+	txbuf[15] = I16_MS(tm);
+	txbuf[16] = I16_LS(tm);
+	tm = feedback_stop_param2;
+	txbuf[17] = I16_MS(tm);
+	txbuf[18] = I16_LS(tm);
+
+	send_uart(txbuf, 0xa5, 19);
+}
+
+void uart_send_critical1()
+{
+	if(uart_busy())
+		return;
+
+	txbuf[0] = 1;
+	__disable_irq();
+	int ang = cur_pos.ang;
+	int x = cur_pos.x;
+	int y = cur_pos.y;
+	__enable_irq();
+	ang>>=16;
+	txbuf[1] = I16_MS(ang);
+	txbuf[2] = I16_LS(ang);
+	if(x < -1000000 || x > 1000000) x = 123456789;
+	txbuf[3] = I32_I7_4(x);
+	txbuf[4] = I32_I7_3(x);
+	txbuf[5] = I32_I7_2(x);
+	txbuf[6] = I32_I7_1(x);
+	txbuf[7] = I32_I7_0(x);
+	if(y < -1000000 || y > 1000000) y = 123456789;
+	txbuf[8] = I32_I7_4(y);
+	txbuf[9] = I32_I7_3(y);
+	txbuf[10] = I32_I7_2(y);
+	txbuf[11] = I32_I7_1(y);
+	txbuf[12] = I32_I7_0(y);
+
+	send_uart(txbuf, 0xa0, 13);
+}
+
 /*
 	Figures out what to send, and sends it if the uart is free.
 
 	Call this in the main thread during free time.
 
 	TX itself is interrupt-driven.
-*/
-
-/*
-		msg_xcel_t msgx;
-		msgx.status = 1;
-		msgx.int_x = I16_I14(latest_xcel->x);
-		msgx.int_y = I16_I14(latest_xcel->y);
-		msgx.int_z = I16_I14(latest_xcel->z);
-		txbuf[0] = 129;
-		memcpy(txbuf+1, &msgx, sizeof(msg_xcel_t));
-		usart_send(txbuf, sizeof(msg_xcel_t)+1);
-
-		msg_compass_t msgc;
-		msgc.status = 1;
-		msgc.x = I16_I14(latest_compass->x);
-		msgc.y = I16_I14(latest_compass->y);
-		msgc.z = I16_I14(latest_compass->z);
-		txbuf[0] = 0x82;
-		memcpy(txbuf+1, &msgc, sizeof(msg_compass_t));
-		usart_send(txbuf, sizeof(msg_compass_t)+1);
 */
 
 void uart_send_fsm()
@@ -388,7 +444,7 @@ void uart_send_fsm()
 
 	switch(send_count)
 	{
-		case 4:
+		case 0:
 		{
 			int bat_v = get_bat_v();
 			int bat_percentage = (100*(bat_v-15500))/(21000-15500);
@@ -403,7 +459,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 8:
+		case 1:
 		{
 			for(int i=0; i<10; i++)
 			{
@@ -418,7 +474,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 12:
+		case 2:
 		{
 			extern int cur_compass_angle;
 			extern volatile int compass_round_on;
@@ -429,87 +485,6 @@ void uart_send_fsm()
 			send_uart(txbuf, 0xa3, 3);
 		}
 		break;
-
-		case 1:
-		case 3:
-		case 5:
-		case 7:
-		case 9:
-		case 11:
-		case 13:
-		{
-			txbuf[0] = 1;
-			txbuf[1] = get_xy_id();
-			int tm = get_xy_left();
-			if(tm < 0) tm*=-1;
-			else if(tm > 30000) tm = 30000;
-			txbuf[2] = I16_MS(tm);
-			txbuf[3] = I16_LS(tm);
-
-			uint32_t t = get_obstacle_avoidance_stop_flags();
-
-			txbuf[4] = I32_I7_4(t);
-			txbuf[5] = I32_I7_3(t);
-			txbuf[6] = I32_I7_2(t);
-			txbuf[7] = I32_I7_1(t);
-			txbuf[8] = I32_I7_0(t);
-
-			t = get_obstacle_avoidance_action_flags();
-
-			txbuf[9] = I32_I7_4(t);
-			txbuf[10] = I32_I7_3(t);
-			txbuf[11] = I32_I7_2(t);
-			txbuf[12] = I32_I7_1(t);
-			txbuf[13] = I32_I7_0(t);
-
-			extern uint8_t feedback_stop_flags;
-			extern int feedback_stop_param1, feedback_stop_param2;
-			txbuf[14] = feedback_stop_flags&0x7f;
-			tm = feedback_stop_param1;
-			txbuf[15] = I16_MS(tm);
-			txbuf[16] = I16_LS(tm);
-			tm = feedback_stop_param2;
-			txbuf[17] = I16_MS(tm);
-			txbuf[18] = I16_LS(tm);
-
-			send_uart(txbuf, 0xa5, 19);
-		}
-		break;
-
-		case 0:
-		case 2:
-		case 6:
-		case 10:
-		{
-			txbuf[0] = 1;
-			__disable_irq();
-			int tm = cur_pos.ang;
-			__enable_irq();
-			tm>>=16;
-			txbuf[1] = I16_MS(tm);
-			txbuf[2] = I16_LS(tm);
-			__disable_irq();
-			tm = cur_pos.x;
-			__enable_irq();
-			if(tm < -1000000 || tm > 1000000) tm = 123456789;
-			txbuf[3] = I32_I7_4(tm);
-			txbuf[4] = I32_I7_3(tm);
-			txbuf[5] = I32_I7_2(tm);
-			txbuf[6] = I32_I7_1(tm);
-			txbuf[7] = I32_I7_0(tm);
-			__disable_irq();
-			tm = cur_pos.y;
-			__enable_irq();
-			if(tm < -1000000 || tm > 1000000) tm = 123456789;
-			txbuf[8] = I32_I7_4(tm);
-			txbuf[9] = I32_I7_3(tm);
-			txbuf[10] = I32_I7_2(tm);
-			txbuf[11] = I32_I7_1(tm);
-			txbuf[12] = I32_I7_0(tm);
-
-			send_uart(txbuf, 0xa0, 13);
-		}
-		break;		
 
 		default:
 		send_count = 0;

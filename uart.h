@@ -24,6 +24,8 @@ int send_uart(void* buf, uint8_t header, int len);
 void uart_10k_fsm();
 
 void uart_send_fsm();
+void uart_send_critical1();
+void uart_send_critical2();
 
 int uart_busy();
 
