@@ -69,7 +69,12 @@ int cur_compass_angle = 0;
 int aim_angle = 0;
 
 int ang_top_speed = 170000;
-int ang_p = 1000; //1350; // 1500
+int ang_p = 
+#ifdef DELIVERY_APP
+600; // to prevent overcorrection causing oscillation
+#else
+800;
+#endif
 
 int aim_fwd;
 int final_fwd_accel = 400;
