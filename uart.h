@@ -20,6 +20,7 @@ void handle_uart_message();
 void uart_rx_handler();
 
 int send_uart(void* buf, uint8_t header, int len);
+int send_uart_volatile(volatile void* buf, uint8_t header, int len);
 
 void uart_10k_fsm();
 

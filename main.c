@@ -511,6 +511,21 @@ extern volatile int lidar_scan_ready;
 
 volatile int dbg_sending_lidar = 0;
 
+void uart_send_dbg_teleportation_bug()
+{
+	if(uart_busy())
+		return;
+	
+	if(dbg_teleportation_bug_report)
+	{
+		send_uart_volatile(&dbg_teleportation_bug_data, 0xEE, sizeof(dbg_teleportation_bug_data_t));
+		while(uart_busy());
+		send_uart_volatile(&dbg_teleportation_extra, 0xEF, sizeof(dbg_teleportation_extra_t));
+		while(uart_busy());
+		dbg_teleportation_bug_report = 0;
+	}
+}
+
 int main()
 {
 	/*
@@ -731,6 +746,8 @@ int main()
 		send_uart(sync_packet, 0xaa, 8);
 		while(uart_busy()) random++;
 
+		uart_send_dbg_teleportation_bug();
+
 		LED_ON();
 		lidar_scan_ready = 0;
 		while(!lidar_scan_ready) ;
@@ -772,6 +789,6 @@ int main()
 */
 	}
 
-
-
 }
+
+

@@ -697,6 +697,9 @@ void lidar_rx_done_inthandler()
 
 		case S_LIDAR_RUNNING:
 		{
+
+   dbg_teleportation_bug(301);
+
 			int buf_idx = (DMA2_Stream2->CR&(1UL<<19))?0:1; // We want to read the previous buffer, not the one the DMA is now writing to.
 			// Actual data packet is 7 bytes of binary instead of ASCII.
 			int chk = (lidar_rxbuf[buf_idx][0]+lidar_rxbuf[buf_idx][1]+lidar_rxbuf[buf_idx][2]+
@@ -926,6 +929,7 @@ void lidar_rx_done_inthandler()
 			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)flt_len)>>15;
 			int32_t y_robot_frame =	((int32_t)sin_lut[y_idx_robot_frame] * (int32_t)flt_len)>>15;
 			micronavi_point_in(x_robot_frame, y_robot_frame, 150, 1, 0);
+   dbg_teleportation_bug(302);
 
 
 			IGNORE_SAMPLE: break;

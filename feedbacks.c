@@ -68,10 +68,17 @@ int xcel_timing_issues;
 int cur_compass_angle = 0;
 int aim_angle = 0;
 
-int ang_top_speed = 170000;
+int ang_top_speed =
+#ifdef DELIVERY_APP
+50000;
+#else
+170000;
+#endif
+
+
 int ang_p = 
 #ifdef DELIVERY_APP
-600; // to prevent overcorrection causing oscillation
+600;
 #else
 800;
 #endif
@@ -229,6 +236,7 @@ void reset_speed_limits()
 
 void rotate_rel(int angle)
 {
+   dbg_teleportation_bug(100);
 	do_correct_fwd = 0;
 	do_correct_angle = 0;
 	feedback_stop_flags = 0;
@@ -243,11 +251,12 @@ void rotate_rel(int angle)
 	manual_control = 0;
 	robot_moves();
 	reset_wheel_slip_det = 1;
-
+   dbg_teleportation_bug(101);
 }
 
 void rotate_abs(int angle)
 {
+   dbg_teleportation_bug(102);
 	do_correct_fwd = 0;
 	do_correct_angle = 0;
 	feedback_stop_flags = 0;
@@ -261,6 +270,7 @@ void rotate_abs(int angle)
 	manual_control = 0;
 	robot_moves();
 	reset_wheel_slip_det = 1;
+   dbg_teleportation_bug(103);
 
 }
 
@@ -281,6 +291,8 @@ void change_angle_to_cur()
 
 void straight_rel(int fwd /*in mm*/)
 {
+   dbg_teleportation_bug(104);
+
 	do_correct_fwd = 0;
 	do_correct_angle = 0;
 	feedback_stop_flags = 0;
@@ -294,6 +306,8 @@ void straight_rel(int fwd /*in mm*/)
 	manual_control = 0;
 	robot_moves();
 	reset_wheel_slip_det = 1;
+   dbg_teleportation_bug(105);
+
 }
 
 int get_fwd()
@@ -406,6 +420,8 @@ int gyro_avgd = 0;
 
 void correct_location_without_moving(pos_t corr)
 {
+   dbg_teleportation_bug(106);
+
 //	cur_x += corr.x<<16;
 //	cur_y += corr.y<<16;
 //	cur_pos.ang += corr.ang;
@@ -424,29 +440,44 @@ void correct_location_without_moving(pos_t corr)
 //		gyro_mul_neg += corr.ang>>1;
 //		gyro_mul_pos += corr.ang>>1;
 	}
+   dbg_teleportation_bug(107);
 
 }
 
 void correct_location_without_moving_external(pos_t corr)
 {
+   dbg_teleportation_bug(108);
+
 	if(corr.x < -2000 || corr.x > 2000 || corr.y < -2000 || corr.y > 2000)
 	{
 		return;
 	}
 
+   dbg_teleportation_bug(109);
+
+	__disable_irq();
 	cur_x += corr.x<<16;
 	cur_y += corr.y<<16;
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
+	__enable_irq();
+   dbg_teleportation_bug(110);
+
 }
 
 void set_location_without_moving_external(pos_t new_pos)
 {
+   dbg_teleportation_bug(111);
+
+	__disable_irq();
 	cur_x = new_pos.x<<16;
 	cur_y = new_pos.y<<16;
 	cur_pos.ang = new_pos.ang;
 	aim_angle = new_pos.ang;
 	reset_wheel_slip_det = 1;
+	__enable_irq();
+   dbg_teleportation_bug(112);
+
 }
 
 volatile int compass_round_on;
@@ -464,6 +495,8 @@ void compass_fsm(int cmd)
 	static int compass_y_max = 0;
 
 	static int state = 0;
+
+   dbg_teleportation_bug(113);
 
 	if(cmd == 1 && state == 0)
 		state = 1;
@@ -550,6 +583,7 @@ void compass_fsm(int cmd)
 		heading *= -65536.0*65536.0;
 		cur_compass_angle = (int)heading;
 	}
+   dbg_teleportation_bug(114);
 
 }
 
@@ -571,6 +605,8 @@ void unexpected_movement_detected(int param1, int param2)
 
 void collision_detected(int reason, int param1, int param2)
 {
+   dbg_teleportation_bug(115);
+
 	if(!feedback_stop_flags)
 	{
 		if(reason != 1)
@@ -588,6 +624,8 @@ void collision_detected(int reason, int param1, int param2)
 		reset_movement();
 		stop_navig_fsms();
 	}
+   dbg_teleportation_bug(116);
+
 }
 
 int coll_det_on;
@@ -620,6 +658,7 @@ void run_feedbacks(int sens_status)
 
 	cnt++;
 
+   dbg_teleportation_bug(120);
 
 	if(robot_nonmoving_cnt > 1500)
 		robot_nonmoving = 1;
@@ -664,6 +703,9 @@ void run_feedbacks(int sens_status)
 	  This works very well without oscillation. Also, during straight segment, the rear wheels are properly aligned.
 	- Start doing the tighter angular control after 300 ms of straight segment
 	*/
+
+   dbg_teleportation_bug(121);
+
 
 	if(accurate_turngo)
 	{
@@ -719,6 +761,9 @@ void run_feedbacks(int sens_status)
 		}
 	}
 
+   dbg_teleportation_bug(122);
+
+
 	if(!manual_control && do_correct_angle)
 	{
 		if(ang_idle)
@@ -761,6 +806,10 @@ void run_feedbacks(int sens_status)
 		reset_wheel_slip_det = 1;
 	}
 	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
+
+    dbg_teleportation_extra.wd0 = wheel_deltas[0];
+    dbg_teleportation_extra.wd1 = wheel_deltas[1];
+
 	prev_wheel_counts[0] = wheel_counts[0];
 	prev_wheel_counts[1] = wheel_counts[1];
 
@@ -782,6 +831,7 @@ void run_feedbacks(int sens_status)
 		246147;
 	#endif
 
+    dbg_teleportation_extra.movement = movement;
 
 	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*
 	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
@@ -794,6 +844,7 @@ void run_feedbacks(int sens_status)
 	int turned_by_gyro = cur_pos.ang - prev_cur_ang;
 	int turn_wheels_gyro_err = turned_by_wheels - turned_by_gyro;
 
+   dbg_teleportation_bug(123);
 
 	// Keep track of integral of error between gyro and wheel-based turning information.
 	// Decrement the error integral slowly (2 deg per s) to prevent small error buildup.
@@ -834,10 +885,20 @@ void run_feedbacks(int sens_status)
 	if(x_idx < 0) x_idx += SIN_LUT_POINTS;
 	else if(x_idx >= SIN_LUT_POINTS) x_idx -= SIN_LUT_POINTS;
 
+
+    dbg_teleportation_extra.y_idx = y_idx;
+    dbg_teleportation_extra.x_idx = x_idx;
+
 	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
 	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
 
+    dbg_teleportation_extra.dx = ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
+    dbg_teleportation_extra.dy = ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
+
 	int tmp_expected_accel = -1*fwd_speed;
+
+
+   dbg_teleportation_bug(124);
 
 	if(!manual_control && do_correct_fwd)
 	{
@@ -956,6 +1017,8 @@ void run_feedbacks(int sens_status)
 		__enable_irq();
 	}
 
+   dbg_teleportation_bug(125);
+
 
 	if(sens_status & XCEL_NEW_DATA)
 	{
@@ -1028,6 +1091,9 @@ void run_feedbacks(int sens_status)
 		common_speed = fwd_speed>>8;
 	}
 
+
+   dbg_teleportation_bug(126);
+
 	if(speeda > MAX_DIFFERENTIAL_SPEED*256) speeda = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speeda < -MAX_DIFFERENTIAL_SPEED*256) speeda = -MAX_DIFFERENTIAL_SPEED*256;
 	if(speedb > MAX_DIFFERENTIAL_SPEED*256) speedb = MAX_DIFFERENTIAL_SPEED*256;
@@ -1058,6 +1124,58 @@ void run_feedbacks(int sens_status)
 		feedback_stop_flags = 4;
 		reset_movement(); stop_navig_fsms(); // to prevent surprises when we are back up.
 	}
+
+   dbg_teleportation_bug(127);
+
+
+}
+
+volatile int dbg_teleportation_bug_report;
+
+volatile dbg_teleportation_bug_data_t dbg_teleportation_bug_data;
+volatile dbg_teleportation_extra_t dbg_teleportation_extra;
+
+
+void dbg_teleportation_bug(int id)
+{
+	int64_t x, y;
+	__disable_irq();
+	x = cur_x;
+	y = cur_y;
+
+	static int64_t prev_x, prev_y;
+	static int32_t prev_id, prev2_id, prev3_id, prev4_id;
+
+	int64_t dx = x - prev_x;
+	int64_t dy = y - prev_y;
+
+	if(dx < (-2000LL<<16) || dx > (2000LL<<16) || dy < (-2000LL<<16) || dy > (2000LL<<16))
+	{
+		if(dbg_teleportation_bug_report == 0)
+		{
+			dbg_teleportation_bug_report = 1;
+			dbg_teleportation_bug_data.id = id;
+			dbg_teleportation_bug_data.prev_id = prev_id;
+			dbg_teleportation_bug_data.prev2_id = prev2_id;
+			dbg_teleportation_bug_data.prev3_id = prev3_id;
+			dbg_teleportation_bug_data.prev4_id = prev4_id;
+			dbg_teleportation_bug_data.prev_x = prev_x;
+			dbg_teleportation_bug_data.prev_y = prev_y;
+			dbg_teleportation_bug_data.cur_x = x;
+			dbg_teleportation_bug_data.cur_y = y;
+
+		}
+	}
+
+	prev_x = x;
+	prev_y = y;
+
+	prev4_id = prev3_id;
+	prev3_id = prev2_id;
+	prev2_id = prev_id;
+	prev_id = id;
+
+	__enable_irq();
 
 }
 

@@ -64,6 +64,8 @@ static int speedlim_hommel = 50;
 
 void move_fsm()
 {
+   dbg_teleportation_bug(201);
+
 	switch(cur_move.state)
 	{
 		case MOVE_IDLE:
@@ -132,10 +134,14 @@ void move_fsm()
 		default:
 		break;
 	}
+
+   dbg_teleportation_bug(202);
 }
 
 void move_rel_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 {
+   dbg_teleportation_bug(203);
+
 	reset_movement();
 	take_control();
 	was_correcting_xy = 0;
@@ -148,6 +154,8 @@ void move_rel_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 	cur_move.abs_ang = cur_pos.ang + angle32;
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
+   dbg_teleportation_bug(204);
+
 }
 
 void ena_coll_avoid()
@@ -161,6 +169,8 @@ void dis_coll_avoid()
 
 void move_absa_rels_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 {
+   dbg_teleportation_bug(205);
+
 	reset_movement();
 	take_control();
 	was_correcting_xy = 0;
@@ -173,6 +183,8 @@ void move_absa_rels_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 	cur_move.abs_ang = angle32;
 	cur_move.rel_fwd = fwd;
 	cur_move.valid = 1;
+   dbg_teleportation_bug(206);
+
 }
 
 int get_xy_left()
@@ -189,6 +201,8 @@ int32_t xy_original_ang;
 
 void xy_fsm()
 {
+   dbg_teleportation_bug(207);
+
 	if(!correct_xy)
 	{
 		return;
@@ -229,11 +243,15 @@ void xy_fsm()
 
 	cur_move.rel_fwd = new_fwd;
 	cur_move.abs_ang = new_ang;
+   dbg_teleportation_bug(208);
+
 }
 
 
 void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 {
+   dbg_teleportation_bug(209);
+
 	back_mode_hommel = back_mode;
 	speedlim_hommel = speedlim;
 	dest_x = x;
@@ -269,10 +287,14 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 	was_correcting_xy = 1;
 	correct_xy = 1;
 	xy_id = id;
+   dbg_teleportation_bug(210);
+
 }
 
 void navig_fsm1()
 {
+   dbg_teleportation_bug(211);
+
 	xy_fsm();
 
 	static int speed_incr_cnt;
@@ -296,6 +318,9 @@ void navig_fsm1()
 		if(navi_speed > speedlim_hommel)
 			navi_speed = speedlim_hommel;
 	}
+
+   dbg_teleportation_bug(212);
+
 }
 
 
@@ -542,6 +567,9 @@ void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_nece
 	if(z < 35 || z > robot_height)
 		goto SKIP_MICRONAVI;
 
+
+   dbg_teleportation_bug(220);
+
 	if(correcting_straight())
 	{
 		int fwd_remain = get_fwd();
@@ -764,6 +792,8 @@ void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_nece
 		}
 	}
 
+   dbg_teleportation_bug(221);
+
 
 /*
 
@@ -871,6 +901,8 @@ void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_nece
 			}
 		}
 	}
+
+   dbg_teleportation_bug(222);
 
 	SKIP_MICRONAVI:
 

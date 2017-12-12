@@ -95,5 +95,37 @@ void change_angle_abs(int angle);
 void change_angle_rel(int angle);
 void change_straight_rel(int fwd /*in mm*/);
 
+void dbg_teleportation_bug();
+
+typedef struct __attribute__((packed))
+{
+	int32_t id;
+	int32_t prev_id;
+	int32_t prev2_id;
+	int32_t prev3_id;
+	int32_t prev4_id;
+	int64_t prev_x;
+	int64_t prev_y;
+	int64_t cur_x;
+	int64_t cur_y;
+} dbg_teleportation_bug_data_t;
+
+typedef struct __attribute__((packed))
+{
+	int32_t wd0;
+	int32_t wd1;
+	int32_t movement;
+	int32_t x_idx;
+	int32_t y_idx;
+	int64_t dx;
+	int64_t dy;
+} dbg_teleportation_extra_t;
+
+extern volatile dbg_teleportation_extra_t dbg_teleportation_extra;
+
+
+extern volatile int dbg_teleportation_bug_report;
+extern volatile dbg_teleportation_bug_data_t dbg_teleportation_bug_data;
+
 
 #endif

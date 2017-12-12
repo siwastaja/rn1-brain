@@ -98,6 +98,9 @@ int ignore_cmds = 0;
 
 void handle_uart_message()
 {
+
+   dbg_teleportation_bug(401);
+
 	if(!do_handle_message)
 		return;
 
@@ -105,6 +108,8 @@ void handle_uart_message()
 	{
 		return;
 	}
+
+   dbg_teleportation_bug(402);
 
 	switch(process_rx_buf[0])
 	{
@@ -238,6 +243,9 @@ void handle_uart_message()
 		break;
 	}
 	do_handle_message = 0;
+
+   dbg_teleportation_bug(403);
+
 }
 
 void uart_rx_handler()
@@ -277,7 +285,7 @@ int uart_tx_loc;
 int uart_tx_len;
 uint8_t uart_tx_checksum_accum;
 uint8_t uart_tx_header;
-void* p_txbuf;
+volatile void* p_txbuf;
 
 #define CRC_INITIAL_REMAINDER 0x00
 #define CRC_POLYNOMIAL 0x07 // As per CRC-8-CCITT
@@ -331,6 +339,22 @@ void uart_10k_fsm()
 }
 
 int send_uart(void* buf, uint8_t header, int len)
+{
+	if(uart_sending)
+		return -1;
+
+	__disable_irq();
+	p_txbuf = buf;
+	uart_tx_header = header;
+	uart_tx_loc = -3;
+	uart_tx_len = len;
+	uart_tx_checksum_accum = CRC_INITIAL_REMAINDER;
+	uart_sending = 1;
+	__enable_irq();
+	return 0;
+}
+
+int send_uart_volatile(volatile void* buf, uint8_t header, int len)
 {
 	if(uart_sending)
 		return -1;
@@ -444,7 +468,7 @@ void uart_send_fsm()
 
 	switch(send_count)
 	{
-		case 0:
+		case 1:
 		{
 			int bat_v = get_bat_v();
 			int bat_percentage = (100*(bat_v-15500))/(21000-15500);
@@ -459,7 +483,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 1:
+		case 2:
 		{
 			for(int i=0; i<10; i++)
 			{
@@ -474,7 +498,7 @@ void uart_send_fsm()
 		}
 		break;
 
-		case 2:
+		case 3:
 		{
 			extern int cur_compass_angle;
 			extern volatile int compass_round_on;
