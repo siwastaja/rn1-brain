@@ -97,8 +97,12 @@ void mc_flasher_cs1()
 	{
 		case 1: MC1_CS1(); break;
 		case 2: MC2_CS1(); break;
+		#if NUM_MOTCONS >= 3
 		case 3: MC3_CS1(); break;
+		#endif
+		#if NUM_MOTCONS >= 4
 		case 4: MC4_CS1(); break;
+		#endif
 		default: LED_ON(); while(1);
 	}
 }
@@ -109,8 +113,12 @@ void mc_flasher_cs0()
 	{
 		case 1: MC1_CS0(); break;
 		case 2: MC2_CS0(); break;
+		#if NUM_MOTCONS >= 3
 		case 3: MC3_CS0(); break;
+		#endif
+		#if NUM_MOTCONS >= 4
 		case 4: MC4_CS0(); break;
+		#endif
 		default: LED_ON(); while(1);
 	}
 }
@@ -194,8 +202,13 @@ void mc_flasher(int mcnum)
 
 	while(SPI1->SR&(0b11<<11)); // Wait for TX fifo empty
 	while(SPI1->SR&(1<<7)) ; // Wait until not busy.
+
+	#if NUM_MOTCONS >= 4
 	MC4_CS1();
+	#endif
+	#if NUM_MOTCONS >= 3
 	MC3_CS1();
+	#endif
 	MC2_CS1();
 	MC1_CS1();
 
@@ -570,7 +583,7 @@ int main()
 
 
 	RCC->AHB1ENR |= 0b111111111 /* PORTA to PORTI */ | 1UL<<22 /*DMA2*/ | 1UL<<21 /*DMA1*/;
-	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<2 /*TIM4*/ | 1UL<<4 /*TIM6*/;
+	RCC->APB1ENR |= 1UL<<21 /*I2C1*/ | 1UL<<18 /*USART3*/ | 1UL<<14 /*SPI2*/ | 1UL<<4 /*TIM6*/;
 	RCC->APB2ENR |= 1UL<<12 /*SPI1*/ | 1UL<<4 /*USART1*/ | 1UL<<8 /*ADC1*/;
 
 	delay_us(10);
@@ -580,7 +593,9 @@ int main()
 	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
 	                 4UL<<0 | 4UL<<4 /*I2C1*/;
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
-	GPIOD->AFR[1] = 2UL<<28 /*TIM4*/;
+
+
+#ifdef PCB1A
 
 	             // Mode:
 		     // 00 = General Purpose In
@@ -614,14 +629,54 @@ int main()
 	             //     | | | | | | | | | | | | | | | |
 	GPIOE->MODER   = 0b01010101010101010101000000000000;
 	GPIOE->OSPEEDR = 0b00000000000000000001000000000000;
+
+#endif
+
+#ifdef PCB1B
+
+	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
+	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
+	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
+	                 4UL<<0 | 4UL<<4 /*I2C1*/;
+	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
+
+	             // Mode:
+		     // 00 = General Purpose In
+	             // 01 = General Purpose Out
+	             // 10 = Alternate Function (in/out controlled by peripheral)
+	             // 11 = Analog in (to ADC)
+
+	             // Speed:
+	             // 00 = low, 01 = medium, 10 = high, 11 = superhyper
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOF->MODER   = 0b00000000000000000000000000000000;
-	GPIOF->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOA->MODER   = 0b01000100010100011010100000000000;
+	GPIOA->OSPEEDR = 0b00000000000000000100010000000000;
+	GPIOA->PUPDR   = 0b00000001000001000000000000000000;
+
+	GPIOB->ODR     = 1UL<<8 | 1UL<<9; // I2C pins high.
+	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOG->MODER   = 0b00000000000000000000000000000000;
-	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOB->MODER   = 0b10101001000101011010010100000001;
+	GPIOB->OSPEEDR = 0b01000101000001010000010000000000;
+	GPIOB->PUPDR   = 0b00000000000000000000000001000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOC->MODER   = 0b00000100101000000000010111111111;
+	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOD->MODER   = 0b00000100010101000000010000000000;
+	GPIOD->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOD->PUPDR   = 0b00000000000000000101000000000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOE->MODER   = 0b00010000000000010101000101010000;
+	GPIOE->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOE->PUPDR   = 0b00000000000000000000010000000000;
+#endif
+
 
 	#ifdef SONARS_INSTALLED
 	init_sonars();
@@ -629,8 +684,12 @@ int main()
 	init_uart();
 
 	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
+	#if NUM_MOTCONS >= 4
 	MC4_CS1();
+	#endif
+	#if NUM_MOTCONS >= 3
 	MC3_CS1();
+	#endif
 	MC2_CS1();
 	MC1_CS1();
 
@@ -714,6 +773,31 @@ int main()
 	delay_ms(1);
 
 	ADC1->CR2 |= 1UL<<30; // Start converting.
+
+
+
+	#ifdef PCB1B
+
+	LEFT_BLINKER_ON();
+	delay_ms(200);
+	LEFT_BLINKER_OFF();
+	FWD_LIGHT_ON();
+	delay_ms(200);
+	FWD_LIGHT_OFF();
+	RIGHT_BLINKER_ON();
+	delay_ms(200);
+	RIGHT_BLINKER_OFF();
+	delay_ms(200);
+	LEFT_BLINKER_ON();
+	FWD_LIGHT_ON();
+	RIGHT_BLINKER_ON();
+	delay_ms(200);
+	RIGHT_BLINKER_OFF();
+	FWD_LIGHT_OFF();
+	LEFT_BLINKER_OFF();
+
+	#endif
+
 
 	__enable_irq();
 

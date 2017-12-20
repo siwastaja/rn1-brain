@@ -3,11 +3,17 @@
 
 #include "gyro_xcel_compass.h"
 
+// for debug:
+#include "uart.h"
+#include "own_std.h"
+
 extern void delay_us(uint32_t i);
 extern void delay_ms(uint32_t i);
 
 
 /*
+
+	Rant from the early days (March 2017):
 	STM32 I2C implementation is a total catastrophe, it requires almost bitbanging-like sequencing by software,
 	and provides no proper buffer registers (let alone a FIFO) - so we need to poll some status bits and write
 	the data register at the exactly correct timing!
@@ -49,7 +55,12 @@ extern void delay_ms(uint32_t i);
 
 	Bitbanging the whole I2C will be seriously considered in the future.
 
+	Addition to the rant on Dec 2017:
+	The next PCB revision (Rev2A), which will be designed soon, uses the new STM32F7 chip which has a complete and total
+	I2C rewrite, which addresses most of the issues described above. It's very useful with DMA and seems to work more robustly.
+
 */
+
 #define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
 #define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
 
@@ -66,14 +77,23 @@ extern void delay_ms(uint32_t i);
 #define I2C1_TIMESTEP_MINUS_ADJUSTMENT (I2C1_NUM_TIMESTEPS/4)   // Data overrun --> make data reading happen earlier by this amount
 
 volatile gyro_data_t gyro_data[2];
+#ifdef EXTRAGYRO
+	volatile gyro_data_t extragyro_data[2];
+#endif
 volatile xcel_data_t xcel_data[2];
 volatile compass_data_t compass_data[2];
 
 volatile gyro_data_t *latest_gyro;
+#ifdef EXTRAGYRO
+	volatile gyro_data_t *latest_extragyro;
+#endif
 volatile xcel_data_t *latest_xcel;
 volatile compass_data_t *latest_compass;
 
 volatile gyro_data_t *buffer_gyro;
+#ifdef EXTRAGYRO
+	volatile gyro_data_t *buffer_extragyro;
+#endif
 volatile xcel_data_t *buffer_xcel;
 volatile compass_data_t *buffer_compass;
 
@@ -85,6 +105,13 @@ volatile int gyro_timestep = 0;
 volatile int gyro_timestep_plusses;
 volatile int gyro_timestep_minuses;
 
+#ifdef EXTRAGYRO
+	volatile int extragyro_timestep_len = I2C1_NUM_TIMESTEPS;
+	volatile int extragyro_timestep = 0;
+	volatile int extragyro_timestep_plusses;
+	volatile int extragyro_timestep_minuses;
+#endif
+
 volatile int xcel_timestep_len = I2C1_NUM_TIMESTEPS;
 volatile int xcel_timestep = 0;
 volatile int xcel_timestep_plusses;
@@ -95,11 +122,17 @@ volatile int compass_timestep = 0;
 
 
 volatile int gyro_new_data;
+#ifdef EXTRAGYRO
+	volatile int extragyro_new_data;
+#endif
 volatile int xcel_new_data;
 volatile int compass_new_data;
 
-typedef enum {I2C1_GYRO = 0, I2C1_XCEL, I2C1_COMPASS} i2c1_device_t;
-
+#ifdef EXTRAGYRO
+	typedef enum {I2C1_GYRO = 0, I2C1_EXTRAGYRO, I2C1_XCEL, I2C1_COMPASS} i2c1_device_t;
+#else
+	typedef enum {I2C1_GYRO = 0, I2C1_XCEL, I2C1_COMPASS} i2c1_device_t;
+#endif
 i2c1_device_t i2c1_cur_device;
 
 volatile int i2c1_state = 0;
@@ -118,7 +151,7 @@ void i2c1_gyro_handler()
 
 		case 1: // Expect SB
 		I2C1->SR1;
-		I2C1->DR = 0x40;
+		I2C1->DR = GYRO_I2C_ADDR;
 		i2c1_state++;
 		break;
 
@@ -135,7 +168,7 @@ void i2c1_gyro_handler()
 		case 3: // Expect SB
 		if(I2C1->SR1 & 1) // For some reason, there is a stupid extra interrupt, so we need to check this.
 		{
-			I2C1->DR = 0x41;
+			I2C1->DR = GYRO_I2C_ADDR+1;
 			i2c1_state++;
 		}
 		break;
@@ -150,7 +183,6 @@ void i2c1_gyro_handler()
 		case 5:
 		I2C1->SR1;
 		buffer_gyro->status_reg = status = I2C1->DR;
-//		if((status & 0b111) != 0b111) // Complete dataset not ready - don't read further; adjust timing to sync
 		if(!(status & 0b1000)) // Complete dataset not ready - don't read further; adjust timing to sync
 		{
 			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
@@ -166,7 +198,6 @@ void i2c1_gyro_handler()
 			break; // Let the NACK be. Don't read all.
 		}
 
-//		if((status & 0b01110000)) // Any of the axis has overwrite condition
 		if((status & 0b10000000)) // Any of the axis has overwrite condition
 		{
 			// Go on and read it all, but adjust timing to avoid future overwrites.
@@ -233,6 +264,134 @@ void i2c1_gyro_handler()
 	}
 }
 
+#ifdef EXTRAGYRO
+void i2c1_extragyro_handler()
+{
+	int tmp;
+	uint8_t status;
+
+	switch(i2c1_state)
+	{
+		case 0:
+		break;
+
+		case 1: // Expect SB
+		I2C1->SR1;
+		I2C1->DR = EXTRAGYRO_I2C_ADDR;
+		i2c1_state++;
+		break;
+
+		case 2: // Expect ADDR
+		if(I2C1->SR1 & 2) // For some reason, there is a stupid extra interrupt, so we need to check this.
+		{
+			I2C1->SR2;
+			I2C1->DR = 0x00; // Status register address
+			I2C1->CR1 |= 1UL<<8; // START
+			i2c1_state++;
+		}
+		break;
+
+		case 3: // Expect SB
+		if(I2C1->SR1 & 1) // For some reason, there is a stupid extra interrupt, so we need to check this.
+		{
+			I2C1->DR = EXTRAGYRO_I2C_ADDR+1;
+			i2c1_state++;
+		}
+		break;
+
+		case 4: // Expect ADDR
+		I2C1->SR1;
+		I2C1->SR2;
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 5:
+		I2C1->SR1;
+		buffer_extragyro->status_reg = status = I2C1->DR;
+		if(!(status & 0b1000)) // Complete dataset not ready - don't read further; adjust timing to sync
+		{
+			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
+			I2C1->CR1 |= 1UL<<9; // generate STOP
+			i2c1_state=12; // We will get one dummy data...
+
+			// Adjust timing:
+			tmp = extragyro_timestep;
+			tmp += I2C1_TIMESTEP_PLUS_ADJUSTMENT;
+			if(tmp >= extragyro_timestep_len) tmp -= extragyro_timestep_len;
+			extragyro_timestep = tmp;
+			extragyro_timestep_plusses++;
+			break; // Let the NACK be. Don't read all.
+		}
+
+		if((status & 0b10000000)) // Any of the axis has overwrite condition
+		{
+			// Go on and read it all, but adjust timing to avoid future overwrites.
+			tmp = extragyro_timestep;
+			tmp -= I2C1_TIMESTEP_MINUS_ADJUSTMENT;
+			if(tmp < 0) tmp += extragyro_timestep_len;
+			extragyro_timestep = tmp;
+			extragyro_timestep_minuses++;
+		}
+		// Read the rest:
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 6:
+		I2C1->SR1;
+		buffer_extragyro->x = (I2C1->DR)<<8;
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 7:
+		I2C1->SR1;
+		buffer_extragyro->x |= (I2C1->DR);
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 8:
+		I2C1->SR1;
+		buffer_extragyro->y = (I2C1->DR)<<8;
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 9:
+		I2C1->SR1;
+		buffer_extragyro->y |= (I2C1->DR);
+		I2C1->CR1 |= 1UL<<10; // Generate ACK
+		i2c1_state++;
+		break;
+
+		case 10:
+		I2C1->SR1;
+		buffer_extragyro->z = (I2C1->DR)<<8;
+		I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
+		I2C1->CR1 |= 1UL<<9; // generate STOP
+		i2c1_state++;
+		break;
+
+		case 11:
+		I2C1->SR1;
+		buffer_extragyro->z |= (I2C1->DR);
+		extragyro_new_data = 1;
+		i2c1_state=0;
+		break;
+
+		case 12:
+		I2C1->SR1;
+		I2C1->DR; // Dummy read needed to clear interrupt
+		i2c1_state=0;
+		break;
+		default: break;
+	}
+}
+#endif
+
+
 void i2c1_xcel_handler()
 {
 	int tmp;
@@ -241,7 +400,7 @@ void i2c1_xcel_handler()
 	{
 		case 1: // Expect SB
 		I2C1->SR1;
-		I2C1->DR = 0x3A;
+		I2C1->DR = XCEL_I2C_ADDR;
 		i2c1_state++;
 		break;
 
@@ -258,7 +417,7 @@ void i2c1_xcel_handler()
 		case 3: // Expect SB
 		if(I2C1->SR1 & 1) // For some reason, there is a stupid extra interrupt, so we need to check this.
 		{
-			I2C1->DR = 0x3B;
+			I2C1->DR = XCEL_I2C_ADDR+1;
 			i2c1_state++;
 		}
 		break;
@@ -362,7 +521,7 @@ void i2c1_compass_handler()
 	{
 		case 1: // Expect SB
 		I2C1->SR1;
-		I2C1->DR = 0x3C;
+		I2C1->DR = COMPASS_I2C_ADDR;
 		i2c1_state++;
 		break;
 
@@ -379,7 +538,7 @@ void i2c1_compass_handler()
 		case 3: // Expect SB
 		if(I2C1->SR1 & 1) // For some reason, there is a stupid extra interrupt, so we need to check this.
 		{
-			I2C1->DR = 0x3D;
+			I2C1->DR = COMPASS_I2C_ADDR+1;
 			i2c1_state++;
 		}
 		break;
@@ -465,6 +624,9 @@ void i2c1_inthandler()
 	switch(i2c1_cur_device)
 	{
 		case I2C1_GYRO: i2c1_gyro_handler(); break;
+		#ifdef EXTRAGYRO
+		case I2C1_EXTRAGYRO: i2c1_extragyro_handler(); break;
+		#endif
 		case I2C1_XCEL: i2c1_xcel_handler(); break;
 		case I2C1_COMPASS: i2c1_compass_handler(); break;
 		default: break;
@@ -517,11 +679,62 @@ int i2c1_config_byte(int dev_addr, int reg_addr, int data)
 	return 0;
 }
 
+/*
+void db()
+{
+	char buffer[1000];
+	char *p_buf = buffer;
+	p_buf = o_str_append(p_buf, "  SR2=");
+	p_buf = o_utoa32(I2C1->SR2, p_buf);
+	p_buf = o_str_append(p_buf, "  SR1=");
+	p_buf = o_utoa32(I2C1->SR1, p_buf);
+	p_buf = o_str_append(p_buf, "  ");
+	uart_print_string_blocking(buffer);
+}
+*/
+
+/*
+	NOTE!
+
+	STM32 I2C revision used in STM32F205 is, as we all know, completely broken and totally unusable.
+
+	I thought I had it finally working reliably by working around all the bugs that appeared during the 2-week design time
+	required to get the I2C working ininitally - at all. After that, zero I2C issues with 4 robots running for quite some time.
+
+	With the small 30pcs pre-production batch of PCBs, I found out there are variations in the STM32 I2C, even within the same
+	batch of MCUs - out of the 30 boards, 4 failed in I2C initialization!
+
+	The failure is that the I2C peripheral has stuck BUSY bit straight from the boot.
+
+	Reset through RCC control does not actually reset it!
+
+	Reset thtough the SWRST does not reset it, either!
+
+	ST has not documented this in their errate sheet, as usual, but info does exist scattered in the erratas of other (unrelated) devices.
+
+	Apparently, the fuckup is too big to admit properly.
+
+	Last, after long search I found a document that describes the exact sequence of manually generating a stop condition and timing the SWRST properly,
+	and it did the trick:
+		https://electronics.stackexchange.com/questions/267972/i2c-busy-flag-strange-behaviour 
+		(Answer by AxelBe)
+
+
+	Important note:
+	STM32F205 will not be used in the future - the STM32F7 that replaces it has a totally brand-new I2C (for a good reason). So please bear with this
+	horrible code, and don't touch it unless you are indeed sure you are debugging the faulty STM32 I2C.
+
+*/
 int init_gyro_xcel_compass()
 {
 	i2c1_ready = 0;
 	buffer_gyro = &gyro_data[0];
 	latest_gyro = &gyro_data[1];
+
+	#ifdef EXTRAGYRO
+	buffer_extragyro = &extragyro_data[0];
+	latest_extragyro = &extragyro_data[1];
+	#endif
 
 	buffer_xcel = &xcel_data[0];
 	latest_xcel = &xcel_data[1];
@@ -536,105 +749,171 @@ int init_gyro_xcel_compass()
 	/*
 		I2C1 @ APB1 at 30MHz
 		"Tpclk1" = 1/30MHz = 0.03333333us
+
 		100kHz standard mode:
 		Thigh = Tlow = 5us
 		-> CCR = 5us/0.0333333us = 150
+
+		125kHz standard mode:
+		Thigh = Tlow = 4us
+		-> CCR = 4us/0.0333333us = 120
+
 
 		TRISE: for standard mode,
 		1us / 0.0333333us = 30 -> TRISE = 31
 	*/
 
-	GPIOB->BSRR = 1UL<<(8+16); // SCL low
-	GPIOB->BSRR = 1UL<<(9+16); // SDA low
+	//db();
+
+//	GPIOB->BSRR = 1UL<<(8+16); // SCL low
+//	GPIOB->BSRR = 1UL<<(9+16); // SDA low
+	GPIOB->BSRR = 1UL<<(8); // SCL high
+	GPIOB->BSRR = 1UL<<(9); // SDA high
 	GPIOB->MODER &= ~(0b1111UL<<(2*8));
 	GPIOB->MODER |= (0b0101UL<<(2*8)); // general purpose outputs
 
 	delay_ms(10);
 
-	// Manually generate stop condition
+	// Manually generate a stop condition
+	GPIOB->BSRR = 1UL<<(9+16); // SDA low
+	delay_us(100);
+	GPIOB->BSRR = 1UL<<(8+16); // SCL low
+	delay_us(100);
 	GPIOB->BSRR = 1UL<<(8); // SCL high
-	delay_ms(10);
+	delay_us(100);
 	GPIOB->BSRR = 1UL<<(9); // SDA high
-	delay_ms(10);
+	delay_us(100);
 
-	// Reset the stupid i2c
-	RCC->APB1RSTR = 1UL<<21;
-	delay_ms(10);
-	RCC->APB1RSTR = 0;
-	delay_ms(10);
 
-	I2C1->CR2 = 0b011110 /*APB1 bus is 30MHz*/ | 1UL<<10 /*Buffer IE*/ | 1UL<<9 /*Event IE*/;
-	I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
-	I2C1->TRISE = 30UL;
-
-	I2C1->CR1 |= 1UL; // Enable I2C
-
+	// Pins to AF mode
 	GPIOB->MODER &= ~(0b1111UL<<(2*8));
 	GPIOB->MODER |= (0b1010UL<<(2*8));
+
+
+//	GPIOB->BSRR = 1UL<<(8); // SCL high
+//	delay_ms(10);
+//	GPIOB->BSRR = 1UL<<(9); // SDA high
+//	delay_ms(10);
+
+	//db();
+
+	// Reset the stupid i2c
+//	RCC->APB1RSTR = 1UL<<21;
+//	delay_ms(10);
+//	RCC->APB1RSTR = 0;
+//	delay_ms(10);
+
+	// APB reset is not enough to fully reset, do another kind of reset:
+
+	I2C1->CR1 |= 1UL<<15;
+	delay_us(100);
+	I2C1->CR1 = 0UL;
+	delay_us(100);
+	I2C1->CR1 = 1UL; // Enable I2C
+
+
+//	I2C1->SR1;
+//	I2C1->SR2;
+
+	//db();
+
+	I2C1->CR2 = 0b011110 /*APB1 bus is 30MHz*/ | 1UL<<10 /*Buffer IE*/ | 1UL<<9 /*Event IE*/;
+	#ifdef EXTRAGYRO
+		I2C1->CCR = 0UL<<15 /*Standard speed*/ | 120UL;
+	#else
+		I2C1->CCR = 0UL<<15 /*Standard speed*/ | 150UL;
+	#endif
+	I2C1->TRISE = 30UL;
+
+	I2C1->CR1 = 1UL; // Enable I2C
+
+	//db();
+
+	// Pins to AF mode
+//	GPIOB->MODER &= ~(0b1111UL<<(2*8));
+//	GPIOB->MODER |= (0b1010UL<<(2*8));
 
 
 	delay_us(1000);
 //	delay_ms(100);
 
+	//db();
+
+	// At this point:
+	// "Faulty" board: SR2=2  SR1=0 --> BUSY bit is stuck, nothing helps
+	// Working board: SR2=0  SR1=0  as expected
 
 	// Init gyro
 
-	if(i2c1_config_byte(0x40, 0x0d,
+	if(i2c1_config_byte(GYRO_I2C_ADDR, 0x0d,
 		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b11 /*+/- 250 degr per second range, 1lsb = 7.8125 mdeg/s*/))
 		return 1;
 
-	if(i2c1_config_byte(0x40, 0x13,
+	if(i2c1_config_byte(GYRO_I2C_ADDR, 0x13,
 		2<<2 /*200Hz data rate*/ | 1<<1 /*ACTIVATE*/))
-		return 1;
+		return 2;
 
+	#ifdef EXTRAGYRO
+
+
+	if(i2c1_config_byte(EXTRAGYRO_I2C_ADDR, 0x0d,
+		 0b00<<6 /*64Hz LPF*/ | 0b11<<3 /*0.495Hz HPF*/ | 0<<2 /*Disable high-pass filter*/ | 0b11 /*+/- 250 degr per second range, 1lsb = 7.8125 mdeg/s*/))
+		return 3;
+
+	if(i2c1_config_byte(EXTRAGYRO_I2C_ADDR, 0x13,
+		2<<2 /*200Hz data rate*/ | 1<<1 /*ACTIVATE*/))
+		return 4;
+
+
+	#endif
 
 
 	// Init Accel
 
-	if(i2c1_config_byte(0x3A, 0x20,
+	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x20,
 		0b100<<4 /*200Hz*/ | 1<<3 /*Must be set for proper operation*/ | 0b111 /*Z,Y,X ena*/))
-		return 2;
+		return 5;
 
 
 	// configuring anything seems to break the xcel sensor. 200Hz setting luckily works.
 
-//	if(i2c1_config_byte(0x3A, 0x21,
+//	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x21,
 //		0b10<<5 /*This field ridiculously configures both LPF and HPF, when HighRes is set: LPF=200/9 Hz. HPF undefined, go figure.*/ |
 //		0<<2 /* HPF off */))
-//		return 2;
+//		return 6;
 
 
-//	if(i2c1_config_byte(0x3A, 0x23,
+//	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x23,
 //		0b11<<6 /*50Hz BW AA*/ | 0b00<<4 /*+- 2g full scale*/ | 1<<3 /*Enable BW selection (lol)*/)
-//		return 2;
+//		return 7;
 
 
 
 	// Init Compass
 
-	if(i2c1_config_byte(0x3C, 0x20,
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x20,
 		0b11<<5 /*Ultra-high performance mode*/ | 0b100<<2 /*10Hz*/))
-		return 3;
+		return 8;
 
 
-	if(i2c1_config_byte(0x3C, 0x21,
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x21,
 		0b11<<5 /*must be set*/))
-		return 3;
+		return 9;
 
 
-	if(i2c1_config_byte(0x3C, 0x22,
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x22,
 		0b00<0 /*continuous*/))
-		return 3;
+		return 10;
 
 
-	if(i2c1_config_byte(0x3C, 0x23,
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x23,
 		0b11<2 /*Z in ultra-high performance mode, too (why not?)*/))
-		return 3;
+		return 11;
 
 
-	if(i2c1_config_byte(0x3C, 0x24,
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x24,
 		1<<6 /*"block data update"; must be set*/))
-		return 3;
+		return 12;
 
 
 	delay_us(100);
@@ -659,9 +938,15 @@ int gyro_xcel_compass_fsm()
 {
 	int ret = 0;
 	static int gyro_cnt = 0;
+	#ifdef EXTRAGYRO
+		static int extragyro_cnt = 0;
+	#endif
 	static int xcel_cnt = 0;
 	static int compass_cnt = 0;
 	static int gyro_pending = 0;
+	#ifdef EXTRAGYRO
+		static int extragyro_pending = 0;
+	#endif
 	static int xcel_pending = 0;
 	static int compass_pending = 0;
 	static int plus_return_cnt = 0;
@@ -671,6 +956,9 @@ int gyro_xcel_compass_fsm()
 //	static int fix_fail = 0;
 
 	gyro_cnt++;
+	#ifdef EXTRAGYRO
+		extragyro_cnt++;
+	#endif
 	xcel_cnt++;
 	compass_cnt++;
 
@@ -681,12 +969,18 @@ int gyro_xcel_compass_fsm()
 		minus_return_cnt = 0;
 		if(xcel_timestep_minuses) xcel_timestep_minuses--;
 		if(gyro_timestep_minuses) gyro_timestep_minuses--;
+		#ifdef EXTRAGYRO
+			if(extragyro_timestep_minuses) extragyro_timestep_minuses--;
+		#endif
 	}
 	if(plus_return_cnt >= 5000) // at 2Hz
 	{
 		plus_return_cnt = 0;
 		if(xcel_timestep_plusses) xcel_timestep_plusses--;
 		if(gyro_timestep_plusses) gyro_timestep_plusses--;
+		#ifdef EXTRAGYRO
+		if(extragyro_timestep_plusses) extragyro_timestep_plusses--;
+		#endif
 	}
 
 	if(xcel_timestep_minuses > 10)
@@ -718,11 +1012,34 @@ int gyro_xcel_compass_fsm()
 		gyro_timestep_len++;
 	}
 
+	#ifdef EXTRAGYRO
+	if(extragyro_timestep_minuses > 10)
+	{
+		extragyro_timestep_minuses = 0;
+		extragyro_timestep_plusses = 0;
+		extragyro_timestep_len--;
+
+		if(extragyro_timestep >= extragyro_timestep_len) extragyro_timestep = extragyro_timestep_len-1;
+	}
+	if(extragyro_timestep_plusses > 100 && extragyro_timestep_minuses < 3)
+	{
+		extragyro_timestep_minuses = 0;
+		extragyro_timestep_plusses = 0;
+		extragyro_timestep_len++;
+	}
+	#endif
+
 	if(gyro_cnt >= gyro_timestep_len) gyro_cnt = 0;
+	#ifdef EXTRAGYRO
+	if(extragyro_cnt >= extragyro_timestep_len) extragyro_cnt = 0;
+	#endif
 	if(xcel_cnt >= xcel_timestep_len) xcel_cnt = 0;
 	if(compass_cnt >= compass_timestep_len) compass_cnt = 0;
 
 	if(gyro_cnt == gyro_timestep) gyro_pending = 1;
+	#ifdef EXTRAGYRO
+	if(extragyro_cnt == extragyro_timestep) extragyro_pending = 1;
+	#endif
 	if(xcel_cnt == xcel_timestep) xcel_pending = 1;
 	if(compass_cnt == compass_timestep) compass_pending = 1;
 
@@ -738,6 +1055,17 @@ int gyro_xcel_compass_fsm()
 			start_i2c1_sequence(I2C1_GYRO);
 			gyro_pending = 0;
 		}
+		#ifdef EXTRAGYRO
+		else if(extragyro_pending)
+		{
+			volatile gyro_data_t *tmp;
+			tmp = latest_extragyro;
+			latest_extragyro = buffer_extragyro;
+			buffer_extragyro = tmp;
+			start_i2c1_sequence(I2C1_EXTRAGYRO);
+			extragyro_pending = 0;
+		}
+		#endif
 		else if(xcel_pending)
 		{
 			volatile xcel_data_t *tmp;
@@ -791,6 +1119,14 @@ int gyro_xcel_compass_fsm()
 		gyro_new_data = 0;
 		ret |= GYRO_NEW_DATA;
 	}
+
+	#ifdef EXTRAGYRO
+	if(extragyro_new_data)
+	{
+		extragyro_new_data = 0;
+		ret |= EXTRAGYRO_NEW_DATA;
+	}
+	#endif
 
 	if(xcel_new_data)
 	{

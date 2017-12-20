@@ -1,6 +1,8 @@
 #ifndef _MOTCONS_H
 #define _MOTCONS_H
 
+#ifdef PCB1A
+
 #define MC4_CS1()  {GPIOE->BSRR = 1UL<<6;}
 #define MC4_CS0() {GPIOE->BSRR = 1UL<<(6+16);}
 #define MC3_CS1()  {GPIOA->BSRR = 1UL<<4;}
@@ -11,6 +13,23 @@
 #define MC1_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
 
 #define NUM_MOTCONS 4
+
+#endif
+
+
+#ifdef PCB1B
+
+#define MC2_CS1()  {GPIOC->BSRR = 1UL<<5;}
+#define MC2_CS0() {GPIOC->BSRR = 1UL<<(5+16);}
+#define MC1_CS1()  {GPIOC->BSRR = 1UL<<4;}
+#define MC1_CS0() {GPIOC->BSRR = 1UL<<(4+16);}
+
+#define NUM_MOTCONS 2
+
+
+#endif
+
+
 
 #define MOTCON_DATAGRAM_LEN 8
 typedef struct __attribute__ ((packed))

@@ -4,22 +4,52 @@
 #include "sonar.h"
 #include "optflow.h"
 
-#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
-#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
-#define CHARGER_ENA() {GPIOA->BSRR = 1UL<<15;}
-#define CHARGER_DIS() {GPIOA->BSRR = 1UL<<(15+16);}
-#define PSU5V_ENA() {GPIOE->BSRR = 1UL<<15;}
-#define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
-#define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
-#define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
-#define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
-#define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
+#ifdef PCB1A
 
-#define LIDAR_ENA() {GPIOD->BSRR = 1UL<<1;}
-#define LIDAR_DIS() {GPIOD->BSRR = 1UL<<(1+16);}
+	#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
+	#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
+	#define CHARGER_ENA() {GPIOA->BSRR = 1UL<<15;}
+	#define CHARGER_DIS() {GPIOA->BSRR = 1UL<<(15+16);}
+	#define PSU5V_ENA() {GPIOE->BSRR = 1UL<<15;}
+	#define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(15+16);}
+	#define PSU12V_ENA() {GPIOD->BSRR = 1UL<<4;}
+	#define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(4+16);}
+	#define CHA_RUNNING() (!(GPIOB->IDR & (1<<11)))
+	#define CHA_FINISHED() (!(GPIOB->IDR & (1<<10)))
 
-#define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
+	#define LIDAR_ENA() {GPIOD->BSRR = 1UL<<1;}
+	#define LIDAR_DIS() {GPIOD->BSRR = 1UL<<(1+16);}
 
+	#define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
+
+#endif
+
+#ifdef PCB1B
+
+	#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
+	#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
+	#define CHARGER_ENA() {GPIOB->BSRR = 1UL<<4;}
+	#define CHARGER_DIS() {GPIOB->BSRR = 1UL<<(4+16);}
+	#define PSU5V_ENA() {GPIOE->BSRR = 1UL<<3;}
+	#define PSU5V_DIS() {GPIOE->BSRR = 1UL<<(3+16);}
+	#define PSU12V_ENA() {GPIOD->BSRR = 1UL<<5;}
+	#define PSU12V_DIS() {GPIOD->BSRR = 1UL<<(5+16);}
+	#define CHA_RUNNING() (!(GPIOB->IDR & (1<<3)))
+	#define CHA_FINISHED() (!(GPIOD->IDR & (1<<6)))
+
+	#define LIDAR_ENA() {GPIOB->BSRR = 1UL<<5;}
+	#define LIDAR_DIS() {GPIOB->BSRR = 1UL<<(5+16);}
+
+	#define DO_KILL_PWR() {GPIOE->BSRR = 1UL<<2;}
+
+	#define LEFT_BLINKER_ON()  {GPIOD->BSRR = 1UL<<10;}
+	#define LEFT_BLINKER_OFF() {GPIOD->BSRR = 1UL<<(10+16);}
+	#define RIGHT_BLINKER_ON()  {GPIOE->BSRR = 1UL<<8;}
+	#define RIGHT_BLINKER_OFF() {GPIOE->BSRR = 1UL<<(8+16);}
+	#define FWD_LIGHT_ON()  {GPIOD->BSRR = 1UL<<9;}
+	#define FWD_LIGHT_OFF() {GPIOD->BSRR = 1UL<<(9+16);}
+
+#endif
 
 void error(int code);
 void run_flasher();

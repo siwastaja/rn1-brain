@@ -12,9 +12,11 @@ MODEL=RN1P7
 #MODEL=RN1P6
 #MODEL=PULU1
 
-CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL)
+PCBREV=PCB1B
 
-#CFLAGS += -DHWTEST
+CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL) -D$(PCBREV)
+
+CFLAGS += -DHWTEST
 CFLAGS += -DSONARS_INSTALLED
 CFLAGS += -DDELIVERY_APP
 #CFLAGS += -DOPTFLOW_INSTALLED
@@ -40,13 +42,13 @@ main.bin: $(OBJ)
 	$(SIZE) main.elf
 
 flash_full: main.bin
-	sudo stm32sprog -b 115200 -vw main_full.bin
+	stm32sprog -b 115200 -vw main_full.bin
 
 flash: main.bin
-	sudo stm32sprog -b 115200 -vw main.bin
+	stm32sprog -b 115200 -vw main.bin
 
 f_local: main.bin
-	sudo ../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
+	../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
 
 f_proto4: main.bin
 	scp main.bin hrst@proto4:~/rn1-tools/
@@ -77,4 +79,4 @@ asm: $(ASMS)
 e: 
 	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar.h lidar.c lidar_corr.h lidar_corr.c uart.h uart.c &
 s:
-	sudo screen /dev/ttyUSB0 115200
+	screen /dev/ttyUSB0 115200

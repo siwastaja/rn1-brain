@@ -17,16 +17,25 @@ void motcon_rx_done_inthandler()
 	{
 		case 0: {MC1_CS1();} break;
 		case 1: {MC2_CS1();} break;
+		#if NUM_MOTCONS >= 3
 		case 2: {MC3_CS1();} break;
+		#endif
+		#if NUM_MOTCONS >= 4
 		case 3: {MC4_CS1();} break;
+		#endif
 		default: break;
 	}
 }
 
 void init_motcons()
 {
+	#if NUM_MOTCONS >= 4
 	MC4_CS1();
+	#endif
+	#if NUM_MOTCONS >= 3
 	MC3_CS1();
+	#endif
+
 	MC2_CS1();
 	MC1_CS1();
 
@@ -91,8 +100,12 @@ void motcon_fsm()
 	{
 		case 0: {MC1_CS0();} break;
 		case 1: {MC2_CS0();} break;
+		#if NUM_MOTCONS >= 4
 		case 2: {MC3_CS0();} break;
+		#endif
+		#if NUM_MOTCONS >= 4
 		case 3: {MC4_CS0();} break;
+		#endif
 		default: break;
 	}
 

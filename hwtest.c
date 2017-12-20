@@ -68,6 +68,8 @@ void hwtest_main()
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
 	GPIOD->AFR[1] = 2UL<<28 /*TIM4*/;
 
+#ifdef PCB1A
+
 	             // Mode:
 		     // 00 = General Purpose In
 	             // 01 = General Purpose Out
@@ -100,18 +102,62 @@ void hwtest_main()
 	             //     | | | | | | | | | | | | | | | |
 	GPIOE->MODER   = 0b01010101010101010101000000000000;
 	GPIOE->OSPEEDR = 0b00000000000000000001000000000000;
+
+#endif
+
+#ifdef PCB1B
+
+	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
+	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
+	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
+	                 4UL<<0 | 4UL<<4 /*I2C1*/;
+	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
+
+	             // Mode:
+		     // 00 = General Purpose In
+	             // 01 = General Purpose Out
+	             // 10 = Alternate Function (in/out controlled by peripheral)
+	             // 11 = Analog in (to ADC)
+
+	             // Speed:
+	             // 00 = low, 01 = medium, 10 = high, 11 = superhyper
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOF->MODER   = 0b00000000000000000000000000000000;
-	GPIOF->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOA->MODER   = 0b01000100010100011010100000000000;
+	GPIOA->OSPEEDR = 0b00000000000000000100010000000000;
+	GPIOA->PUPDR   = 0b00000001000001000000000000000000;
+
+	GPIOB->ODR     = 1UL<<8 | 1UL<<9; // I2C pins high.
+	GPIOB->OTYPER  = 1UL<<8 | 1UL<<9; // Open drain for I2C.
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
-	GPIOG->MODER   = 0b00000000000000000000000000000000;
-	GPIOG->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOB->MODER   = 0b10101001000101011010010100000001;
+	GPIOB->OSPEEDR = 0b01000101000001010000010000000000;
+	GPIOB->PUPDR   = 0b00000000000000000000000001000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOC->MODER   = 0b00000100101000000000010111111111;
+	GPIOC->OSPEEDR = 0b00000000000100000000010100000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOD->MODER   = 0b00000100010101000000010000000000;
+	GPIOD->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOD->PUPDR   = 0b00000000000000000101000000000000;
+	             //    15141312111009080706050403020100
+	             //     | | | | | | | | | | | | | | | |
+	GPIOE->MODER   = 0b00010000000000010101000101010000;
+	GPIOE->OSPEEDR = 0b00000000000000000000000000000000;
+	GPIOE->PUPDR   = 0b00000000000000000000010000000000;
+#endif
+
 
 	// Motor controller nCS signals must be high as early as possible. Motor controllers wait 100 ms at boot for this.
+	#if NUM_MOTCONS >= 4
 	MC4_CS1();
+	#endif
+	#if NUM_MOTCONS >= 3
 	MC3_CS1();
+	#endif
 	MC2_CS1();
 	MC1_CS1();
 
@@ -145,8 +191,16 @@ void hwtest_main()
 	{
 		uart_print_string_blocking("\r\n\r\n[ 1 ]  Test motor controller 1\r\n");
 		uart_print_string_blocking("[ 2 ]  Test motor controller 2\r\n");
+		#if NUM_MOTCONS >= 3
 		uart_print_string_blocking("[ 3 ]  Test motor controller 3\r\n");
+		#else
+		uart_print_string_blocking("[ 3 ]  (No motor controller 3)\r\n");
+		#endif
+		#if NUM_MOTCONS >= 4
 		uart_print_string_blocking("[ 4 ]  Test motor controller 4\r\n");
+		#else
+		uart_print_string_blocking("[ 4 ]  (No motor controller 4)\r\n");
+		#endif
 		uart_print_string_blocking("[ 5 ]  Test I2C gyro, accelerometer, compass\r\n");
 
 		if(!ena5v)
@@ -163,6 +217,7 @@ void hwtest_main()
 		uart_print_string_blocking("[ 8 ]  Test charger subsystem + voltage meas. ADC\r\n");
 		uart_print_string_blocking("[ 9 ]  Try requesting KILL_PWR (does a hard reboot; or a complete shutdown with emptyish battery)\r\n");
 		uart_print_string_blocking("[ a ]  Test lidar subsystem (please enable 5V first)\r\n");
+		uart_print_string_blocking("[ b ]  Test blinker LEDS\r\n");
 
 		char buffer[1000];
 
@@ -180,8 +235,12 @@ void hwtest_main()
 		{
 			case '1':
 			case '2':
+			#if NUM_MOTCONS >= 3
 			case '3':
+			#endif
+			#if NUM_MOTCONS >= 4
 			case '4':
+			#endif
 			{
 				uart_print_string_blocking("Enable power with w. Stop with q.\r\n");
 
@@ -289,6 +348,18 @@ void hwtest_main()
 					p_buf = o_itoa16_fixed(latest_gyro->y, p_buf);
 					p_buf = o_str_append(p_buf, " Z=");
 					p_buf = o_itoa16_fixed(latest_gyro->z, p_buf);
+
+					#ifdef EXTRAGYRO
+					p_buf = o_str_append(p_buf, "\r\nGYRO2:   status=");
+					p_buf = o_utoa8_fixed(latest_extragyro->status_reg, p_buf);
+					p_buf = o_str_append(p_buf, " X=");
+					p_buf = o_itoa16_fixed(latest_extragyro->x, p_buf);
+					p_buf = o_str_append(p_buf, " Y=");
+					p_buf = o_itoa16_fixed(latest_extragyro->y, p_buf);
+					p_buf = o_str_append(p_buf, " Z=");
+					p_buf = o_itoa16_fixed(latest_extragyro->z, p_buf);
+					#endif
+
 					p_buf = o_str_append(p_buf, "\r\nXCEL:    status=");
 					p_buf = o_utoa8_fixed(latest_xcel->status_reg, p_buf);
 					p_buf = o_str_append(p_buf, " X=");
@@ -297,6 +368,7 @@ void hwtest_main()
 					p_buf = o_itoa16_fixed(latest_xcel->y, p_buf);
 					p_buf = o_str_append(p_buf, " Z=");
 					p_buf = o_itoa16_fixed(latest_xcel->z, p_buf);
+
 					p_buf = o_str_append(p_buf, "\r\nCOMPASS: status=");
 					p_buf = o_utoa8_fixed(latest_compass->status_reg, p_buf);
 					p_buf = o_str_append(p_buf, " X=");
@@ -305,6 +377,7 @@ void hwtest_main()
 					p_buf = o_itoa16_fixed(latest_compass->y, p_buf);
 					p_buf = o_str_append(p_buf, " Z=");
 					p_buf = o_itoa16_fixed(latest_compass->z, p_buf);
+
 					uart_print_string_blocking(buffer);
 					delay_ms(150);
 
@@ -560,6 +633,31 @@ void hwtest_main()
 			}
 			break;
 
+
+			case 'b':
+			{
+
+				LEFT_BLINKER_ON();
+				delay_ms(200);
+				LEFT_BLINKER_OFF();
+				FWD_LIGHT_ON();
+				delay_ms(200);
+				FWD_LIGHT_OFF();
+				RIGHT_BLINKER_ON();
+				delay_ms(200);
+				RIGHT_BLINKER_OFF();
+				delay_ms(200);
+				LEFT_BLINKER_ON();
+				FWD_LIGHT_ON();
+				RIGHT_BLINKER_ON();
+				delay_ms(200);
+				RIGHT_BLINKER_OFF();
+				FWD_LIGHT_OFF();
+				LEFT_BLINKER_OFF();
+
+
+			}
+			break;
 			default:
 			break;
 
