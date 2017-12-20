@@ -886,11 +886,20 @@ void run_feedbacks(int sens_status)
 	else if(x_idx >= SIN_LUT_POINTS) x_idx -= SIN_LUT_POINTS;
 
 
+   dbg_teleportation_bug(124);
+
+
     dbg_teleportation_extra.y_idx = y_idx;
     dbg_teleportation_extra.x_idx = x_idx;
 
+    dbg_teleportation_extra.x_before = cur_x;
+    dbg_teleportation_extra.y_before = cur_y;
+
 	cur_x += ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
 	cur_y += ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
+
+    dbg_teleportation_extra.x_after = cur_x;
+    dbg_teleportation_extra.y_after = cur_y;
 
     dbg_teleportation_extra.dx = ((int64_t)sin_lut[x_idx] * (int64_t)movement)>>15;
     dbg_teleportation_extra.dy = ((int64_t)sin_lut[y_idx] * (int64_t)movement)>>15;
@@ -898,7 +907,7 @@ void run_feedbacks(int sens_status)
 	int tmp_expected_accel = -1*fwd_speed;
 
 
-   dbg_teleportation_bug(124);
+   dbg_teleportation_bug(125);
 
 	if(!manual_control && do_correct_fwd)
 	{
@@ -1017,7 +1026,7 @@ void run_feedbacks(int sens_status)
 		__enable_irq();
 	}
 
-   dbg_teleportation_bug(125);
+   dbg_teleportation_bug(126);
 
 
 	if(sens_status & XCEL_NEW_DATA)
@@ -1092,7 +1101,7 @@ void run_feedbacks(int sens_status)
 	}
 
 
-   dbg_teleportation_bug(126);
+   dbg_teleportation_bug(127);
 
 	if(speeda > MAX_DIFFERENTIAL_SPEED*256) speeda = MAX_DIFFERENTIAL_SPEED*256;
 	else if(speeda < -MAX_DIFFERENTIAL_SPEED*256) speeda = -MAX_DIFFERENTIAL_SPEED*256;
@@ -1125,7 +1134,7 @@ void run_feedbacks(int sens_status)
 		reset_movement(); stop_navig_fsms(); // to prevent surprises when we are back up.
 	}
 
-   dbg_teleportation_bug(127);
+   dbg_teleportation_bug(128);
 
 
 }

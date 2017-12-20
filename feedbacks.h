@@ -119,6 +119,11 @@ typedef struct __attribute__((packed))
 	int32_t y_idx;
 	int64_t dx;
 	int64_t dy;
+	int64_t x_before;
+	int64_t y_before;
+	int64_t x_after;
+	int64_t y_after;
+
 } dbg_teleportation_extra_t;
 
 extern volatile dbg_teleportation_extra_t dbg_teleportation_extra;
