@@ -369,6 +369,17 @@ void hwtest_main()
 					p_buf = o_str_append(p_buf, " Z=");
 					p_buf = o_itoa16_fixed(latest_xcel->z, p_buf);
 
+					extern int adbg;
+					extern int adbg2;
+					extern volatile int i2c1_state;
+					p_buf = o_str_append(p_buf, " adbg=");
+					p_buf = o_itoa32(adbg, p_buf);
+					p_buf = o_str_append(p_buf, " adbg2=");
+					p_buf = o_itoa32(adbg2, p_buf);
+					p_buf = o_str_append(p_buf, " state=");
+					p_buf = o_itoa32(i2c1_state, p_buf);
+
+
 					p_buf = o_str_append(p_buf, "\r\nCOMPASS: status=");
 					p_buf = o_utoa8_fixed(latest_compass->status_reg, p_buf);
 					p_buf = o_str_append(p_buf, " X=");

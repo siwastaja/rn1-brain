@@ -7,6 +7,9 @@
 #include "uart.h"
 #include "own_std.h"
 
+int adbg;
+int adbg2;
+
 extern void delay_us(uint32_t i);
 extern void delay_ms(uint32_t i);
 
@@ -432,6 +435,7 @@ void i2c1_xcel_handler()
 		case 5:
 		I2C1->SR1;
 		buffer_xcel->status_reg = status = I2C1->DR;
+		adbg++;
 		if((status & 0b111) != 0b111) // Complete dataset not ready - don't read further; adjust timing to sync
 		{
 			I2C1->CR1 &= ~(1UL<<10); // Zero ACK to generate NACK (for the last data)
@@ -464,6 +468,7 @@ void i2c1_xcel_handler()
 		case 6:
 		I2C1->SR1;
 		buffer_xcel->x = (I2C1->DR);
+		adbg2 = buffer_xcel->x;
 		I2C1->CR1 |= 1UL<<10; // Generate ACK
 		i2c1_state++;
 		break;
@@ -529,7 +534,12 @@ void i2c1_compass_handler()
 		if(I2C1->SR1 & 2) // For some reason, there is a stupid extra interrupt, so we need to check this.
 		{
 			I2C1->SR2;
+			#ifdef LSM303C
 			I2C1->DR = 0x27; // Status register address
+			#endif
+			#ifdef LSM303A
+			I2C1->DR = 0x67; // Status register address
+			#endif
 			I2C1->CR1 |= 1UL<<8; // START
 			i2c1_state++;
 		}
@@ -868,6 +878,8 @@ int init_gyro_xcel_compass()
 	#endif
 
 
+	#ifdef LSM303C
+
 	// Init Accel
 
 	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x20,
@@ -914,6 +926,63 @@ int init_gyro_xcel_compass()
 	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x24,
 		1<<6 /*"block data update"; must be set*/))
 		return 12;
+
+	#endif
+
+
+
+	#ifdef LSM303A
+
+	// Init Accel
+
+	// reg  data
+	// 0x21 0x00
+	// 0x22 0x00
+	// 0x23 0x81
+	// 0x20 0x57
+	// wait 90 ms
+
+
+	// Datasheet specifies writing 0 to 0x21 and 0x22 as necessary even though it's the default:
+	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x21,
+		0))
+		return 5;
+
+	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x22,
+		0))
+		return 5;
+
+
+	// High-res mode: LPen=0, HR=1
+	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x23,
+		1<<7 /*BDU bit required for correct operation*/ | 0b00<<4 /*+/-2g*/ | 1<<3 /*HR bit*/))
+		return 5;
+
+
+
+	if(i2c1_config_byte(XCEL_I2C_ADDR, 0x20,
+		0b0110<<4 /*200Hz*/ | 0b111 /*Z,Y,X ena*/))
+		return 5;
+
+
+	// Init Compass
+
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x60,
+		0b00<<2 /*10Hz*/ | 1<<7 /*"for proper operation, must be set to 1"*/)) 
+		return 8;
+
+
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x61,
+		1<<0 /*digital LPF*/))
+		return 9;
+
+
+	if(i2c1_config_byte(COMPASS_I2C_ADDR, 0x62,
+		1<<4 /*BDU for correct operation*/))
+		return 10;
+
+	#endif
+
 
 
 	delay_us(100);
@@ -1084,7 +1153,6 @@ int gyro_xcel_compass_fsm()
 			start_i2c1_sequence(I2C1_COMPASS);
 			compass_pending = 0;
 		}
-
 	}
 	else
 	{

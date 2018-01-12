@@ -5,6 +5,8 @@
 
 #ifdef PCB1A
 
+#define LSM303C
+
 #define GYRO_I2C_ADDR 0x40
 
 #define XCEL_I2C_ADDR 0x3A
@@ -13,6 +15,8 @@
 #endif
 
 #ifdef PCB1B
+
+#define LSM303A
 
 #define EXTRAGYRO
 
@@ -24,6 +28,10 @@
 
 #endif
 
+
+#if !defined(LSM303C) && !defined(LSM303A)
+#error LSM303C or LSM303A must be defined
+#endif
 
 typedef struct
 {

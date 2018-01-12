@@ -137,9 +137,19 @@ void stm32init(void)
 {
 #ifndef HWTEST
 	// We need the 5V supply up and running as the very first thing!
-	RCC->AHB1ENR = 1UL<<4 /*PORTE*/;
-	GPIOE->ODR = 1UL<<15;
-	GPIOE->MODER = 0b01UL<<(15*2) /*ena_5V*/;
+
+	#ifdef PCB1A
+		RCC->AHB1ENR = 1UL<<4 /*PORTE*/;
+		GPIOE->ODR = 1UL<<15;
+		GPIOE->MODER = 0b01UL<<(15*2) /*ena_5V*/;
+	#endif
+
+	#ifdef PCB1B
+		RCC->AHB1ENR = 1UL<<4 /*PORTE*/;
+		GPIOE->ODR = 1UL<<3;
+		GPIOE->MODER = 0b01UL<<(3*2) /*ena_5V*/;
+	#endif
+
 #endif
 
 	uint32_t* bss_begin = (uint32_t*)&_BSS_BEGIN;

@@ -8,15 +8,16 @@ OBJCOPY = arm-none-eabi-objcopy
 
 
 #MODEL=RN1P4
-MODEL=RN1P7
+#MODEL=RN1P7
 #MODEL=RN1P6
 #MODEL=PULU1
+MODEL=PROD1
 
 PCBREV=PCB1B
 
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL) -D$(PCBREV)
 
-CFLAGS += -DHWTEST
+#CFLAGS += -DHWTEST
 CFLAGS += -DSONARS_INSTALLED
 CFLAGS += -DDELIVERY_APP
 #CFLAGS += -DOPTFLOW_INSTALLED

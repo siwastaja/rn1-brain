@@ -1,4 +1,4 @@
-#if (!RN1P4 && !PULU1 && !RN1P6 && !RN1P7)
+#if (!RN1P4 && !PULU1 && !RN1P6 && !RN1P7 && !PROD1)
 #error "Unsupported robot model"
 #endif
 
@@ -731,7 +731,9 @@ int main()
 	TIM6->CR1 |= 1UL; // Enable
 
 
+	#ifdef OPTFLOW_INSTALLED
 	FLOW_CS1();
+	#endif
 
 	NVIC_SetPriority(USART3_IRQn, 0b0000); // highest prio really needed.
 	NVIC_EnableIRQ(USART3_IRQn);

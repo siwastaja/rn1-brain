@@ -26,6 +26,11 @@ Keeps track of position & angle, controls the motors.
 	#define B_MC_IDX 0
 #endif
 
+#ifdef PROD1
+	#define A_MC_IDX 1
+	#define B_MC_IDX 0
+#endif
+
 
 #include <inttypes.h>
 #include <math.h>
@@ -36,9 +41,7 @@ Keeps track of position & angle, controls the motors.
 #include "motcons.h"
 #include "sin_lut.h"
 #include "navig.h"
-
-#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
-#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
+#include "main.h"
 
 extern volatile int dbg[10];
 
@@ -162,7 +165,7 @@ int speed_limit_status()
 
 #define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
 
-#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
+#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 	#ifdef DELIVERY_APP
 		#define ANG_SPEED_MUL 2820
 		#define ANG_ACCEL 150
@@ -415,6 +418,11 @@ int64_t gyro_mul_neg = 763300LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
 
+#ifdef PROD1
+int64_t gyro_mul_neg = 763300LL<<16;
+int64_t gyro_mul_pos = 763300LL<<16;
+#endif
+
 
 int gyro_avgd = 0;
 
@@ -512,7 +520,7 @@ void compass_fsm(int cmd)
 	#ifdef RN1P4
 		latest_compass->y;
 	#endif
-	#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
+	#if defined(PULU1) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 		-1*latest_compass->y;
 	#endif
 
@@ -784,9 +792,17 @@ void run_feedbacks(int sens_status)
 		if(new_ang_speed > 0 && new_ang_speed > ang_speed_limit) new_ang_speed = ang_speed_limit;
 
 		ang_speed = new_ang_speed;
+
+		#ifdef PCB1B
+			if(new_ang_speed > 0) {LEFT_BLINKER_ON(); RIGHT_BLINKER_OFF();}
+			else if(new_ang_speed < 0) {RIGHT_BLINKER_ON(); LEFT_BLINKER_OFF();}
+		#endif
 	}
 	else
 	{
+		#ifdef PCB1B
+			LEFT_BLINKER_OFF(); RIGHT_BLINKER_OFF();
+		#endif
 		if(ang_idle < 10000) ang_idle++;
 		ang_speed = 0;
 	}
@@ -824,6 +840,9 @@ void run_feedbacks(int sens_status)
 	#ifdef RN1P7
 		278528; 
 	#endif
+	#ifdef PROD1
+		278528; 
+	#endif
 	#ifdef RN1P6
 		282242; 
 	#endif
@@ -834,7 +853,7 @@ void run_feedbacks(int sens_status)
     dbg_teleportation_extra.movement = movement;
 
 	int turned_by_wheels = (wheel_deltas[0] - wheel_deltas[1])*
-	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7)
+	#if defined(RN1P4) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 		15500000;
 	#endif
 	#ifdef PULU1
@@ -936,9 +955,19 @@ void run_feedbacks(int sens_status)
 		if(new_fwd_speed > 0 && new_fwd_speed > fwd_speed_limit) new_fwd_speed = fwd_speed_limit;
 
 		fwd_speed = new_fwd_speed;
+
+		#ifdef PCB1B
+			if(new_fwd_speed > 0) {FWD_LIGHT_ON();}
+			else if(new_fwd_speed < 0) {FWD_LIGHT_OFF();}
+		#endif
+
 	}
 	else
 	{
+		
+		#ifdef PCB1B
+			FWD_LIGHT_OFF();
+		#endif
 		if(fwd_idle < 10000) fwd_idle++;
 		fwd_nonidle = 0;
 		if(fwd_speed)
@@ -958,12 +987,11 @@ void run_feedbacks(int sens_status)
 
 	if(sens_status & GYRO_NEW_DATA)
 	{
-
 		int latest[3] = 
 		#ifdef RN1P4
 			{latest_gyro->x, latest_gyro->y, latest_gyro->z};
 		#endif
-		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 			{latest_gyro->x, latest_gyro->y, -1*latest_gyro->z}; 
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
@@ -1035,7 +1063,7 @@ void run_feedbacks(int sens_status)
 		#ifdef RN1P4
 			{latest_xcel->x, latest_xcel->y, latest_xcel->z};
 		#endif
-		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7)
+		#if defined(PULU1) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 			{latest_xcel->x, latest_xcel->y, -1*latest_xcel->z}; // todo: fix x, y
 		#endif
 
