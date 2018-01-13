@@ -600,6 +600,22 @@ void power_and_led_fsm()
 		if(leds_motion_blink_left && led_cnt < 500)  LEFT_BLINKER_ON();  else LEFT_BLINKER_OFF();
 		if(leds_motion_blink_right && led_cnt < 500) RIGHT_BLINKER_ON(); else RIGHT_BLINKER_OFF();
 		if(leds_motion_forward) FWD_LIGHT_ON(); else FWD_LIGHT_OFF();
+
+		if(!leds_motion_blink_left && !leds_motion_blink_right && !leds_motion_forward)
+		{
+			if(led_cnt < 10)
+			{
+				LEFT_BLINKER_ON();
+				RIGHT_BLINKER_ON();
+				FWD_LIGHT_ON();
+			}
+			else
+			{
+				LEFT_BLINKER_OFF();
+				RIGHT_BLINKER_OFF();
+				FWD_LIGHT_OFF();
+			}
+		}
 	}
 	else
 	{
