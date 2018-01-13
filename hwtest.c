@@ -644,7 +644,7 @@ void hwtest_main()
 			}
 			break;
 
-
+	#ifdef PCB1B
 			case 'b':
 			{
 
@@ -669,6 +669,7 @@ void hwtest_main()
 
 			}
 			break;
+	#endif
 			default:
 			break;
 

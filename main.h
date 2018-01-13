@@ -42,12 +42,12 @@
 
 	#define DO_KILL_PWR() {GPIOE->BSRR = 1UL<<2;}
 
-	#define LEFT_BLINKER_ON()  {GPIOD->BSRR = 1UL<<10;}
-	#define LEFT_BLINKER_OFF() {GPIOD->BSRR = 1UL<<(10+16);}
-	#define RIGHT_BLINKER_ON()  {GPIOE->BSRR = 1UL<<8;}
-	#define RIGHT_BLINKER_OFF() {GPIOE->BSRR = 1UL<<(8+16);}
-	#define FWD_LIGHT_ON()  {GPIOD->BSRR = 1UL<<9;}
-	#define FWD_LIGHT_OFF() {GPIOD->BSRR = 1UL<<(9+16);}
+	#define LEFT_BLINKER_ON()  do{GPIOD->BSRR = 1UL<<10;}while(0)
+	#define LEFT_BLINKER_OFF() do{GPIOD->BSRR = 1UL<<(10+16);}while(0)
+	#define RIGHT_BLINKER_ON()  do{GPIOE->BSRR = 1UL<<8;}while(0)
+	#define RIGHT_BLINKER_OFF() do{GPIOE->BSRR = 1UL<<(8+16);}while(0)
+	#define FWD_LIGHT_ON()  do{GPIOD->BSRR = 1UL<<9;}while(0)
+	#define FWD_LIGHT_OFF() do{GPIOD->BSRR = 1UL<<(9+16);}while(0)
 
 #endif
 
@@ -72,7 +72,15 @@ typedef struct  __attribute__ ((__packed__))
 } adc_data_t;
 
 int get_bat_v();
+int get_bat_percentage();
+
 extern volatile adc_data_t adc_data[ADC_SAMPLES];
+
+extern volatile int leds_control_by_motion;
+extern volatile int leds_motion_blink_left;
+extern volatile int leds_motion_blink_right;
+extern volatile int leds_motion_forward;
+
 
 
 #endif

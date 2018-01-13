@@ -907,7 +907,11 @@ void lidar_rx_done_inthandler()
 			prev_len = len;
 
 
-			uint32_t ang32 = (uint32_t)cur_pos.ang - degper16*ANG_1PER16_DEG;
+			#ifdef PROD1
+				uint32_t ang32 = (uint32_t)cur_pos.ang + ANG_180_DEG - degper16*ANG_1PER16_DEG;
+			#else
+				uint32_t ang32 = (uint32_t)cur_pos.ang - degper16*ANG_1PER16_DEG;
+			#endif
 			int32_t y_idx = (ang32)>>SIN_LUT_SHIFT;
 			int32_t x_idx = (1073741824-ang32)>>SIN_LUT_SHIFT;
 
@@ -923,7 +927,11 @@ void lidar_rx_done_inthandler()
 			lidar_cur_n_samples++;
 
 
-			uint32_t ang32_robot_frame = -1*degper16*ANG_1PER16_DEG;
+			#ifdef PROD1
+				uint32_t ang32_robot_frame = ANG_180_DEG - degper16*ANG_1PER16_DEG;
+			#else
+				uint32_t ang32_robot_frame = -1*degper16*ANG_1PER16_DEG;
+			#endif
 			int32_t y_idx_robot_frame = (ang32_robot_frame)>>SIN_LUT_SHIFT;
 			int32_t x_idx_robot_frame = (1073741824-ang32_robot_frame)>>SIN_LUT_SHIFT;
 			int32_t x_robot_frame =	((int32_t)sin_lut[x_idx_robot_frame] * (int32_t)flt_len)>>15;

@@ -934,11 +934,8 @@ int chafind_total_front_accum, chafind_total_front_accum_cnt;
 #define CHAFIND_LOOK_SIDEWAY_MIN 120
 #define CHAFIND_SIDE (CHAFIND_LOOK_SIDEWAY_MAX+CHAFIND_LOOK_SIDEWAY_MIN)  //  /2 * 2  // y dist between the two side points looked at
 
-//#define CHAFIND_PASS1_ACCEPT_ANGLE (2*ANG_1_DEG)
-//#define CHAFIND_PASS1_ACCEPT_SHIFT 25
-
-#define CHAFIND_PASS1_ACCEPT_ANGLE (1*ANG_1_DEG)
-#define CHAFIND_PASS1_ACCEPT_SHIFT 12
+#define CHAFIND_PASS1_ACCEPT_ANGLE (2*ANG_1_DEG) // was 1 deg
+#define CHAFIND_PASS1_ACCEPT_SHIFT 20 // was 12mm
 
 #define CHAFIND_PUSH_TUNE 120 // in mm, lower number = go further
 
@@ -1169,8 +1166,8 @@ void navig_fsm2_for_charger()
 
 		case CHAFIND_ACCUM_DATA:
 		{
-			if((pass == 0 && chafind_left_accum_cnt > 40 && chafind_right_accum_cnt > 40 && chafind_middle_cnt > 20) ||
-			   (pass  > 0 && chafind_left_accum_cnt > 80 && chafind_right_accum_cnt > 80 && chafind_middle_cnt > 50) )
+			if((pass == 0 && chafind_left_accum_cnt > 30 && chafind_right_accum_cnt > 30 && chafind_middle_cnt > 20) ||
+			   (pass  > 0 && chafind_left_accum_cnt > 60 && chafind_right_accum_cnt > 60 && chafind_middle_cnt > 40) )
 			{
 				pass++;
 				int ang, shift, dist;
@@ -1315,139 +1312,7 @@ void navig_fsm2_for_charger()
 			}
 		}
 		break;
-/*
-				int ret = chafind_middle_mark();
-				if(ret == 0)
-				{
-					auto_disallow(0);
-					allow_angular(1);
-					allow_straight(1);
-					rotate_rel(lr_diff*2*ANG_0_1_DEG);
-					chafind_state++;
-				}
-				else if(ret==-1)
-					chafind_state = CHAFIND_FAIL;
 
-		case CHAFIND_WAIT_ROTATED:
-		{
-			if(!correcting_angle())
-			{
-				int ret = chafind_middle_mark();
-				if(ret == 0)
-				{
-					if(y_diff > 15)
-					{
-						rot_dir = 0;
-						// if we were to turn 45 deg, we would need to back off 1mm for each 1mm error.
-						auto_disallow(0);
-						allow_angular(1);
-						allow_straight(1);
-						rotate_rel(-10*ANG_1_DEG);
-
-						int amount_fwd = -6*y_diff;
-						if(amount_fwd < -500) amount_fwd = -500;
-						back_amount = amount_fwd;
-						straight_rel(amount_fwd);
-						chafind_state++;
-					}
-					else if(y_diff < -15)
-					{
-						rot_dir = 1;
-						auto_disallow(0);
-						allow_angular(1);
-						allow_straight(1);
-						rotate_rel(10*ANG_1_DEG);
-
-						int amount_fwd = 6*y_diff;
-						if(amount_fwd < -500) amount_fwd = -500;
-						back_amount = amount_fwd;
-						straight_rel(amount_fwd);
-						chafind_state++;
-					}
-					else
-						chafind_state = CHAFIND_PUSH;
-				}
-				else if(ret == -1)
-				{
-					chafind_state = CHAFIND_FAIL;
-				}
-
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_BACK:
-		{
-			if(!correcting_either())
-			{
-				chafind_state++;
-
-				// Rotate back to where we were before backing.
-				if(rot_dir == 0)
-					rotate_rel(10*ANG_1_DEG);
-				else
-					rotate_rel(-10*ANG_1_DEG);
-
-				straight_rel((-1*back_amount));
-
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_FWD:
-		{
-			if(!correcting_either())
-			{
-				int ret = chafind_middle_mark();
-				if(ret == 0)
-				{
-					if(y_diff < -20 || y_diff > 20 || lr_diff < -10 || lr_diff > 10)
-					{
-						// Try again.
-						chafind_state = CHAFIND_START;
-					}
-					else
-						chafind_state++;
-				}
-				else if(ret == -1)
-				{
-					chafind_state = CHAFIND_FAIL;
-				}
-			}
-		}
-		break;
-
-		case CHAFIND_PUSH:
-		{
-			if(!correcting_either())
-			{
-				set_top_speed_max(11);
-				straight_rel(x_dist_to_charger-robot_origin_to_front_TIGHT+20);
-				chafind_state++;
-			}
-		}
-		break;
-
-		case CHAFIND_WAIT_PUSH:
-		{
-			if(!correcting_either())
-			{
-				chafind_state++;
-
-			}
-		}
-		break;
-
-		default:
-		case CHAFIND_FINISH:
-		{
-			reset_movement();
-			start_charger = 1;
-			chafind_state = 0;
-		}
-		break;
-
-*/
 		case CHAFIND_FAIL:
 		{
 			reset_movement();
@@ -1485,8 +1350,16 @@ void navig_fsm2()
 
 	if(chafind_state)
 	{
+		lidar_near_filter_on = 0;
+		lidar_midlier_filter_on = 0;
+
 		navig_fsm2_for_charger();
 		return;
+	}
+	else
+	{
+		lidar_near_filter_on = 1;
+		lidar_midlier_filter_on = 1;
 	}
 
 	move_fsm();

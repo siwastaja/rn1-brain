@@ -393,6 +393,8 @@ volatile int millisec;
 volatile int us100;
 extern volatile int do_compass_round;
 
+void power_and_led_fsm();
+
 void timebase_10k_handler()
 {
 	static int sec_gen = 0;
@@ -471,6 +473,7 @@ void timebase_10k_handler()
 	}
 	else if(cnt_10k == 7)
 	{
+		power_and_led_fsm();
 	}
 	else if(cnt_10k == 8)
 	{
@@ -516,6 +519,96 @@ volatile adc_data_t adc_data[ADC_SAMPLES];
 int get_bat_v() // in mv
 {
 	return (((adc_data[0].bat_v + adc_data[1].bat_v))*70920 / 22200);
+}
+
+int get_bat_percentage()
+{
+	int bat_v = get_bat_v();
+	int bat_percentage = (100*(bat_v-16500))/(21000-16500);
+	if(bat_percentage < 0) bat_percentage = 0;
+	if(bat_percentage > 127) bat_percentage = 127;
+	return bat_percentage;
+}
+
+volatile int leds_control_by_motion = 1;
+volatile int leds_motion_blink_left;
+volatile int leds_motion_blink_right;
+volatile int leds_motion_forward;
+
+void power_and_led_fsm()
+{
+	static int bat_warn_cnt = 0;
+	static int bat_shdn_cnt = 0;
+	static int leds_blink_low_bat = 0;
+
+	int bat_perc = get_bat_percentage();
+
+	if(bat_perc < 24)
+	{
+		bat_warn_cnt++;
+
+		if(bat_warn_cnt > 500)
+		{
+			leds_blink_low_bat = 1;
+		}
+	}
+	else
+	{
+		bat_warn_cnt = 0;
+		leds_blink_low_bat = 0;
+	}
+
+	if(bat_perc < 5)
+	{
+		bat_shdn_cnt++;
+
+		if(bat_shdn_cnt > 500)
+		{
+			DO_KILL_PWR();
+		}
+	}
+	else
+	{
+		bat_shdn_cnt = 0;
+	}
+
+
+
+	#ifdef PCB1B
+
+	static int led_cnt = 0;
+	if(++led_cnt >= 1000) led_cnt = 0;
+	
+	if(leds_blink_low_bat)
+	{
+		// Low battery warning: blink a distinct ti-ti-ti----ti-ti-ti----- pattern with both blinkers
+
+		FWD_LIGHT_OFF();
+		if(led_cnt == 0 || led_cnt == 200 || led_cnt == 400)
+		{
+			LEFT_BLINKER_ON();
+			RIGHT_BLINKER_ON();
+		}
+		else if(led_cnt == 50 || led_cnt == 250 || led_cnt == 450)
+		{
+			LEFT_BLINKER_OFF();
+			RIGHT_BLINKER_OFF();
+		}
+	}
+	else if(leds_control_by_motion)
+	{	
+		if(leds_motion_blink_left && led_cnt < 500)  LEFT_BLINKER_ON();  else LEFT_BLINKER_OFF();
+		if(leds_motion_blink_right && led_cnt < 500) RIGHT_BLINKER_ON(); else RIGHT_BLINKER_OFF();
+		if(leds_motion_forward) FWD_LIGHT_ON(); else FWD_LIGHT_OFF();
+	}
+	else
+	{
+		LEFT_BLINKER_OFF();
+		RIGHT_BLINKER_OFF();
+		FWD_LIGHT_OFF();
+	}
+
+	#endif
 }
 
 volatile uint32_t random = 123;

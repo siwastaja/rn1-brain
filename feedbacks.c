@@ -73,9 +73,9 @@ int aim_angle = 0;
 
 int ang_top_speed =
 #ifdef DELIVERY_APP
-50000;
+30000;
 #else
-170000;
+150000;
 #endif
 
 
@@ -794,14 +794,14 @@ void run_feedbacks(int sens_status)
 		ang_speed = new_ang_speed;
 
 		#ifdef PCB1B
-			if(new_ang_speed > 0) {LEFT_BLINKER_ON(); RIGHT_BLINKER_OFF();}
-			else if(new_ang_speed < 0) {RIGHT_BLINKER_ON(); LEFT_BLINKER_OFF();}
+			if(ang_err > 4*ANG_1_DEG) {leds_motion_blink_left=1; leds_motion_blink_right=0;}
+			else if(ang_err < -4*ANG_1_DEG) {leds_motion_blink_left=0; leds_motion_blink_right=1;}
 		#endif
 	}
 	else
 	{
 		#ifdef PCB1B
-			LEFT_BLINKER_OFF(); RIGHT_BLINKER_OFF();
+			leds_motion_blink_left=0; leds_motion_blink_right=0;
 		#endif
 		if(ang_idle < 10000) ang_idle++;
 		ang_speed = 0;
@@ -955,10 +955,9 @@ void run_feedbacks(int sens_status)
 		if(new_fwd_speed > 0 && new_fwd_speed > fwd_speed_limit) new_fwd_speed = fwd_speed_limit;
 
 		fwd_speed = new_fwd_speed;
-
 		#ifdef PCB1B
-			if(new_fwd_speed > 0) {FWD_LIGHT_ON();}
-			else if(new_fwd_speed < 0) {FWD_LIGHT_OFF();}
+			if(new_fwd_speed > 0) {leds_motion_forward=1;}
+			else {leds_motion_forward=0;}
 		#endif
 
 	}
@@ -966,7 +965,7 @@ void run_feedbacks(int sens_status)
 	{
 		
 		#ifdef PCB1B
-			FWD_LIGHT_OFF();
+			leds_motion_forward=0;
 		#endif
 		if(fwd_idle < 10000) fwd_idle++;
 		fwd_nonidle = 0;

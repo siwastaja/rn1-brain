@@ -54,6 +54,9 @@ f_local: main.bin
 f_proto4: main.bin
 	scp main.bin hrst@proto4:~/rn1-tools/
 
+f_helsinki1: main.bin
+	scp main.bin hrst@helsinki1:~/rn1-tools/
+
 f_proto5: main.bin
 	scp main.bin hrst@proto5:~/rn1-tools/
 
