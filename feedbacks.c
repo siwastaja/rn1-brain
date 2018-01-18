@@ -71,12 +71,7 @@ int xcel_timing_issues;
 int cur_compass_angle = 0;
 int aim_angle = 0;
 
-int ang_top_speed =
-#ifdef DELIVERY_APP
-30000;
-#else
-150000;
-#endif
+int ang_top_speed = 100000;
 
 
 int ang_p = 
@@ -160,21 +155,21 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
-#define MIN_SPEED_ANG 90000  // was 100000 for a long time
+#define MIN_SPEED_ANG 70000  // was 100000 for a long time
 #define MIN_SPEED_FWD 110000  // was 120000 for a long time
 
 #define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
 
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 	#ifdef DELIVERY_APP
-		#define ANG_SPEED_MUL 2820
+		#define ANG_SPEED_MUL 2500
 		#define ANG_ACCEL 150
-
+		#define ANG_SPEED_MAX 120000
 	#else
 		#define ANG_SPEED_MUL 3760
 		#define ANG_ACCEL 220
+		#define ANG_SPEED_MAX 360000
 	#endif
-#define ANG_SPEED_MAX 360000
 #endif
 
 #ifdef PULU1

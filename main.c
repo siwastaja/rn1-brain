@@ -863,12 +863,21 @@ int main()
 	init_motcons();
 	init_lidar();
 
+
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
 	ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 1UL<<1 /*continuous*/;
+	ADC1->SQR1 = (ADC_ITEMS-1)<<20 /* sequence length */;
+
+	#ifdef PCB1A
 	ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/;
-	ADC1->SQR1 = (1  -1)<<20 /* sequence length */;
-	ADC1->SQR3 = 12<<0; // Ch12 first in sequence
+	ADC1->SQR3 = 12UL<<0; // Ch12 first in sequence: Vbat
+	#endif
+
+	#ifdef PCB1B
+	ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/ | 0b010UL<<9 /*ch13 (charger voltage): 28 cycles*/;
+	ADC1->SQR3 = 12UL<<0 /*Ch12 first in sequence: bat voltage*/ | 13UL<<5 /*2nd: Ch13 (charger voltage)*/;
+	#endif
 
 	ADC1->CR2 |= 1; // Enable ADC
 
@@ -877,6 +886,7 @@ int main()
 	DMA2_Stream4->NDTR = ADC_ITEMS*ADC_SAMPLES;
 	DMA2_Stream4->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b01UL<<13 /*16-bit mem*/ | 0b01UL<<11 /*16-bit periph*/ |
 	                   1UL<<10 /*mem increment*/ | 1UL<<8 /*circular*/;
+
 
 	DMA2->LIFCR = 0b111101UL<<0;
 	DMA2_Stream4->CR |= 1UL; // Enable ADC DMA

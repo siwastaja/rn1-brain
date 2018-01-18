@@ -22,6 +22,13 @@
 
 	#define DO_KILL_PWR() {GPIOD->BSRR = 1UL<<5;}
 
+	#define ADC_ITEMS 1
+	typedef struct  __attribute__ ((__packed__))
+	{
+		uint16_t bat_v;
+	} adc_data_t;
+
+
 #endif
 
 #ifdef PCB1B
@@ -49,6 +56,14 @@
 	#define FWD_LIGHT_ON()  do{GPIOD->BSRR = 1UL<<9;}while(0)
 	#define FWD_LIGHT_OFF() do{GPIOD->BSRR = 1UL<<(9+16);}while(0)
 
+	#define ADC_ITEMS 2
+	typedef struct  __attribute__ ((__packed__))
+	{
+		uint16_t bat_v;
+		uint16_t cha_v;
+	} adc_data_t;
+
+
 #endif
 
 void error(int code);
@@ -63,16 +78,12 @@ extern volatile int optflow_int_x, optflow_int_y;
 extern volatile optflow_data_t latest_optflow;
 extern volatile int optflow_errors;
 
-#define ADC_ITEMS 1
-#define ADC_SAMPLES 2
 
-typedef struct  __attribute__ ((__packed__))
-{
-	uint16_t bat_v;
-} adc_data_t;
 
 int get_bat_v();
 int get_bat_percentage();
+
+#define ADC_SAMPLES 2
 
 extern volatile adc_data_t adc_data[ADC_SAMPLES];
 
