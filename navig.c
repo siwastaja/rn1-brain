@@ -103,18 +103,18 @@ void move_fsm()
 		break;
 */
 		case MOVE_WAIT_STRAIGHT:
-
-
-		if(correct_xy && (cur_move.rel_fwd < -1*XY_DONT_AT_END_LEN || cur_move.rel_fwd > XY_DONT_AT_END_LEN))
 		{
-			change_angle_abs(cur_move.abs_ang);
-			change_straight_rel(cur_move.rel_fwd);
-			set_top_speed(navi_speed);
-		}
+			if(correct_xy && (cur_move.rel_fwd < -1*XY_DONT_AT_END_LEN || cur_move.rel_fwd > XY_DONT_AT_END_LEN))
+			{
+				change_angle_abs(cur_move.abs_ang);
+				change_straight_rel(cur_move.rel_fwd);
+				set_top_speed(navi_speed);
+			}
 
-		if(!correcting_either())
-		{
-			cur_move.state++;
+			if(!correcting_either())
+			{
+				cur_move.state++;
+			}
 		}
 		break;
 
