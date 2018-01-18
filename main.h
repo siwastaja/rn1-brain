@@ -82,6 +82,8 @@ extern volatile int optflow_errors;
 
 int get_bat_v();
 int get_bat_percentage();
+int get_cha_v(); // in mv
+
 
 #define ADC_SAMPLES 2
 

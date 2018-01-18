@@ -521,6 +521,12 @@ int get_bat_v() // in mv
 	return (((adc_data[0].bat_v + adc_data[1].bat_v))*70920 / 22200);
 }
 
+int get_cha_v() // in mv
+{
+	return (((adc_data[0].cha_v + adc_data[1].cha_v))*97466 / 22200);
+}
+
+
 int get_bat_percentage()
 {
 	int bat_v = get_bat_v();
@@ -983,6 +989,13 @@ int main()
 		while(uart_busy()) random++;
 		uart_send_critical1(); // Send stuff required to be sent often.
 
+
+		if(send_chafind_results)
+		{
+			send_chafind_results = 0;
+			while(uart_busy()) random++;
+			send_uart(&chafind_results, 0x95, sizeof(chafind_results_t));
+		}
 
 /*
 		static int sensors_stabilized = 0;

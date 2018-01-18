@@ -7,6 +7,7 @@ Collision avoidance, simple mechanical tasks.
 
 #include <stdint.h>
 #include <math.h>
+#include <string.h> // memset
 
 #include "sin_lut.h"
 #include "lidar.h"
@@ -14,6 +15,7 @@ Collision avoidance, simple mechanical tasks.
 #include "navig.h"
 #include "feedbacks.h"
 #include "lidar_corr.h" // for point_t (for lidar collision avoidance)
+#include "main.h"
 
 extern point_t lidar_collision_avoidance[360];
 volatile int lidar_collision_avoidance_new;
@@ -937,9 +939,12 @@ int chafind_total_front_accum, chafind_total_front_accum_cnt;
 #define CHAFIND_PASS1_ACCEPT_ANGLE (2*ANG_1_DEG) // was 1 deg
 #define CHAFIND_PASS1_ACCEPT_SHIFT 20 // was 12mm
 
-#define CHAFIND_PUSH_TUNE 120 // in mm, lower number = go further
+#define CHAFIND_PUSH_TUNE 100 // in mm, lower number = go further
+
+#define CHAFIND_ACCEPT_MILLIVOLTS 21000 // Voltage to expect to stop the push
 
 #define CHAFIND_AIM_Y_TUNE 10  // Positive = go more right
+
 
 
 void chafind_empty_accum1()
@@ -1068,10 +1073,11 @@ typedef enum {
 	CHAFIND_WAIT_FWD2_STOPEXTRA1	= 11,
 	CHAFIND_ACCUM_FRONTAVG		= 12,
 	CHAFIND_WAIT_PUSH		= 13,
+	CHAFIND_SUCCESS                 = 14,
 	CHAFIND_FAIL			= 99
 } chafind_state_t;
 
-chafind_state_t chafind_state = CHAFIND_START;
+chafind_state_t chafind_state = CHAFIND_IDLE;
 
 volatile int start_charger = 0;
 
@@ -1088,6 +1094,8 @@ void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary, 
 	}
 }
 
+chafind_results_t chafind_results;
+volatile int send_chafind_results;
 
 void navig_fsm2_for_charger()
 {
@@ -1098,6 +1106,7 @@ void navig_fsm2_for_charger()
 	{
 		case CHAFIND_START:
 		{
+			memset(&chafind_results, 0, sizeof(chafind_results_t));
 			pass = 0;
 			dbg[1] = dbg[2] = dbg[3] = dbg[5] = dbg[5] = dbg[6] = dbg[7] = 0;
 			chafind_empty_accum1();
@@ -1110,7 +1119,7 @@ void navig_fsm2_for_charger()
 		{
 			if(--timer == 0)
 			{
-				if(chafind_nearest_hit_x < 200 || chafind_nearest_hit_x > 1200) // todo: also check obstacles from back
+				if(chafind_nearest_hit_x < 150 || chafind_nearest_hit_x > 1200) // todo: also check obstacles from back
 				{
 					chafind_state = CHAFIND_FAIL;
 				}
@@ -1121,11 +1130,13 @@ void navig_fsm2_for_charger()
 					{
 						set_top_speed_max(10);
 						straight_rel(movement);
+						chafind_results.first_movement_needed = movement;
 						chafind_state = CHAFIND_WAIT_FWD1;
 					}
 					else
 					{
 						chafind_empty_accum2();
+						chafind_results.first_movement_needed = 0;
 						chafind_state = CHAFIND_ACCUM_DATA;
 					}
 				}
@@ -1176,6 +1187,8 @@ void navig_fsm2_for_charger()
 				if(ang > -1*CHAFIND_PASS1_ACCEPT_ANGLE && ang < CHAFIND_PASS1_ACCEPT_ANGLE &&
 					shift > -1*CHAFIND_PASS1_ACCEPT_SHIFT && shift < CHAFIND_PASS1_ACCEPT_SHIFT)
 				{
+					chafind_results.accepted_pos++;
+
 					dbg[4] = 11111;
 					dbg[5] = dbg[6] = 0;
 					set_top_speed_max(5);
@@ -1192,6 +1205,7 @@ void navig_fsm2_for_charger()
 					auto_disallow(0);
 					if(shift > -1*CHAFIND_PASS1_ACCEPT_SHIFT && shift < CHAFIND_PASS1_ACCEPT_SHIFT) // Only turning needed
 					{
+						chafind_results.turning_passes_needed++;
 						dbg[4] = 22222;
 						dbg[5] = ang/ANG_0_1_DEG;
 						dbg[6] = 0;
@@ -1201,6 +1215,7 @@ void navig_fsm2_for_charger()
 					}
 					else // vexling needed
 					{
+						chafind_results.vexling_passes_needed++;
 						dbg[4] = 33333;
 						allow_straight(1);
 						int shift_ang;
@@ -1289,9 +1304,14 @@ void navig_fsm2_for_charger()
 
 		case CHAFIND_ACCUM_FRONTAVG:
 		{
-			if(chafind_total_front_accum_cnt > 2000)
+			/*
+				Average enough samples directly from the front, to measure the distance to go. Go a bit further than that.
+				This prevents excessive travel in case the charger is unpowered, or we are at the wrong place.
+			*/
+			if(chafind_total_front_accum_cnt > 300)
 			{
 				int dist = chafind_total_front_accum/chafind_total_front_accum_cnt;
+				chafind_results.dist_before_push = dist;
 				set_top_speed_max(0);
 				straight_rel(dist-robot_origin_to_front_TIGHT-CHAFIND_PUSH_TUNE);
 				chafind_state = CHAFIND_WAIT_PUSH;
@@ -1306,16 +1326,31 @@ void navig_fsm2_for_charger()
 
 		case CHAFIND_WAIT_PUSH:
 		{
+			if(get_cha_v() > CHAFIND_ACCEPT_MILLIVOLTS)
+			{
+				chafind_state = CHAFIND_SUCCESS;
+			}
 			if(!correcting_either())
 			{
-				chafind_state = 0;
+				chafind_state = CHAFIND_FAIL;
 			}
 		}
 		break;
 
 		case CHAFIND_FAIL:
 		{
+			chafind_results.result = 0;
 			reset_movement();
+			send_chafind_results = 1;
+			chafind_state = 0;
+		}
+		break;
+
+		case CHAFIND_SUCCESS:
+		{
+			chafind_results.result = 100;
+			reset_movement();
+			send_chafind_results = 1;
 			chafind_state = 0;
 		}
 		break;
