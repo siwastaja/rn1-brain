@@ -1119,7 +1119,7 @@ void navig_fsm2_for_charger()
 		{
 			if(--timer == 0)
 			{
-				if(chafind_nearest_hit_x < 150 || chafind_nearest_hit_x > 1200) // todo: also check obstacles from back
+				if(chafind_nearest_hit_x < 200 || chafind_nearest_hit_x > 1200) // todo: also check obstacles from back
 				{
 					chafind_state = CHAFIND_FAIL;
 				}
