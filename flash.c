@@ -35,8 +35,10 @@ int flash_erase_sector(int sector)
 	if(sector < 0 || sector > 11)
 		return 1;
 
+	// STM32 flash programming manual says 32-bit parallelism speeds up erasing, too. I don't understand why, but let's believe that for now.
+
 	while(FLASH->SR & (1UL<<16)) ; // Poll busy bit
-	FLASH->CR |= sector<<3 | 1UL<<1 /*sector erase*/;
+	FLASH->CR |= 0b10UL<<8 /*32-bit parallelism*/ | sector<<3 | 1UL<<1 /*sector erase*/;
 	FLASH->CR |= 1UL<<16; // Start
 	__asm__ __volatile__ ("nop");
 	while(FLASH->SR & (1UL<<16)) ; // Poll busy bit
@@ -45,8 +47,8 @@ int flash_erase_sector(int sector)
 	return 0;
 }
 
-int flash_program(uint32_t start_addr, int size) __attribute__((section(".flasher")));
-int flash_program(uint32_t start_addr, int size)
+int flash_program_from_uart(uint32_t start_addr, int size) __attribute__((section(".flasher")));
+int flash_program_from_uart(uint32_t start_addr, int size)
 {
 	int i;
 
@@ -172,7 +174,7 @@ void flasher()
 			unlock_flash();
 			addr = flash_usart_u32();
 			size = flash_usart_u32();
-			ret = flash_program(addr, size);
+			ret = flash_program_from_uart(addr, size);
 			lock_flash();
 			while(!(USART3->SR & (1UL<<7))) ;
 			USART3->DR = ret;

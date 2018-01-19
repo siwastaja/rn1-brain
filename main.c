@@ -654,6 +654,8 @@ void uart_send_dbg_teleportation_bug()
 	}
 }
 
+volatile int send_settings;
+
 int main()
 {
 	/*
@@ -995,6 +997,13 @@ int main()
 			send_chafind_results = 0;
 			while(uart_busy()) random++;
 			send_uart(&chafind_results, 0x95, sizeof(chafind_results_t));
+		}
+
+		if(send_settings)
+		{
+			send_settings = 0;
+			while(uart_busy()) random++;
+			send_uart(&settings, 0xd1, sizeof(settings_t));
 		}
 
 /*

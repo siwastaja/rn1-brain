@@ -98,7 +98,7 @@ int ignore_cmds = 0;
 
 void handle_uart_message()
 {
-
+	extern volatile int send_settings;
    dbg_teleportation_bug(401);
 
 	if(!do_handle_message)
@@ -218,19 +218,7 @@ void handle_uart_message()
 
 		// debug/dev messages
 		case 0xd1:
-		lidar_near_filter_on = 1;
-		break;
-
-		case 0xd2:
-		lidar_near_filter_on = 0;
-		break;
-
-		case 0xd3:
-		lidar_midlier_filter_on = 1;
-		break;
-
-		case 0xd4:
-		lidar_midlier_filter_on = 0;
+		send_settings = 1;
 		break;
 
 		case 0xd5:
