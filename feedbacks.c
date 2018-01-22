@@ -45,6 +45,16 @@ Keeps track of position & angle, controls the motors.
 
 extern volatile int dbg[10];
 
+
+// Temporarily here, relayed to motor controllers, for adjusting PID loops.
+volatile uint8_t mc_pid_imax = 60;
+volatile uint8_t mc_pid_feedfwd = 30;
+volatile uint8_t mc_pid_p = 50;
+volatile uint8_t mc_pid_i = 50;
+volatile uint8_t mc_pid_d = 50;
+
+
+
 static int reset_wheel_slip_det;
 
 uint8_t feedback_stop_flags;
@@ -1137,6 +1147,11 @@ void run_feedbacks(int sens_status)
 	else if(a < -MAX_SPEED) a=-MAX_SPEED;
 	if(b > MAX_SPEED) b=MAX_SPEED;
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
+
+	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
+	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
+	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
+
 
 	if(host_alive_watchdog)
 	{

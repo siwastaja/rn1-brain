@@ -221,7 +221,20 @@ void handle_uart_message()
 		send_settings = 1;
 		break;
 
-		case 0xd5:
+
+extern volatile uint8_t mc_pid_imax;
+extern volatile uint8_t mc_pid_feedfwd;
+extern volatile uint8_t mc_pid_p;
+extern volatile uint8_t mc_pid_i;
+extern volatile uint8_t mc_pid_d;
+
+
+		case 0xd2:
+		mc_pid_imax    = (process_rx_buf[1]<<1);
+		mc_pid_feedfwd = (process_rx_buf[2]<<1);
+		mc_pid_p       = (process_rx_buf[3]<<1);
+		mc_pid_i       = (process_rx_buf[4]<<1);
+		mc_pid_d       = (process_rx_buf[5]<<1);
 		break;
 
 		case 0xd6:

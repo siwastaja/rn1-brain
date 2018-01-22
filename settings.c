@@ -1,13 +1,17 @@
 #include <stdint.h>
 
+#include "ext_include/stm32f2xx.h"
+
+#include "flash.h"
 #include "settings.h"
+#include "main.h"
 
 settings_t settings __attribute__((section(".settings"))) =
 {
 	.magic = 0x1357acef,
-	.version = 10,
+	.version = 10
 
-}
+};
 
 // Memory addresses from the linker script:
 extern unsigned int _SETTINGS_BEGIN;
@@ -72,7 +76,7 @@ void save_settings()
 		program_setting_page();
 		if(verify_settings())
 		{
-			error(FLASH_WRITE_ERROR);
+			error(7);
 		}
 	}
 

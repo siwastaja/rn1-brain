@@ -23,6 +23,8 @@
 #include "lidar_corr.h"
 #include "uart.h"
 
+#include "settings.h"
+
 volatile int dbg[10];
 
 volatile int dbg_error_num = 1;

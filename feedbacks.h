@@ -133,5 +133,12 @@ extern volatile dbg_teleportation_extra_t dbg_teleportation_extra;
 extern volatile int dbg_teleportation_bug_report;
 extern volatile dbg_teleportation_bug_data_t dbg_teleportation_bug_data;
 
+// Temporarily here, relayed to motor controllers, for adjusting PID loops.
+extern volatile uint8_t mc_pid_imax;
+extern volatile uint8_t mc_pid_feedfwd;
+extern volatile uint8_t mc_pid_p;
+extern volatile uint8_t mc_pid_i;
+extern volatile uint8_t mc_pid_d;
+
 
 #endif
