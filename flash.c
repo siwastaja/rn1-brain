@@ -52,8 +52,8 @@ int flash_program_from_uart(uint32_t start_addr, int size)
 {
 	int i;
 
-	if(start_addr < 0x08000000 || start_addr > 0x0808FFFF || size < 1 || size > 128*1024)
-		return 1;
+	if(start_addr < 0x08000000 || start_addr >= 0x08040000 || size < 1 || size > (16+16+16+16+64+128)*1024 || start_addr+size >= 0x08040000)
+		return 50;
 
 	FLASH->CR = 1UL; // Activate programming, with 8-bit access.
 
@@ -78,9 +78,9 @@ void flash_read(uint32_t start_addr, int size)
 	int i;
 
 	while(!(USART3->SR & (1UL<<7))) ;
-	if(start_addr < 0x08000000 || start_addr > 0x0808FFFF || size < 1 || size > 128*1024)
+	if(start_addr < 0x08000000 || start_addr >= 0x08040000 || size < 1 || size > (16+16+16+16+64+128)*1024 || start_addr+size >= 0x08040000)
 	{
-		USART3->DR = 1;
+		USART3->DR = 50;
 		return;
 	}
 	else
