@@ -1083,9 +1083,9 @@ volatile int start_charger = 0;
 
 void micronavi_point_in(int32_t x, int32_t y, int16_t z, int stop_if_necessary, int source)
 {
-	dbg[0] = chafind_state;
 	if(chafind_state)
 	{
+		dbg[0] = chafind_state;
 		micronavi_point_in_chafind(x,y,z,stop_if_necessary, source);
 	}
 	else
