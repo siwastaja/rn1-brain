@@ -1152,6 +1152,15 @@ void run_feedbacks(int sens_status)
 	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
 	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
 
+	dbg[0] = motcon_rx[A_MC_IDX].res4;
+	dbg[1] = motcon_rx[A_MC_IDX].res5;
+	dbg[2] = motcon_rx[A_MC_IDX].res6;
+	dbg[3] = motcon_rx[A_MC_IDX].crc;
+
+	dbg[4] = motcon_rx[B_MC_IDX].res4;
+	dbg[5] = motcon_rx[B_MC_IDX].res5;
+	dbg[6] = motcon_rx[B_MC_IDX].res6;
+	dbg[7] = motcon_rx[B_MC_IDX].crc;
 
 	if(host_alive_watchdog)
 	{
