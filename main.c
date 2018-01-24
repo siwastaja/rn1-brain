@@ -611,7 +611,7 @@ void power_and_led_fsm()
 
 		if(!leds_motion_blink_left && !leds_motion_blink_right && !leds_motion_forward)
 		{
-			if(led_cnt < 10)
+			if(led_cnt < 4)
 			{
 				LEFT_BLINKER_ON();
 				RIGHT_BLINKER_ON();
@@ -834,7 +834,7 @@ int main()
 		To make it worse, interrupts cannot be reliably used for TX and RX at the same time. At least the
 		ISR will get complicated, since the TX interrupt cannot be reliably forced off for some reason.
 		Maybe to be investigated later. In the meantime, RX works with interrupts, while TX works with
-		polling. This is actually not a big deal, and can be later integrated with 10k timebase handler.
+		polling. This is actually not a big deal, sending is done in the 10k timebase handler.
 	*/
 
 	USART3->BRR = 16UL<<4 | 4UL;
