@@ -473,12 +473,21 @@ void uart_send_fsm()
 		{
 			int bat_v = get_bat_v();
 			int bat_percentage = get_bat_percentage();
+			int cha_v = 
+				#ifdef PCB1B
+					get_cha_v();
+				#endif
+				#ifdef PCB1A
+					0;
+				#endif
 
 			txbuf[0] = ((CHA_RUNNING())?1:0) | ((CHA_FINISHED())?2:0);
 			txbuf[1] = I16_MS(bat_v);
 			txbuf[2] = I16_LS(bat_v);
 			txbuf[3] = bat_percentage;
-			send_uart(txbuf, 0xa2, 4);
+			txbuf[4] = I16_MS(cha_v);
+			txbuf[5] = I16_LS(cha_v);
+			send_uart(txbuf, 0xa2, 6);
 		}
 		break;
 
