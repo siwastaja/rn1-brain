@@ -48,6 +48,12 @@ flash_full: main.bin
 flash: main.bin
 	stm32sprog -b 115200 -vw main.bin
 
+f: main.bin
+	scp main.bin hrst@$(robot):~/rn1-tools/
+
+ff: main.bin
+	scp main_full.bin hrst@$(robot):~/rn1-tools/main.bin
+
 f_local: main.bin
 	../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
 
