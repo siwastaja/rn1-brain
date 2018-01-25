@@ -47,11 +47,11 @@ extern volatile int dbg[10];
 
 
 // Temporarily here, relayed to motor controllers, for adjusting PID loops.
-volatile uint8_t mc_pid_imax = 60;
+volatile uint8_t mc_pid_imax = 30;
 volatile uint8_t mc_pid_feedfwd = 30;
-volatile uint8_t mc_pid_p = 50;
-volatile uint8_t mc_pid_i = 50;
-volatile uint8_t mc_pid_d = 50;
+volatile uint8_t mc_pid_p = 100;
+volatile uint8_t mc_pid_i = 20;
+volatile uint8_t mc_pid_d = 20;
 
 
 
@@ -1149,8 +1149,8 @@ void run_feedbacks(int sens_status)
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
 	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
-	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
-	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
+	motcon_tx[A_MC_IDX].res4 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
+	motcon_tx[A_MC_IDX].res5 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
 
 	dbg[0] = motcon_rx[A_MC_IDX].res4;
 	dbg[1] = motcon_rx[A_MC_IDX].res5;
