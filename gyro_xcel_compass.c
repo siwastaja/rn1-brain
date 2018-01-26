@@ -64,10 +64,6 @@ extern void delay_ms(uint32_t i);
 
 */
 
-#define LED_ON()  {GPIOC->BSRR = 1UL<<13;}
-#define LED_OFF() {GPIOC->BSRR = 1UL<<(13+16);}
-
-
 
 #define I2C1_FSM_FREQ 10000
 #define I2C1_DATA_FREQ 200
