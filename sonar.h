@@ -1,8 +1,6 @@
 #ifndef _SONAR_H
 #define _SONAR_H
 
-#define NUM_SONARS 4
-
 typedef struct
 {
 	int32_t x;

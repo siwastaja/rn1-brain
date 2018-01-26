@@ -885,8 +885,7 @@ int main()
 	#endif
 
 	#ifdef PCB1B
-//	ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/ | 0b010UL<<9 /*ch13 (charger voltage): 28 cycles*/;
-	ADC1->SMPR1 = 0b111UL<<6 /*ch12 (bat voltage): 480 cycles*/ | 0b111UL<<9 /*ch13 (charger voltage): 480 cycles*/;
+	ADC1->SMPR1 = 0b010UL<<6 /*ch12 (bat voltage): 28 cycles*/ | 0b010UL<<9 /*ch13 (charger voltage): 28 cycles*/;
 	ADC1->SQR3 = 12UL<<0 /*Ch12 first in sequence: bat voltage*/ | 13UL<<5 /*2nd: Ch13 (charger voltage)*/;
 	#endif
 

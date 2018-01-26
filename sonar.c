@@ -51,12 +51,41 @@ typedef struct
 #define SONAR_ECHO(idx) (sonar_cfgs[(idx)].echo_port->IDR & (1UL<<sonar_cfgs[(idx)].echo_bit))
 
 
+#define NUM_SONARS 4
+
+#define SONAR1_TRG_PORT  GPIOB
+#define SONAR1_TRG_PIN   0
+#define SONAR2_TRG_PORT  GPIOE
+#define SONAR2_TRG_PIN   7
+#define SONAR3_TRG_PORT  GPIOE
+#define SONAR3_TRG_PIN   14
+#define SONAR4_TRG_PORT  GPIOB
+#define SONAR4_TRG_PIN   10
+#define SONAR5_TRG_PORT  GPIOD
+#define SONAR5_TRG_PIN   11
+#define SONAR6_TRG_PORT  GPIOD
+#define SONAR6_TRG_PIN   13
+
+#define SONAR1_ECHO_PORT  GPIOA
+#define SONAR1_ECHO_PIN   4
+#define SONAR2_ECHO_PORT  GPIOB
+#define SONAR2_ECHO_PIN   1
+#define SONAR3_ECHO_PORT  GPIOE
+#define SONAR3_ECHO_PIN   13
+#define SONAR4_ECHO_PORT  GPIOE
+#define SONAR4_ECHO_PIN   15
+#define SONAR5_ECHO_PORT  GPIOD
+#define SONAR5_ECHO_PIN   12
+#define SONAR6_ECHO_PORT  GPIOD
+#define SONAR6_ECHO_PIN   14
+
+
 sonar_cfg_t sonar_cfgs[NUM_SONARS] =
-{                                                   //       TRIG      ECHO    offs:x     y     z      side_angle      up_angle
-	/* 0: (front view) left  : Trig  A9, Echo A10 */ {GPIOC, 0,  GPIOC, 1,     140,  150,  135,    -5*ANG_1_DEG,   0           },
-	/* 1: (front view) right : Trig I11, Echo I12 */ {GPIOA, 0,  GPIOA, 1,     140, -150,  135,     5*ANG_1_DEG,   0           },
-	/* 2:         top middle : Trig IO3, Echo IO4 */ {GPIOE, 9,  GPIOE,10,     140,    0,  190,     0,             45*ANG_1_DEG},
-	/* 3:      bottom middle : Trig IO5, Echo IO6 */ {GPIOE,11,  GPIOE,12,     140,    0,  120,     0,             0           }
+{                              //                  TRIG                              ECHO               offs:x     y     z      side_angle      up_angle
+	/* 0: (front view) left  */ {SONAR1_TRG_PORT,SONAR1_TRG_PIN,  SONAR1_ECHO_PORT,SONAR1_ECHO_PIN,     140,  150,  135,    -10*ANG_1_DEG,  0           },
+	/* 1: (front view) right */ {SONAR6_TRG_PORT,SONAR6_TRG_PIN,  SONAR6_ECHO_PORT,SONAR6_ECHO_PIN,     140, -150,  135,     10*ANG_1_DEG,  0           },
+	/* 2:         top middle */ {SONAR4_TRG_PORT,SONAR4_TRG_PIN,  SONAR4_ECHO_PORT,SONAR4_ECHO_PIN,     140,    0,  190,     0,             10*ANG_1_DEG},
+	/* 3:      bottom middle */ {SONAR3_TRG_PORT,SONAR3_TRG_PIN,  SONAR3_ECHO_PORT,SONAR3_ECHO_PIN,     140,    0,  120,     0,             0           }
 };
 
 void init_sonars()

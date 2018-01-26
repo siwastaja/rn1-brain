@@ -988,7 +988,6 @@ void run_feedbacks(int sens_status)
 
 	expected_fwd_accel = ((tmp_expected_accel<<16) + 63*expected_fwd_accel)>>6;
 
-
 	if(sens_status & GYRO_NEW_DATA)
 	{
 		int latest[3] = 
