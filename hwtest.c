@@ -297,10 +297,12 @@ void hwtest_main()
 					p_buf = o_itoa16_fixed(motcon_rx[motcon].speed, p_buf);
 					p_buf = o_str_append(p_buf, " current=");
 					p_buf = o_itoa16_fixed(motcon_rx[motcon].current, p_buf);
-					p_buf = o_str_append(p_buf, "   pos=");
+					p_buf = o_str_append(p_buf, "  pos=");
 					p_buf = o_itoa16_fixed(motcon_rx[motcon].pos, p_buf);
-					p_buf = o_str_append(p_buf, "   res4=");
-					p_buf = o_itoa16_fixed(motcon_rx[motcon].res4, p_buf);
+					p_buf = o_str_append(p_buf, "  cur_limit_mul=");
+					p_buf = o_utoa8_fixed(motcon_rx[motcon].cur_limit_mul, p_buf);
+					p_buf = o_str_append(p_buf, "  num_hard_limits=");
+					p_buf = o_utoa8_fixed(motcon_rx[motcon].num_hard_limits, p_buf);
 					p_buf = o_str_append(p_buf, " res5=");
 					p_buf = o_itoa16_fixed(motcon_rx[motcon].res5, p_buf);
 					p_buf = o_str_append(p_buf, " res6=");

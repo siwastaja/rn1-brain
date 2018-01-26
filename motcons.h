@@ -38,7 +38,8 @@ typedef struct __attribute__ ((packed))
 	int16_t speed;
 	int16_t current;
 	int16_t pos;
-	int16_t res4;
+	uint8_t cur_limit_mul;
+	uint8_t num_hard_limits;
 	int16_t res5;
 	int16_t res6;
 	uint16_t crc;

@@ -49,9 +49,9 @@ extern volatile int dbg[10];
 // Temporarily here, relayed to motor controllers, for adjusting PID loops.
 volatile uint8_t mc_pid_imax = 30;
 volatile uint8_t mc_pid_feedfwd = 30;
-volatile uint8_t mc_pid_p = 100;
-volatile uint8_t mc_pid_i = 20;
-volatile uint8_t mc_pid_d = 20;
+volatile uint8_t mc_pid_p = 50;
+volatile uint8_t mc_pid_i = 50;
+volatile uint8_t mc_pid_d = 50;
 
 
 
@@ -1000,22 +1000,38 @@ void run_feedbacks(int sens_status)
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
 
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_X 500
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Y 400
-#define GYRO_MOVEMENT_DETECT_THRESHOLD_Z 300
-		if(latest[0] < -GYRO_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_MOVEMENT_DETECT_THRESHOLD_X ||
-		   latest[1] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_MOVEMENT_DETECT_THRESHOLD_Y ||
-		   latest[2] < -GYRO_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_MOVEMENT_DETECT_THRESHOLD_Z)
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X 700
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y 700
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z 300
+
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X 300
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 300
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 100
+
+		if(latest[0] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X ||
+		   latest[1] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y ||
+		   latest[2] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z)
 		{
 			robot_moves();
 		}
 
+		dbg[6] = latest[0];
+		dbg[7] = latest[1];
+		dbg[8] = latest[2];
+
+		#define GYRO_DC_CORRS_VALID_LIM 1000
+		static int gyro_dc_corrs_valid;
 		if(robot_nonmoving)
 		{
 			gyro_dc_corrs[0] = ((latest[0]<<15) + 255*gyro_dc_corrs[0])>>8;
 			gyro_dc_corrs[1] = ((latest[1]<<15) + 255*gyro_dc_corrs[1])>>8;
 			gyro_dc_corrs[2] = ((latest[2]<<15) + 255*gyro_dc_corrs[2])>>8;
+			if(gyro_dc_corrs_valid < GYRO_DC_CORRS_VALID_LIM) gyro_dc_corrs_valid++;
 		}
+
+		dbg[9] = gyro_dc_corrs[2];
+
+		dbg[4] = gyro_dc_corrs_valid;
 
 		int gyro_dt = cnt - prev_gyro_cnt;
 		prev_gyro_cnt = cnt;
@@ -1033,6 +1049,17 @@ void run_feedbacks(int sens_status)
 			latest[i] *= gyro_dt;
 			gyro_long_integrals[i] += latest[i];
 			gyro_short_integrals[i] += latest[i];
+		}
+
+		if(gyro_dc_corrs_valid == GYRO_DC_CORRS_VALID_LIM)
+		{
+			if(latest[0] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X ||
+			   latest[1] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y ||
+			   latest[2] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z)
+			{
+				robot_moves();
+			}
+
 		}
 
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
@@ -1155,17 +1182,13 @@ void run_feedbacks(int sens_status)
 	motcon_tx[A_MC_IDX].res5 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
 
 	dbg[0] = motcon_rx[A_MC_IDX].current;
-	dbg[1] = motcon_rx[B_MC_IDX].current;
+	dbg[1] = motcon_rx[A_MC_IDX].cur_limit_mul;
+	dbg[2] = motcon_rx[A_MC_IDX].num_hard_limits;
 
-	dbg[2] = motcon_rx[A_MC_IDX].res4;
-	dbg[3] = motcon_rx[A_MC_IDX].res5;
-	dbg[4] = motcon_rx[A_MC_IDX].res6;
-	dbg[5] = motcon_rx[A_MC_IDX].crc;
+//	dbg[3] = motcon_rx[B_MC_IDX].current;
+//	dbg[4] = motcon_rx[B_MC_IDX].cur_limit_mul;
+//	dbg[5] = motcon_rx[B_MC_IDX].num_hard_limits;
 
-	dbg[6] = motcon_rx[B_MC_IDX].res4;
-	dbg[7] = motcon_rx[B_MC_IDX].res5;
-	dbg[8] = motcon_rx[B_MC_IDX].res6;
-	dbg[9] = motcon_rx[B_MC_IDX].crc;
 
 	if(host_alive_watchdog)
 	{
