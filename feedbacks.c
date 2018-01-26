@@ -890,12 +890,12 @@ void run_feedbacks(int sens_status)
 	{
 		if(turn_wheels_gyro_err_integral < -8*ANG_1_DEG)
 		{
-			collision_detected(do_correct_fwd?2:5, 0, 0);
+			collision_detected(do_correct_fwd?2:6, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
 		}
 		else if(turn_wheels_gyro_err_integral > 8*ANG_1_DEG)
 		{
-			collision_detected(do_correct_fwd?3:6, 0, 0);
+			collision_detected(do_correct_fwd?3:5, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
 		}
 	}
