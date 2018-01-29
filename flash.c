@@ -14,12 +14,14 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	For in-system firmware update through UART.
+	Flasher functions are designed to be located in a separate flash sector,
+	which cannot be erased using these functions. (see stm32.ld)
+
 */
 
 
-/*
-	flasher functions are designed to be located in a separate flash sector, which cannot be erased using these functions.
-*/
 
 #include "ext_include/stm32f2xx.h"
 

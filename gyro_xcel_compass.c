@@ -14,6 +14,13 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	I2C sensor module: two gyros, one accelerometer and one compass.
+	Accessing these through the horrors of the STM32's old and buggy I2C
+	implementation.
+
+	Code quality for this module is poor due to poor underlying I2C HW and
+	the fact that it will be replaced soon as the HW totally changes.
 */
 
 #include <stdint.h>

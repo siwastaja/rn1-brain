@@ -14,6 +14,11 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	Some old code for some Avago optical mouse sensor that was mounted
+	in the bottom of our first prototype robot. Not being used at all,
+	most likely never will be.
+
 */
 
 #include <stdint.h>

@@ -14,19 +14,30 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	Mechanical feedback module.
+
+	Integrates the sensors. Keeps track of position & angle, controls the motors.
 */
 
-/*
-Mechanical feedback module.
 
-Keeps track of position & angle, controls the motors.
-*/
+#include <inttypes.h>
+#include <math.h>
+
+#include "ext_include/stm32f2xx.h"
+#include "feedbacks.h"
+#include "gyro_xcel_compass.h"
+#include "motcons.h"
+#include "sin_lut.h"
+#include "navig.h"
+#include "main.h"
 
 
 #define STEP_FEEDFORWARD_ANG 22000  // was 22 000 for a long time
 #define STEP_FEEDFORWARD_FWD 100000  // was 100 000 for a long time
 
 
+// Which motor controllers are in use on the PCB
 #ifdef RN1P4
 	#define A_MC_IDX 2
 	#define B_MC_IDX 3
@@ -49,25 +60,13 @@ Keeps track of position & angle, controls the motors.
 	#define B_MC_IDX 0
 #endif
 
-
-#include <inttypes.h>
-#include <math.h>
-
-#include "ext_include/stm32f2xx.h"
-#include "feedbacks.h"
-#include "gyro_xcel_compass.h"
-#include "motcons.h"
-#include "sin_lut.h"
-#include "navig.h"
-#include "main.h"
-
 extern volatile int dbg[10];
 
 
 // Temporarily here, relayed to motor controllers, for adjusting PID loops.
 volatile uint8_t mc_pid_imax = 30;
 volatile uint8_t mc_pid_feedfwd = 30;
-volatile uint8_t mc_pid_p = 50;
+volatile uint8_t mc_pid_p = 80;
 volatile uint8_t mc_pid_i = 50;
 volatile uint8_t mc_pid_d = 50;
 
@@ -88,7 +87,7 @@ int64_t xcel_short_integrals[3];
 int64_t xcel_dc_corrs[3];
 int64_t gyro_dc_corrs[3];
 
-// cur x,y are being integrated at higher than 1mm resolution; the result is copied in mm to cur_pos.
+// cur x,y are being integrated at huge (1mm/(2^32)) resolution; the result is copied in millimeters to cur_pos.
 static volatile int64_t cur_x;
 static volatile int64_t cur_y;
 volatile pos_t cur_pos;
@@ -113,7 +112,7 @@ int aim_fwd;
 int final_fwd_accel = 400;
 int fwd_accel = 350;
 int fwd_top_speed = 600000;
-int fwd_p = 1600; // 3100 gives rather strong deceleration; 1600 feels sluggish. 2200 oscillates sometimes.
+int fwd_p = 1600;
 
 volatile int manual_control;
 volatile int manual_common_speed;
@@ -183,8 +182,8 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
-#define MIN_SPEED_ANG 70000  // was 100000 for a long time
-#define MIN_SPEED_FWD 110000  // was 120000 for a long time
+#define MIN_SPEED_ANG 70000
+#define MIN_SPEED_FWD 110000
 
 #define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
 
@@ -421,13 +420,15 @@ void zero_coords()
 	reset_wheel_slip_det = 1;
 }
 
+// Gyro conversion multiplier
+// too big = lidar drifts ccw on screen. too small = lidar drifts cw on screen
 #ifdef RN1P4
 int64_t gyro_mul_neg = 763300LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
 
 #ifdef PULU1
-int64_t gyro_mul_neg = 767116LL<<16; // too big = lidar drifts ccw on screen. too small = lidar drifts cw on screen
+int64_t gyro_mul_neg = 767116LL<<16;
 int64_t gyro_mul_pos = 763300LL<<16;
 #endif
 
@@ -449,31 +450,37 @@ int64_t gyro_mul_pos = 763300LL<<16;
 
 int gyro_avgd = 0;
 
+/*
+Internal correction function stub: not being used right now. Includes code to self-calibrate gyro.
+This function was once used when we did lidar scan matching on MCU. Now there is no use, all corrections
+to coords are external from the Raspi.
+
 void correct_location_without_moving(pos_t corr)
 {
    dbg_teleportation_bug(106);
 
-//	cur_x += corr.x<<16;
-//	cur_y += corr.y<<16;
-//	cur_pos.ang += corr.ang;
-//	aim_angle += corr.ang;
+	cur_x += corr.x<<16;
+	cur_y += corr.y<<16;
+	cur_pos.ang += corr.ang;
+	aim_angle += corr.ang;
 
 	if(gyro_avgd < -300)
 	{
-//		gyro_mul_neg += corr.ang;
+		gyro_mul_neg += corr.ang;
 	}
 	else if(gyro_avgd > 300)
 	{
-//		gyro_mul_pos += corr.ang;
+		gyro_mul_pos += corr.ang;
 	}
 	else
 	{
-//		gyro_mul_neg += corr.ang>>1;
-//		gyro_mul_pos += corr.ang>>1;
+		gyro_mul_neg += corr.ang>>1;
+		gyro_mul_pos += corr.ang>>1;
 	}
    dbg_teleportation_bug(107);
 
 }
+*/
 
 void correct_location_without_moving_external(pos_t corr)
 {
@@ -669,7 +676,7 @@ void enable_collision_detection()
 void run_feedbacks(int sens_status)
 {
 	static int fwd_nonidle;
-	static int first = 100;
+	static int init_wait_cnt = 100;
 	int i;
 	static int cnt = 0;
 	static int prev_gyro_cnt = 0;
@@ -836,9 +843,9 @@ void run_feedbacks(int sens_status)
 	wheel_counts[0] = motcon_rx[A_MC_IDX].pos;
 	wheel_counts[1] = -1*motcon_rx[B_MC_IDX].pos;
 
-	if(first)
+	if(init_wait_cnt)
 	{
-		first--;
+		init_wait_cnt--;
 		prev_wheel_counts[0] = wheel_counts[0];
 		prev_wheel_counts[1] = wheel_counts[1];
 		prev_cur_ang = cur_pos.ang;
@@ -1032,9 +1039,6 @@ void run_feedbacks(int sens_status)
 			robot_moves();
 		}
 
-		dbg[6] = latest[0];
-		dbg[7] = latest[1];
-		dbg[8] = latest[2];
 
 		#define GYRO_DC_CORRS_VALID_LIM 1000
 		static int gyro_dc_corrs_valid;
@@ -1045,10 +1049,6 @@ void run_feedbacks(int sens_status)
 			gyro_dc_corrs[2] = ((latest[2]<<15) + 255*gyro_dc_corrs[2])>>8;
 			if(gyro_dc_corrs_valid < GYRO_DC_CORRS_VALID_LIM) gyro_dc_corrs_valid++;
 		}
-
-		dbg[9] = gyro_dc_corrs[2];
-
-		dbg[4] = gyro_dc_corrs_valid;
 
 		int gyro_dt = cnt - prev_gyro_cnt;
 		prev_gyro_cnt = cnt;
@@ -1202,9 +1202,9 @@ void run_feedbacks(int sens_status)
 	dbg[1] = motcon_rx[A_MC_IDX].cur_limit_mul;
 	dbg[2] = motcon_rx[A_MC_IDX].num_hard_limits;
 
-//	dbg[3] = motcon_rx[B_MC_IDX].current;
-//	dbg[4] = motcon_rx[B_MC_IDX].cur_limit_mul;
-//	dbg[5] = motcon_rx[B_MC_IDX].num_hard_limits;
+	dbg[3] = motcon_rx[B_MC_IDX].current;
+	dbg[4] = motcon_rx[B_MC_IDX].cur_limit_mul;
+	dbg[5] = motcon_rx[B_MC_IDX].num_hard_limits;
 
 
 	if(host_alive_watchdog)
@@ -1235,7 +1235,12 @@ volatile int dbg_teleportation_bug_report;
 volatile dbg_teleportation_bug_data_t dbg_teleportation_bug_data;
 volatile dbg_teleportation_extra_t dbg_teleportation_extra;
 
-
+/*
+	Okay, we have had an interesting bug where the robot coordinates corrupt after many hours of runtime.
+	It appears rarely enough that it's hard to debug. Not even 100% sure it happens on MCU. Anyway, this
+	function should help narrow it down. Just call this in convenient locations (marked with different ids),
+	and if the coords change abruptly, stack of the ids is stored and can be sent.
+*/
 void dbg_teleportation_bug(int id)
 {
 	int64_t x, y;

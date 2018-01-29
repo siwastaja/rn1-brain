@@ -14,12 +14,12 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
-*/
 
-/*
-Low-level navigation module.
+	Low-level navigation module.
 
-Collision avoidance, simple mechanical tasks.
+	Absolute XY destination handling (angle/distance readjustment)
+	Collision avoidance (speed adjustment, stopping)
+	Simple mechanical tasks: charger mounting
 
 */
 
@@ -79,8 +79,8 @@ static int xy_left;
 static int xy_id;
 
 
-static int back_mode_hommel = 0;
-static int speedlim_hommel = 50;
+static int back_mode_store = 0;
+static int speedlim_store = 50;
 
 void move_fsm()
 {
@@ -107,19 +107,6 @@ void move_fsm()
 		}
 		break;
 
-/*
-		case MOVE_WAIT_ANGULAR:
-		{
-			if(angle_almost_corrected())
-			{
-				straight_rel(cur_move.rel_fwd);
-				set_top_speed_max(speedlim_hommel);
-				allow_straight(1);
-				cur_move.state++;
-			}
-		}
-		break;
-*/
 		case MOVE_WAIT_STRAIGHT:
 		{
 			if(correct_xy && (cur_move.rel_fwd < -1*XY_DONT_AT_END_LEN || cur_move.rel_fwd > XY_DONT_AT_END_LEN))
@@ -168,7 +155,7 @@ void move_rel_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 	correct_xy = 0;
 	store_action_flags = store_stop_flags = 0;
 	avoidance_in_action = 0;
-	speedlim_hommel = speedlim;
+	speedlim_store = speedlim;
 	set_top_speed(speedlim);
 	cur_move.state = MOVE_START;
 	cur_move.abs_ang = cur_pos.ang + angle32;
@@ -197,7 +184,7 @@ void move_absa_rels_twostep(int angle32, int fwd /*in mm*/, int speedlim)
 	correct_xy = 0;
 	store_action_flags = store_stop_flags = 0;
 	avoidance_in_action = 0;
-	speedlim_hommel = speedlim;
+	speedlim_store = speedlim;
 	set_top_speed(speedlim);
 	cur_move.state = MOVE_START;
 	cur_move.abs_ang = angle32;
@@ -234,12 +221,12 @@ void xy_fsm()
 	int new_fwd = sqrt(dx*dx + dy*dy);
 	int new_ang = atan2(dy, dx)*(4294967296.0/(2.0*M_PI));
 
-	if(back_mode_hommel == 1) // Force backwards
+	if(back_mode_store == 1) // Force backwards
 	{
 		new_fwd *= -1;
 		new_ang = (uint32_t)new_ang + 2147483648UL;
 	}
-	else if(back_mode_hommel == 2) // Auto decision
+	else if(back_mode_store == 2) // Auto decision
 	{
 		int ang_err = cur_pos.ang - new_ang;
 		if((ang_err < -1610612736 || ang_err > 1610612736) && new_fwd < 1000) // 0.75*180deg
@@ -272,8 +259,8 @@ void move_xy_abs(int32_t x, int32_t y, int back_mode, int id, int speedlim)
 {
    dbg_teleportation_bug(209);
 
-	back_mode_hommel = back_mode;
-	speedlim_hommel = speedlim;
+	back_mode_store = back_mode;
+	speedlim_store = speedlim;
 	dest_x = x;
 	dest_y = y;
 
@@ -322,7 +309,7 @@ void navig_fsm1()
 	if(speed_incr_cnt > 250)
 	{
 		speed_incr_cnt = 0;
-		if(navi_speed < speedlim_hommel)
+		if(navi_speed < speedlim_store)
 		{
 			if(navi_speed < 10)
 				navi_speed+=1;
@@ -335,8 +322,8 @@ void navig_fsm1()
 			else
 				navi_speed+=5;
 		}
-		if(navi_speed > speedlim_hommel)
-			navi_speed = speedlim_hommel;
+		if(navi_speed > speedlim_store)
+			navi_speed = speedlim_store;
 	}
 
    dbg_teleportation_bug(212);
@@ -1427,7 +1414,7 @@ void stop_movement()
 
 void limit_speed(int speed)
 {
-	speedlim_hommel = speed;
-	set_top_speed_max(speedlim_hommel);
+	speedlim_store = speed;
+	set_top_speed_max(speedlim_store);
 }
 

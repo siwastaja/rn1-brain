@@ -14,6 +14,10 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	Non-volatile settings. Right now, I guess we don't have anything here yet, so
+	this is not tested too well.
+
 */
 
 #include <stdint.h>

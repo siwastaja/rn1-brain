@@ -14,6 +14,15 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+
+	Motor controller controller module :-).
+
+	Basically just relays the commands / data back through SPI (using DMA) between us and the slave
+	motor control MCUs (see rn1-motcon software project)
+
+	You can even remote update the firmware of those slave MCU's, the code for that is kinda
+	kludgy right now, sorry about that.
+
 */
 
 #include <stdint.h>
@@ -81,18 +90,6 @@ void init_motcons()
 
 	NVIC_SetPriority(DMA2_Stream0_IRQn, 0b0000); // Priority is the most urgent; keep the ISR short
 	NVIC_EnableIRQ(DMA2_Stream0_IRQn);
-/*	for(int i = 0; i < 4; i++)
-	{
-		motcon_tx[i].state = 1;
-		motcon_tx[i].speed = 2;
-		motcon_tx[i].cur_limit = 3;
-		motcon_tx[i].res3 = 4;
-		motcon_tx[i].res4 = 5;
-		motcon_tx[i].res5 = 6;
-		motcon_tx[i].res6 = 7;
-		motcon_tx[i].magic = 8;
-	}
-*/
 	motcons_initialized = 1;
 }
 
@@ -136,6 +133,10 @@ void motcon_fsm()
 
 }
 
+
+/*
+	Remote firmware update system:
+*/
 
 int mc_flasher_num;
 

@@ -14,6 +14,11 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
+	
+	hwtest provides alternative main(). compile with -DHWTEST to make this happen.
+	While not a completely automated production test suite, this allows you to test
+	the basic HW functionality.
+
 */
 
 #include <stdio.h>

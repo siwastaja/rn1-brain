@@ -669,12 +669,6 @@ int main()
 		random++;
 		cnt++;
 
-		// calc from xcel integral
-		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 10kHz timesteps, 1 unit = 0.059841 mm/s
-		// to mm/sec: / 16.72 = *245 / 4094.183
-//		int speedx = (xcel_long_integrals[0]/**245*/)>>12;
-//		int speedy = (xcel_long_integrals[1]/**245*/)>>12;
-
 		static uint8_t sync_packet[8] = {0xff,0xff,0xff,0xff,  0xff,0xff,0x12,0xab};
 		while(uart_busy()) random++;
 		send_uart(sync_packet, 0xaa, 8);
@@ -727,14 +721,6 @@ int main()
 			send_uart(&settings, 0xd1, sizeof(settings_t));
 		}
 
-/*
-		static int sensors_stabilized = 0;
-		if(!sensors_stabilized && seconds > 10)
-		{
-			sensors_stabilized = 1;
-			enable_collision_detection();
-		}
-*/
 	}
 
 }

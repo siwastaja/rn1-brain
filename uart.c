@@ -14,11 +14,32 @@
 
 	GNU General Public License version 2 is supplied in file LICENSING.
 
-*/
 
-/*
 
-All uart-related message management thingies.
+	Communicating with the main Raspberry Pi (rn1-host software project),
+	through UART.
+
+	All INCOMING DATA must follow this framing convention:
+	(1) START BYTE: always >127 (MSbit one). Specifies command / message type
+	(2) Payload: at least one byte - all payload bytes always <128 (MSbit zero)
+	This framing is super robust, but only allows 7-bit data.
+	(3) end-of-command delimiter: 255
+
+
+	Some outgoing data packets (old ones, not converted yet...) follow the same 7-bit
+	framing convention, but mostly:
+
+	OUTGOING DATA framing:
+	(1) Header byte: data type, any 0-255
+	(2) Size of the payload: two bytes, little endian
+	(3) Payload bytes (anything goes)
+	(4) CRC8 checksum over the payload
+
+	A specific SYNC packet allows the host to synchronize to the data stream:
+		Header:  0xaa
+		Length:  8
+		Payload: 0xff,0xff,0xff,0xff,  0xff,0xff,0x12,0xab
+	
 
 */
 
