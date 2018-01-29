@@ -87,6 +87,6 @@ syms:
 asm: $(ASMS)
 
 e: 
-	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar.h lidar.c lidar_corr.h lidar_corr.c uart.h uart.c &
+	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar.h lidar.c lidar_corr.h lidar_corr.c uart.h uart.c motcons.c motcons.h sonar.c sonar.h flash.h flash.c settings.h settings.c &
 s:
 	screen /dev/ttyUSB0 115200

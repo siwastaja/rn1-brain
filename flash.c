@@ -1,4 +1,23 @@
 /*
+	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
+
+	(c) 2017-2018 Pulu Robotics and other contributors
+
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License version 2, as 
+	published by the Free Software Foundation.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	GNU General Public License version 2 is supplied in file LICENSING.
+
+*/
+
+
+/*
 	flasher functions are designed to be located in a separate flash sector, which cannot be erased using these functions.
 */
 
@@ -200,3 +219,24 @@ void flasher()
 
 	}
 }
+
+void run_flasher()
+{
+	__disable_irq();
+
+	FLASH->ACR = 0UL<<10 /* Data cache disable */ | 0UL<<9 /* Instr cache disable */ | 1UL<<8 /*prefetch enable*/ | 3UL /*3 wait states*/;
+
+	/*
+		Reconfigure UART to 115200, no interrupts. Flasher uses polling, and we want to make sure it
+		starts from a clean table.
+	*/
+	USART3->CR1 = 0; // Disable
+	delay_us(10);
+	USART3->SR = 0; // Clear flags
+	USART3->BRR = 16UL<<4 | 4UL; // 115200
+	USART3->CR1 = 1UL<<13 /*USART enable*/ | 1UL<<3 /*TX ena*/ | 1UL<<2 /*RX ena*/;
+	delay_us(10);
+	flasher();
+	while(1);
+}
+

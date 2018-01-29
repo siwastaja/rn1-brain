@@ -1,4 +1,22 @@
 /*
+	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
+
+	(c) 2017-2018 Pulu Robotics and other contributors
+
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License version 2, as 
+	published by the Free Software Foundation.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	GNU General Public License version 2 is supplied in file LICENSING.
+
+*/
+
+/*
 	Lidar-based error correction
 	Tries to remove any (ang,x,y) error between two adjacent robot positions with two lidar scans.
 
@@ -18,7 +36,6 @@
 #include "uart.h"
 
 extern volatile int dbg[10];
-extern volatile int dbg_error_num;
 
 int latest_corr_ret;
 pos_t latest_corr;
