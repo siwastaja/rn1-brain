@@ -2,6 +2,7 @@
 	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
 
 	(c) 2017-2018 Pulu Robotics and other contributors
+	Maintainer: Antti Alhonen <antti.alhonen@iki.fi>
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License version 2, as 
@@ -101,12 +102,7 @@ int aim_angle = 0;
 int ang_top_speed = 100000;
 
 
-int ang_p = 
-#ifdef DELIVERY_APP
-600;
-#else
-800;
-#endif
+int ang_p = 900;
 
 int aim_fwd;
 int final_fwd_accel = 400;
@@ -185,7 +181,7 @@ int speed_limit_status()
 #define MIN_SPEED_ANG 70000
 #define MIN_SPEED_FWD 110000
 
-#define FWD_SPEED_MUL 8000 // from 12000 -> 8000 due to slow lidar
+#define FWD_SPEED_MUL 10000 // from 12000 -> 8000 due to slow lidar -> back to 10000
 
 #if defined(RN1P4) || defined(RN1P6) || defined(RN1P7) || defined(PROD1)
 	#ifdef DELIVERY_APP
@@ -698,7 +694,7 @@ void run_feedbacks(int sens_status)
 
    dbg_teleportation_bug(120);
 
-	if(robot_nonmoving_cnt > 1500)
+	if(robot_nonmoving_cnt > 600)
 		robot_nonmoving = 1;
 	else
 	{
@@ -766,14 +762,14 @@ void run_feedbacks(int sens_status)
 	{
 		if(angular_allowed && 
 			(    (fwd_nonidle>300 && (ang_err < (-ANG_0_5_DEG) || ang_err > ANG_0_5_DEG))
-			 || (                    (ang_err < (-3*ANG_1_DEG) || ang_err > 3*ANG_1_DEG)) ) )
+			 || (                    (ang_err < (-5*ANG_1_DEG) || ang_err > 5*ANG_1_DEG)) ) )
 		{
 			do_correct_angle = 1;
 		}
 
 		if(!angular_allowed || 
 			    (fwd_nonidle>300 && (ang_err > (-ANG_0_25_DEG)  && ang_err < (ANG_0_25_DEG)))
-			|| (                    (ang_err > (-2*ANG_1_DEG)   && ang_err < (2*ANG_1_DEG))) )
+			|| (                    (ang_err > (-3*ANG_1_DEG)   && ang_err < (3*ANG_1_DEG))) )
 		{
 			do_correct_angle = 0;
 		}
@@ -901,8 +897,8 @@ void run_feedbacks(int sens_status)
 	static int turn_wheels_gyro_err_integral = 0;
 	turn_wheels_gyro_err_integral += turn_wheels_gyro_err;
 
-	if(turn_wheels_gyro_err_integral < 0) turn_wheels_gyro_err_integral += 3*ANG_0_001_DEG;
-	else                                  turn_wheels_gyro_err_integral -= 3*ANG_0_001_DEG;
+	if(turn_wheels_gyro_err_integral < 0) turn_wheels_gyro_err_integral += 4*ANG_0_001_DEG;
+	else                                  turn_wheels_gyro_err_integral -= 4*ANG_0_001_DEG;
 
 	prev_cur_ang = cur_pos.ang;
 
@@ -913,12 +909,12 @@ void run_feedbacks(int sens_status)
 	}
 	else
 	{
-		if(turn_wheels_gyro_err_integral < -8*ANG_1_DEG)
+		if(turn_wheels_gyro_err_integral < -12*ANG_1_DEG)
 		{
 			collision_detected(do_correct_fwd?2:6, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
 		}
-		else if(turn_wheels_gyro_err_integral > 8*ANG_1_DEG)
+		else if(turn_wheels_gyro_err_integral > 12*ANG_1_DEG)
 		{
 			collision_detected(do_correct_fwd?3:5, 0, 0);
 			turn_wheels_gyro_err_integral = 0;
@@ -1024,13 +1020,13 @@ void run_feedbacks(int sens_status)
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
 
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X 700
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y 700
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z 300
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X 800
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y 800
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z 400
 
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X 300
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 300
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 100
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X 400
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 400
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 150
 
 		if(latest[0] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X ||
 		   latest[1] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y ||
@@ -1192,7 +1188,7 @@ void run_feedbacks(int sens_status)
 	if(b > MAX_SPEED) b=MAX_SPEED;
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
-	motcon_tx[A_MC_IDX].cur_limit = motcon_tx[B_MC_IDX].cur_limit = 22000;
+	motcon_tx[A_MC_IDX].cur_limit = motcon_tx[B_MC_IDX].cur_limit = 24000;
 
 	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
 	motcon_tx[A_MC_IDX].res4 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;

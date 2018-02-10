@@ -2,6 +2,7 @@
 	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
 
 	(c) 2017-2018 Pulu Robotics and other contributors
+	Maintainer: Antti Alhonen <antti.alhonen@iki.fi>
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License version 2, as 

@@ -18,7 +18,7 @@ PCBREV=PCB1B
 CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mthumb -mcpu=cortex-m3 -Wall -fstack-usage -Winline -D$(MODEL) -D$(PCBREV)
 
 #CFLAGS += -DHWTEST
-CFLAGS += -DSONARS_INSTALLED
+#CFLAGS += -DSONARS_INSTALLED
 CFLAGS += -DDELIVERY_APP
 #CFLAGS += -DOPTFLOW_INSTALLED
 

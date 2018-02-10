@@ -2,6 +2,7 @@
 	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
 
 	(c) 2017-2018 Pulu Robotics and other contributors
+	Maintainer: Antti Alhonen <antti.alhonen@iki.fi>
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License version 2, as 
@@ -240,12 +241,12 @@ typedef struct  // These angles in 1/16th degrees!
 #define N_IGNORE_AREAS 6
 const ignore_area_t ignore_areas[N_IGNORE_AREAS] =
 {
-	IGN(58.80 , 6.80+5.0),
-	IGN(121.20, 6.00+5.0),
-	IGN(151.17, 3.46+5.0),
-	IGN(208.83, 3.46+5.0),
+	IGN(58.80 , 6.80+6.0),
+	IGN(121.20, 6.00+6.0),
+	IGN(151.17, 3.46+6.0),
+	IGN(208.83, 3.46+6.0),
 	IGN(238.80, 6.00+10.0),  // cable hole
-	IGN(301.20, 6.80+5.0)
+	IGN(301.20, 6.80+6.0)
 };
 
 

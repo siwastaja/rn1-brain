@@ -2,6 +2,7 @@
 	PULUROBOT RN1-BRAIN RobotBoard main microcontroller firmware project
 
 	(c) 2017-2018 Pulu Robotics and other contributors
+	Maintainer: Antti Alhonen <antti.alhonen@iki.fi>
 
 	This program is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License version 2, as 
@@ -619,6 +620,7 @@ void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_nece
 					}
 					else if(stop_if_necessary) // gonna hit, stop as quickly as needed (try 30 mm before the obstacle)
 					{
+						MAXSPEED(10);
 						int amount = dist_to_hit-30;
 						if(amount < 0) amount = 0;
 						change_straight_rel((reverse?-1:1)*amount);
@@ -644,6 +646,7 @@ void micronavi_point_in_normal(int32_t x, int32_t y, int16_t z, int stop_if_nece
 					}
 					else if(stop_if_necessary) // gonna hit
 					{
+						MAXSPEED(10);
 						// Stop carefully, 5cm before the obstacle:
 						change_straight_rel((reverse?-1:1)*(dist_to_hit-50));
 						cur_move.state = 0;
