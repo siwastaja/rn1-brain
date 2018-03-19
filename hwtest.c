@@ -284,6 +284,7 @@ void hwtest_main()
 					if(subcmd == 'q')
 					{
 						motcon_tx[motcon].state = 0;
+						motcon_tx[motcon].cur_limit = 0;
 						motcon_fsm();
 						delay_ms(1);
 						motcon_fsm();
@@ -298,6 +299,7 @@ void hwtest_main()
 					else if(subcmd == 'w')
 					{
 						motcon_tx[motcon].state = 5;
+						motcon_tx[motcon].cur_limit = 6000;
 					}
 
 					cnt++;

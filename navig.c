@@ -345,7 +345,7 @@ void navig_fsm1()
 
 #if defined(PROD1)
 #define robot_ys_TIGHT (650)
-#define robot_xs_TIGHT (500)
+#define robot_xs_TIGHT (460)
 #define robot_origin_to_front_TIGHT (142)
 #define robot_origin_to_back_TIGHT  (650-142)
 #endif

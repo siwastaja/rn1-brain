@@ -56,6 +56,20 @@
 	#define FWD_LIGHT_ON()  do{GPIOD->BSRR = 1UL<<9;}while(0)
 	#define FWD_LIGHT_OFF() do{GPIOD->BSRR = 1UL<<(9+16);}while(0)
 
+	#define PO1_ON()  do{GPIOA->BSRR = 1UL<<(8);}while(0)
+	#define PO1_OFF() do{GPIOA->BSRR = 1UL<<(8+16);}while(0)
+	#define PO2_ON()  do{GPIOA->BSRR = 1UL<<(10);}while(0)
+	#define PO2_OFF() do{GPIOA->BSRR = 1UL<<(10+16);}while(0)
+	#define PO3_ON()  do{GPIOA->BSRR = 1UL<<(11);}while(0)
+	#define PO3_OFF() do{GPIOA->BSRR = 1UL<<(11+16);}while(0)
+	#define PO4_ON()  do{GPIOA->BSRR = 1UL<<(13);}while(0)
+	#define PO4_OFF() do{GPIOA->BSRR = 1UL<<(13+16);}while(0)
+	#define PO5_ON()  do{GPIOE->BSRR = 1UL<<(4);}while(0)
+	#define PO5_OFF() do{GPIOE->BSRR = 1UL<<(4+16);}while(0)
+	#define PO6_ON()  do{GPIOE->BSRR = 1UL<<(6);}while(0)
+	#define PO6_OFF() do{GPIOE->BSRR = 1UL<<(6+16);}while(0)
+
+
 	#define ADC_ITEMS 2
 	typedef struct  __attribute__ ((__packed__))
 	{

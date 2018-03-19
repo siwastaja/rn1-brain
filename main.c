@@ -665,6 +665,12 @@ int main()
 
 	lidar_on(2, 1);
 
+	#ifdef PULUTOF1
+
+	PO5_ON();
+
+	#endif
+
 	while(1)
 	{
 		random++;

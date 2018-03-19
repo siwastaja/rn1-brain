@@ -21,7 +21,7 @@ CFLAGS = -I. -Os -fno-common -ffunction-sections -ffreestanding -fno-builtin -mt
 #CFLAGS += -DSONARS_INSTALLED
 CFLAGS += -DDELIVERY_APP
 #CFLAGS += -DOPTFLOW_INSTALLED
-
+CFLAGS += -DPULUTOF1
 
 
 ASMFLAGS = -S -fverbose-asm
