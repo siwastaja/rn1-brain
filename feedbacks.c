@@ -1230,6 +1230,7 @@ volatile int dbg_teleportation_bug_report;
 
 volatile dbg_teleportation_bug_data_t dbg_teleportation_bug_data;
 volatile dbg_teleportation_extra_t dbg_teleportation_extra;
+volatile dbg_teleportation_extra_t dbg_teleportation_extra_to_send;
 
 /*
 	Okay, we have had an interesting bug where the robot coordinates corrupt after many hours of runtime.
@@ -1264,7 +1265,7 @@ void dbg_teleportation_bug(int id)
 			dbg_teleportation_bug_data.prev_y = prev_y;
 			dbg_teleportation_bug_data.cur_x = x;
 			dbg_teleportation_bug_data.cur_y = y;
-
+			memcpy(dbg_teleportation_extra_to_send, dbg_teleportation_extra, sizeof dbg_teleportation_extra_t);
 		}
 	}
 
