@@ -146,7 +146,7 @@ typedef struct __attribute__((packed))
 
 } dbg_teleportation_extra_t;
 
-extern volatile dbg_teleportation_extra_t dbg_teleportation_extra;
+extern volatile dbg_teleportation_extra_t dbg_teleportation_extra, dbg_teleportation_extra_to_send;
 
 
 extern volatile int dbg_teleportation_bug_report;

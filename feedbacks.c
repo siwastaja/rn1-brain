@@ -837,7 +837,7 @@ void run_feedbacks(int sens_status)
 
 	int16_t wheel_counts[2];
 	wheel_counts[0] = motcon_rx[A_MC_IDX].pos;
-	wheel_counts[1] = -1*motcon_rx[B_MC_IDX].pos;
+	wheel_counts[1] = motcon_rx[B_MC_IDX].pos;
 
 	if(init_wait_cnt)
 	{
@@ -847,7 +847,8 @@ void run_feedbacks(int sens_status)
 		prev_cur_ang = cur_pos.ang;
 		reset_wheel_slip_det = 1;
 	}
-	int wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
+	int16_t wheel_deltas[2] = {wheel_counts[0] - prev_wheel_counts[0], wheel_counts[1] - prev_wheel_counts[1]};
+	wheel_deltas[1] *= -1;
 
     dbg_teleportation_extra.wd0 = wheel_deltas[0];
     dbg_teleportation_extra.wd1 = wheel_deltas[1];
@@ -858,8 +859,12 @@ void run_feedbacks(int sens_status)
 	if(wheel_deltas[0] != 0 || wheel_deltas[1] != 0)
 		robot_moves();
 
+	int movement;
+	if(wheel_deltas[0] < -20 || wheel_deltas[0] > 20 || wheel_deltas[1] < -20 || wheel_deltas[1] > 20)
+		movement = 0;
+	else
 	// in 1mm/65536:
-	int movement = (wheel_deltas[0] + wheel_deltas[1])*
+		movement = ((int32_t)wheel_deltas[0] + (int32_t)wheel_deltas[1])*
 	#ifdef RN1P4
 		278528; 
 	#endif
@@ -1028,12 +1033,17 @@ void run_feedbacks(int sens_status)
 #define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 400
 #define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 150
 
+		static int gyro_thresh_cnt = 0;
+
 		if(latest[0] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X ||
 		   latest[1] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y ||
 		   latest[2] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z)
 		{
-			robot_moves();
+			if(++gyro_thresh_cnt > 1)
+				robot_moves();
 		}
+		else
+			gyro_thresh_cnt = 0;
 
 
 		#define GYRO_DC_CORRS_VALID_LIM 1000
@@ -1064,14 +1074,18 @@ void run_feedbacks(int sens_status)
 			gyro_short_integrals[i] += latest[i];
 		}
 
+		static int gyro_dccomp_thresh_cnt = 0;
 		if(gyro_dc_corrs_valid == GYRO_DC_CORRS_VALID_LIM)
 		{
 			if(latest[0] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X || latest[0] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X ||
 			   latest[1] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y ||
 			   latest[2] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z)
 			{
-				robot_moves();
+				if(++gyro_dccomp_thresh_cnt > 1)
+					robot_moves();
 			}
+			else
+				gyro_dccomp_thresh_cnt = 0;
 
 		}
 
@@ -1100,7 +1114,7 @@ void run_feedbacks(int sens_status)
 
    dbg_teleportation_bug(126);
 
-
+#ifdef USE_XCEL
 	if(sens_status & XCEL_NEW_DATA)
 	{
 		int latest[3] = 
@@ -1156,6 +1170,7 @@ void run_feedbacks(int sens_status)
 
 		//1 xcel unit = 0.061 mg = 0.59841 mm/s^2; integrated at 1kHz timesteps, 1 unit = 0.59841 mm/s
 	}
+#endif
 
 	int common_speed;
 	if(manual_control)
@@ -1265,7 +1280,7 @@ void dbg_teleportation_bug(int id)
 			dbg_teleportation_bug_data.prev_y = prev_y;
 			dbg_teleportation_bug_data.cur_x = x;
 			dbg_teleportation_bug_data.cur_y = y;
-			memcpy(dbg_teleportation_extra_to_send, dbg_teleportation_extra, sizeof dbg_teleportation_extra_t);
+//			memcpy(dbg_teleportation_extra_to_send, dbg_teleportation_extra, sizeof dbg_teleportation_extra_t);
 		}
 	}
 

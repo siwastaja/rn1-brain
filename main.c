@@ -369,7 +369,7 @@ void uart_send_dbg_teleportation_bug()
 	{
 		send_uart_volatile(&dbg_teleportation_bug_data, 0xEE, sizeof(dbg_teleportation_bug_data_t));
 		while(uart_busy());
-		send_uart_volatile(&dbg_teleportation_extra_to_send, 0xEF, sizeof(dbg_teleportation_extra_t));
+		send_uart_volatile(&dbg_teleportation_extra, 0xEF, sizeof(dbg_teleportation_extra_t));
 		while(uart_busy());
 		dbg_teleportation_bug_report = 0;
 	}
