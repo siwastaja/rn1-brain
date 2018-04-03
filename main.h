@@ -108,6 +108,10 @@ extern volatile int leds_motion_blink_left;
 extern volatile int leds_motion_blink_right;
 extern volatile int leds_motion_forward;
 
+extern volatile int bat_emerg_on;
+extern volatile int bat_emerg_action;
+extern volatile int robot_is_in_charger;
+
 
 
 #endif

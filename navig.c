@@ -938,10 +938,10 @@ int chafind_total_front_accum, chafind_total_front_accum_cnt;
 
 #define CHAFIND_FIRST_DIST 520
 #define CHAFIND_MIDDLE_BAR_DEPTH 80
-#define CHAFIND_MIDDLE_BAR_WIDTH 40
+#define CHAFIND_MIDDLE_BAR_WIDTH 70
 #define CHAFIND_FIRST_DIST_TOLERANCE 50
-#define CHAFIND_LOOK_SIDEWAY_MAX 180
-#define CHAFIND_LOOK_SIDEWAY_MIN 120
+#define CHAFIND_LOOK_SIDEWAY_MAX 200
+#define CHAFIND_LOOK_SIDEWAY_MIN 130
 #define CHAFIND_SIDE (CHAFIND_LOOK_SIDEWAY_MAX+CHAFIND_LOOK_SIDEWAY_MIN)  //  /2 * 2  // y dist between the two side points looked at
 
 #define CHAFIND_PASS1_ACCEPT_ANGLE (2*ANG_1_DEG) // was 1 deg
@@ -1136,7 +1136,7 @@ void navig_fsm2_for_charger()
 					int movement = chafind_nearest_hit_x - CHAFIND_FIRST_DIST;
 					if(movement < -CHAFIND_FIRST_DIST_TOLERANCE || movement > CHAFIND_FIRST_DIST_TOLERANCE)
 					{
-						set_top_speed_max(10);
+						set_top_speed_max(12);
 						straight_rel(movement);
 						chafind_results.first_movement_needed = movement;
 						chafind_state = CHAFIND_WAIT_FWD1;
@@ -1199,7 +1199,7 @@ void navig_fsm2_for_charger()
 
 					dbg[4] = 11111;
 					dbg[5] = dbg[6] = 0;
-					set_top_speed_max(5);
+					set_top_speed_max(12);
 
 					int dist2 = chafind_total_front_accum/chafind_total_front_accum_cnt;
 					straight_rel(dist2-robot_origin_to_front_TIGHT-270);
@@ -1207,7 +1207,7 @@ void navig_fsm2_for_charger()
 				}
 				else
 				{
-					set_top_speed_max(6);
+					set_top_speed_max(15);
 
 					allow_angular(1);
 					auto_disallow(0);
@@ -1316,11 +1316,11 @@ void navig_fsm2_for_charger()
 				Average enough samples directly from the front, to measure the distance to go. Go a bit further than that.
 				This prevents excessive travel in case the charger is unpowered, or we are at the wrong place.
 			*/
-			if(chafind_total_front_accum_cnt > 300)
+			if(chafind_total_front_accum_cnt > 200)
 			{
 				int dist = chafind_total_front_accum/chafind_total_front_accum_cnt;
 				chafind_results.dist_before_push = dist;
-				set_top_speed_max(0);
+				set_top_speed_max(10);
 				straight_rel(dist-robot_origin_to_front_TIGHT-CHAFIND_PUSH_TUNE);
 				chafind_state = CHAFIND_WAIT_PUSH;
 			}
@@ -1384,6 +1384,16 @@ void stop_navig_fsms()
 
 void navig_fsm2()
 {
+	if(bat_emerg_action)
+	{
+		stop_navig_fsms();
+		stop_movement();
+		host_alive_long();
+		set_top_speed(15);
+		straight_rel(-250);
+		bat_emerg_action = 0;
+		return;
+	}
 
 	if(daiju_meininki)
 	{

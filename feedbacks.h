@@ -30,6 +30,7 @@ void move_arc_manual(int comm, int ang);
 void compass_fsm(int cmd);
 void sync_to_compass();
 void host_alive();
+void host_alive_long();
 void host_dead();
 void rotate_rel(int angle);
 void rotate_abs(int angle);

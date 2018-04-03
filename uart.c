@@ -106,6 +106,9 @@ static void handle_maintenance_msg()
 	{
 		case 0x52:
 		host_dead();
+		LEFT_BLINKER_ON();
+		RIGHT_BLINKER_ON();
+		FWD_LIGHT_OFF();
 		run_flasher();
 		break;
 
@@ -144,7 +147,7 @@ void handle_uart_message()
 	if(!do_handle_message)
 		return;
 
-	if(ignore_cmds && process_rx_buf[0] != 0xfe)
+	if((ignore_cmds || bat_emerg_on) && process_rx_buf[0] != 0xfe)
 	{
 		return;
 	}

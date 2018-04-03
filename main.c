@@ -115,6 +115,7 @@ volatile int us100;
 extern volatile int do_compass_round;
 
 void power_and_led_fsm();
+void pulutof_fsm();
 
 void timebase_10k_handler()
 {
@@ -126,7 +127,7 @@ void timebase_10k_handler()
 
 	TIM6->SR = 0; // Clear interrupt flag
 
-	int starttime = TIM6->CNT;
+//	int starttime = TIM6->CNT;
 
 	// Things expecting 10kHz calls:
 	gyro_xcel_compass_status |= gyro_xcel_compass_fsm();
@@ -195,6 +196,9 @@ void timebase_10k_handler()
 	else if(cnt_10k == 7)
 	{
 		power_and_led_fsm();
+		#ifdef PULUTOF1
+			pulutof_fsm();
+		#endif
 	}
 	else if(cnt_10k == 8)
 	{
@@ -210,12 +214,19 @@ void timebase_10k_handler()
 	else if(cnt_10k == 9)
 	{
 		motcon_fsm();
+		static int adc_decim = 0;
+		if(++adc_decim >= 10)
+		{
+			ADC1->CR2 |= 1UL<<30; // Do ADC seq at 100 Hz
+			adc_decim = 0;
+		}
+
 	}
 
 
 	cnt_10k++;
 	if(cnt_10k > 9) cnt_10k = 0;
-	int tooktime = TIM6->CNT - starttime;
+//	int tooktime = TIM6->CNT - starttime;
 //	if(tooktime > dbg[0])
 //	{
 //		dbg[0] = tooktime;
@@ -239,19 +250,21 @@ volatile adc_data_t adc_data[ADC_SAMPLES];
 
 int get_bat_v() // in mv
 {
-	return (((adc_data[0].bat_v + adc_data[1].bat_v))*70920 / 22200);
+	// theoretical: 0.5*1/4096*3300*(470+75)/75 = 2.927246
+	return (((int)(adc_data[0].bat_v + adc_data[1].bat_v))*29272 / 10000);
 }
 
 int get_cha_v() // in mv
 {
-	return (((adc_data[0].cha_v + adc_data[1].cha_v))*97466 / 22200);
+	// theoretical: 0.5*1/4096*3300*(470+52.3)/52.3 = 4.02292867
+	return (((adc_data[0].cha_v + adc_data[1].cha_v))*40229 / 10000);
 }
 
 
 int get_bat_percentage()
 {
 	int bat_v = get_bat_v();
-	int bat_percentage = (100*(bat_v-16500))/(21000-16500);
+	int bat_percentage = (100*(bat_v-16000))/(21000-16000);
 	if(bat_percentage < 0) bat_percentage = 0;
 	if(bat_percentage > 127) bat_percentage = 127;
 	return bat_percentage;
@@ -262,15 +275,80 @@ volatile int leds_motion_blink_left;
 volatile int leds_motion_blink_right;
 volatile int leds_motion_forward;
 
+volatile int bat_emerg_on;
+volatile int bat_emerg_action;
+volatile int robot_is_in_charger;
+
+#define BAT_EMERG_LVL 21500 //21500 = 4.30V/cell
+
 void power_and_led_fsm()
 {
 	static int bat_warn_cnt = 0;
+	static int bat_emerg_cnt = 0;
+	static int bat_emerg_rereaction_cnt = 0;
 	static int bat_shdn_cnt = 0;
 	static int leds_blink_low_bat = 0;
 
+	int bat_v = get_bat_v();
+	int cha_v = get_cha_v();
 	int bat_perc = get_bat_percentage();
 
-	if(bat_perc < 24)
+	static int led_cnt = 0;
+	if(++led_cnt >= 1000) led_cnt = 0;
+
+	if(cha_v > 20000)
+		robot_is_in_charger = 1;
+	else
+		robot_is_in_charger = 0;
+
+
+
+	if(bat_emerg_on)
+	{
+		FWD_LIGHT_OFF();
+		if(led_cnt == 0 || led_cnt == 200 || led_cnt == 400 || led_cnt == 600 || led_cnt == 800)
+		{
+			LEFT_BLINKER_ON();
+			RIGHT_BLINKER_ON();
+		}
+		else if(led_cnt == 100 || led_cnt == 300 || led_cnt == 500 || led_cnt == 700 || led_cnt == 900)
+		{
+			LEFT_BLINKER_OFF();
+			RIGHT_BLINKER_OFF();
+		}
+
+		if(bat_v > BAT_EMERG_LVL)
+		{
+			// condition didn't clear
+			bat_emerg_rereaction_cnt++;
+			if(bat_emerg_rereaction_cnt > 30000)
+			{
+				bat_emerg_rereaction_cnt = 0;
+				bat_emerg_action = 1;
+				robot_is_in_charger = 0; // try with full power - at least the input fuse blows!
+			}
+		}
+
+		return;
+	}
+
+	if(bat_v > BAT_EMERG_LVL) 
+	{
+		bat_emerg_cnt++;
+
+		if(bat_emerg_cnt > 500)
+		{
+			bat_emerg_on = 1;
+			bat_emerg_action = 1;
+		}
+	}
+	else
+	{
+		bat_emerg_cnt = 0;
+	}
+
+
+	if(bat_perc < 30)
 	{
 		bat_warn_cnt++;
 
@@ -298,13 +376,6 @@ void power_and_led_fsm()
 	{
 		bat_shdn_cnt = 0;
 	}
-
-
-
-	#ifdef PCB1B
-
-	static int led_cnt = 0;
-	if(++led_cnt >= 1000) led_cnt = 0;
 	
 	if(leds_blink_low_bat)
 	{
@@ -351,7 +422,6 @@ void power_and_led_fsm()
 		FWD_LIGHT_OFF();
 	}
 
-	#endif
 }
 
 volatile uint32_t random = 123;
@@ -377,8 +447,88 @@ void uart_send_dbg_teleportation_bug()
 
 volatile int send_settings;
 
+#ifdef PULUTOF1
+
+
+#define PULUTOF_CS1() {GPIOB->BSRR = 1UL<<12;}
+#define PULUTOF_CS0() {GPIOB->BSRR = 1UL<<(12+16);}
+
+typedef struct __attribute__((packed)) __attribute__((aligned(4)))
+{
+	uint32_t header;
+
+	pos_t robot_pos;
+
+} robot_to_pulutof_t;
+
+typedef struct __attribute__((packed)) __attribute__((aligned(4)))
+{
+	uint32_t header;
+
+	pos_t dummy;
+
+} pulutof_to_robot_t;
+
+volatile robot_to_pulutof_t robot_to_pulutof __attribute__((aligned(4))) = {0x01020304, {0x05060708,0x090a0b0c,0x0d0e0f01}};
+volatile pulutof_to_robot_t pulutof_to_robot __attribute__((aligned(4)));
+
+volatile int pulutof_init_ok = 0;
+void init_pulutof()
+{
+	PULUTOF_CS1();
+
+	// SPI2 @ APB1 = 30 MHz
+
+	// DMA1 STREAM 3 ch0 = PULUTOF RX
+	DMA1_Stream3->PAR = (uint32_t)&(SPI2->DR);
+	DMA1_Stream3->M0AR = (uint32_t)(&pulutof_to_robot);
+	DMA1_Stream3->NDTR = sizeof pulutof_to_robot;
+	DMA1_Stream3->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 0UL<<8 /*CIRCULAR off*/;
+	// DMA1 STREAM 4 ch0 = PULUTOF TX
+	DMA1_Stream4->PAR = (uint32_t)&(SPI2->DR);
+	DMA1_Stream4->M0AR = (uint32_t)(&robot_to_pulutof);
+	DMA1_Stream4->NDTR = sizeof robot_to_pulutof;
+	DMA1_Stream4->CR = 0UL<<25 /*Channel*/ | 0b01UL<<16 /*med prio*/ | 0b00UL<<13 /*8-bit mem*/ | 0b00UL<<11 /*8-bit periph*/ |
+	                   1UL<<10 /*mem increment*/ | 0b01<<6 /*mem->periph*/ | 0UL<<8 /*CIRCULAR off*/;
+
+	SPI2->CR1 = 0UL<<11 /*8-bit frame*/ | 1UL<<9 /*Software slave management*/ | 1UL<<8 /*SSI bit must be high*/ |
+		0b001UL<<3 /*div 4 = 7.5 MHz*/ | 1UL<<2 /*Master*/;
+	SPI2->CR2 = 1UL<<1 /* TX DMA enable */ | 0UL<<0 /* RX DMA enable OFF*/ | 0UL<<2 /* SSOE OFF*/;
+
+
+	SPI2->CR1 |= 1UL<<6; // Enable SPI
+
+	delay_ms(10);
+	pulutof_init_ok = 1;
+}
+
+// Run this at 1kHz!
+void pulutof_fsm()
+{
+	if(!pulutof_init_ok) return;
+	static int cycle = 0;
+	if(cycle == 0)
+	{	
+		PULUTOF_CS0();
+		robot_to_pulutof.robot_pos = cur_pos;
+		DMA1->LIFCR = 0b111101UL<<22; DMA1_Stream3->CR |= 1UL; // Enable RX DMA
+		DMA1->HIFCR = 0b111101UL; DMA1_Stream4->CR |= 1UL; // Enable TX DMA
+		cycle = 1;
+	}
+	else
+	{
+		PULUTOF_CS1();
+		cycle = 0;
+	}
+}
+#endif
+
+
 int main()
 {
+
+	__disable_irq();
 	/*
 	XTAL = HSE = 8 MHz
 	PLLCLK = SYSCLK = 120 MHz (max)
@@ -426,14 +576,13 @@ int main()
 
 	delay_us(10);
 
+#ifdef PCB1A
+
 	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
 	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
 	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
 	                 4UL<<0 | 4UL<<4 /*I2C1*/;
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
-
-
-#ifdef PCB1A
 
 	             // Mode:
 		     // 00 = General Purpose In
@@ -453,7 +602,7 @@ int main()
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOB->MODER   = 0b10101001000001011010000000000000;
-	GPIOB->OSPEEDR = 0b01000101000001010000010001000000;
+	GPIOB->OSPEEDR = 0b10001001000001010000010001000000;
 	GPIOB->PUPDR   = 0b00000000010100000000000000000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -472,9 +621,14 @@ int main()
 
 #ifdef PCB1B
 
+#ifdef PULUTOF1
+	PULUTOF_CS1();
+#endif
+
 	GPIOA->AFR[0] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI1*/;
 	GPIOB->AFR[0] = 7UL<<24 | 7UL<<28 /*USART1*/;
 	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 /*SPI2*/ |
+//	GPIOB->AFR[1] = 5UL<<20 | 5UL<<24 | 5UL<<28 | 5UL<<16 /*SPI2*/ |
 	                 4UL<<0 | 4UL<<4 /*I2C1*/;
 	GPIOC->AFR[1] = 7UL<<8 | 7UL<<12; // USART3 alternate functions.
 
@@ -497,7 +651,7 @@ int main()
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
 	GPIOB->MODER   = 0b10101001000101011010010100000001;
-	GPIOB->OSPEEDR = 0b01000101000001010000010000000000;
+	GPIOB->OSPEEDR = 0b10001001000001010000010000000000;
 	GPIOB->PUPDR   = 0b00000000000000000000000001000000;
 	             //    15141312111009080706050403020100
 	             //     | | | | | | | | | | | | | | | |
@@ -595,7 +749,7 @@ int main()
 
 	ADC->CCR = 1UL<<23 /* temp sensor and Vref enabled */ | 0b00<<16 /*prescaler 2 -> 30MHz*/;
 	ADC1->CR1 = 1UL<<8 /* SCAN mode */;
-	ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 1UL<<1 /*continuous*/;
+	ADC1->CR2 = 1UL<<9 /* Magical DDS bit to actually enable DMA requests */ | 1UL<<8 /*DMA ena*/ | 0UL<<1 /*continuous OFF*/;
 	ADC1->SQR1 = (ADC_ITEMS-1)<<20 /* sequence length */;
 
 	#ifdef PCB1A
@@ -623,7 +777,7 @@ int main()
 
 	delay_ms(1);
 
-	ADC1->CR2 |= 1UL<<30; // Start converting.
+//	ADC1->CR2 |= 1UL<<30; // Start converting.
 
 
 
@@ -649,8 +803,14 @@ int main()
 
 	#endif
 
+	#ifdef PULUTOF1
 
-	__enable_irq();
+	PO5_ON();
+	init_pulutof();
+
+	delay_ms(1000);
+
+	#endif
 
 
 	delay_ms(100);
@@ -659,17 +819,14 @@ int main()
 
 	CHARGER_ENA();
 
+	__enable_irq();
+
 	int cnt = 0;
 
 	init_lidar();
 
 	lidar_on(2, 1);
 
-	#ifdef PULUTOF1
-
-	PO5_ON();
-
-	#endif
 
 	while(1)
 	{

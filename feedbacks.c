@@ -68,7 +68,7 @@ extern volatile int dbg[10];
 volatile uint8_t mc_pid_imax = 30;
 volatile uint8_t mc_pid_feedfwd = 30;
 volatile uint8_t mc_pid_p = 80;
-volatile uint8_t mc_pid_i = 50;
+volatile uint8_t mc_pid_i = 80;
 volatile uint8_t mc_pid_d = 50;
 
 
@@ -134,6 +134,11 @@ void host_alive()
 	host_alive_watchdog = 5000;
 }
 
+void host_alive_long()
+{
+	host_alive_watchdog = 10000;
+}
+
 void host_dead()
 {
 	host_alive_watchdog = 0;
@@ -178,8 +183,8 @@ int speed_limit_status()
 	return speed_limit_lowered;
 }
 
-#define MIN_SPEED_ANG 70000
-#define MIN_SPEED_FWD 110000
+#define MIN_SPEED_ANG 60000  // has been 70000 very long
+#define MIN_SPEED_FWD 60000 // has been 110000 very long
 
 #define FWD_SPEED_MUL 10000 // from 12000 -> 8000 due to slow lidar -> back to 10000
 
@@ -494,7 +499,28 @@ void correct_location_without_moving_external(pos_t corr)
 	cur_y += corr.y<<16;
 	cur_pos.ang += corr.ang;
 	aim_angle += corr.ang;
+
+	if(corr.ang < 0)
+	{
+		gyro_mul_neg -= corr.ang>>1;
+		gyro_mul_pos += corr.ang>>2;
+	}
+	else
+	{
+		gyro_mul_neg -= corr.ang>>2;
+		gyro_mul_pos += corr.ang>>1;
+	}
+
 	__enable_irq();
+
+//	dbg[7] = (int32_t)(gyro_mul_neg>>16);
+//	dbg[8] = (int32_t)(gyro_mul_pos>>16);
+
+	static int avg_corr_flt;
+
+	avg_corr_flt = (corr.ang + 31*avg_corr_flt)>>5; // moving average for debug purposes
+//	dbg[9]  = avg_corr_flt/ANG_0_01_DEG;
+
    dbg_teleportation_bug(110);
 
 }
@@ -1025,13 +1051,13 @@ void run_feedbacks(int sens_status)
 			// todo: check what needs to be done with x and y, currently not used for anything except motion detection thresholding
 		#endif
 
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X 800
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y 800
-#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z 400
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_X 3000
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y 3000
+#define GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z 800
 
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X 400
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 400
-#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 150
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_X 2000
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y 2000
+#define GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z 400
 
 		static int gyro_thresh_cnt = 0;
 
@@ -1039,8 +1065,11 @@ void run_feedbacks(int sens_status)
 		   latest[1] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Y ||
 		   latest[2] < -GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_RAW_MOVEMENT_DETECT_THRESHOLD_Z)
 		{
-			if(++gyro_thresh_cnt > 1)
+			if(++gyro_thresh_cnt > 2)
+			{
 				robot_moves();
+				dbg[6]++;
+			}
 		}
 		else
 			gyro_thresh_cnt = 0;
@@ -1066,6 +1095,45 @@ void run_feedbacks(int sens_status)
 			gyro_timing_issues++;
 		}
 
+
+		static int dbgcnt = 0;
+		static int dbgmax = -999999;
+		static int dbgmin = 999999;
+		static int dbgavg = 0;
+		static int dbgavg_cnt = 0;
+
+		/*
+			Some gyro results
+
+			Steady state, room temp
+
+				001a85	jkl
+
+			min	-304	-70
+			max	-27	219
+			avg	-160	78
+
+		*/
+
+		dbg[0] = gyro_timing_issues;
+		if(++dbgcnt == 200*5) // 5 seconds
+		{
+			dbgcnt = 0;
+			dbg[1] = dbgmin;  
+			dbg[2] = dbgmax;                                    
+			dbg[3] = dbgavg_cnt;
+			dbg[4] = dbgavg/dbgavg_cnt;
+			dbg[5] = gyro_dc_corrs[0]>>15;
+
+			dbgmax = -999999;
+			dbgmin = 999999;
+			dbgavg = 0; dbgavg_cnt = 0;
+		}
+
+		if(latest[0] > dbgmax) dbgmax = latest[0];
+		if(latest[0] < dbgmin) dbgmin = latest[0];
+		dbgavg += latest[0]; dbgavg_cnt++;
+
 		for(i=0; i<3; i++)
 		{
 			latest[i] -= gyro_dc_corrs[i]>>15;
@@ -1074,6 +1142,7 @@ void run_feedbacks(int sens_status)
 			gyro_short_integrals[i] += latest[i];
 		}
 
+
 		static int gyro_dccomp_thresh_cnt = 0;
 		if(gyro_dc_corrs_valid == GYRO_DC_CORRS_VALID_LIM)
 		{
@@ -1081,13 +1150,18 @@ void run_feedbacks(int sens_status)
 			   latest[1] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y || latest[1] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Y ||
 			   latest[2] < -GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z || latest[2] > GYRO_DCCOMP_MOVEMENT_DETECT_THRESHOLD_Z)
 			{
-				if(++gyro_dccomp_thresh_cnt > 1)
+				if(++gyro_dccomp_thresh_cnt > 2)
+				{
 					robot_moves();
+					dbg[7]++;
+				}
 			}
 			else
 				gyro_dccomp_thresh_cnt = 0;
 
 		}
+
+
 
 		//1 gyro unit = 7.8125 mdeg/s; integrated at 1kHz timesteps, 1 unit = 7.8125 udeg
 		// Correct ratio = (7.8125*10^-6)/(360/(2^32)) = 93.2067555555589653990
@@ -1096,7 +1170,9 @@ void run_feedbacks(int sens_status)
 
 //		int gyro_blank = robot_nonmoving?(40*5):(0); // Prevent slow gyro drifting during no operation
 
-		int gyro_blank = robot_nonmoving?(100*5):(50*5); // Prevent slow gyro drifting during no operation
+//		int gyro_blank = robot_nonmoving?(100*5):(50*5); // Prevent slow gyro drifting during no operation
+
+		int gyro_blank = robot_nonmoving?(800*5):(200*5); // Prevent slow gyro drifting during no operation
 
 		gyro_avgd = ((latest[2]<<8) + 7*gyro_avgd)>>3;
 
@@ -1203,20 +1279,32 @@ void run_feedbacks(int sens_status)
 	if(b > MAX_SPEED) b=MAX_SPEED;
 	else if(b < -MAX_SPEED) b=-MAX_SPEED;
 
-	motcon_tx[A_MC_IDX].cur_limit = motcon_tx[B_MC_IDX].cur_limit = 24000;
+	if(robot_is_in_charger)
+	{
+		motcon_tx[A_MC_IDX].cur_limit = motcon_tx[B_MC_IDX].cur_limit = 4000; // as long as the speed is low, 4A motor current times 2 shouldn't blow the 3A power supply input fuse. (5000 was tested)
 
-	motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
-	motcon_tx[A_MC_IDX].res4 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
-	motcon_tx[A_MC_IDX].res5 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
+		motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
+		motcon_tx[A_MC_IDX].res4 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)(mc_pid_p>>1)<<8) | (uint16_t)mc_pid_i; // lower P for more careful reaction
+		motcon_tx[A_MC_IDX].res5 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
+	}
+	else
+	{
+		motcon_tx[A_MC_IDX].cur_limit = motcon_tx[B_MC_IDX].cur_limit = 24000;
 
-	dbg[0] = motcon_rx[A_MC_IDX].current;
-	dbg[1] = motcon_rx[A_MC_IDX].cur_limit_mul;
-	dbg[2] = motcon_rx[A_MC_IDX].num_hard_limits;
+		motcon_tx[A_MC_IDX].res3 = motcon_tx[B_MC_IDX].res3 = ((uint16_t)mc_pid_imax<<8) | (uint16_t)mc_pid_feedfwd;
+		motcon_tx[A_MC_IDX].res4 = motcon_tx[B_MC_IDX].res4 = ((uint16_t)mc_pid_p<<8) | (uint16_t)mc_pid_i;
+		motcon_tx[A_MC_IDX].res5 = motcon_tx[B_MC_IDX].res5 = ((uint16_t)mc_pid_d<<8);
+	}
 
-	dbg[3] = motcon_rx[B_MC_IDX].current;
-	dbg[4] = motcon_rx[B_MC_IDX].cur_limit_mul;
-	dbg[5] = motcon_rx[B_MC_IDX].num_hard_limits;
+//	dbg[0] = motcon_rx[A_MC_IDX].current;
+//	dbg[1] = motcon_rx[A_MC_IDX].cur_limit_mul;
+//	dbg[2] = motcon_rx[A_MC_IDX].num_hard_limits;
 
+//	dbg[3] = motcon_rx[B_MC_IDX].current;
+//	dbg[4] = motcon_rx[B_MC_IDX].cur_limit_mul;
+//	dbg[5] = motcon_rx[B_MC_IDX].num_hard_limits;
+
+//	dbg[5] = motcon_tx[A_MC_IDX].cur_limit;
 
 	if(host_alive_watchdog)
 	{
