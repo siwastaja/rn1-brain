@@ -5,8 +5,6 @@ LD = arm-none-eabi-gcc
 SIZE = arm-none-eabi-size
 OBJCOPY = arm-none-eabi-objcopy
 
-
-
 #MODEL=RN1P4
 #MODEL=RN1P7
 #MODEL=RN1P6
@@ -49,28 +47,10 @@ flash: main.bin
 	stm32sprog -b 115200 -vw main.bin
 
 f: main.bin
-	scp main.bin hrst@$(robot):~/rn1-tools/
-
-ff: main.bin
-	scp main_full.bin hrst@$(robot):~/rn1-tools/main.bin
+	scp main.bin pulu@$(robot):~/rn1-tools/
 
 f_local: main.bin
 	../rn1-tools/prog /dev/ttyUSB0 ./main.bin h
-
-f_proto4: main.bin
-	scp main.bin hrst@proto4:~/rn1-tools/
-
-f_helsinki1: main.bin
-	scp main.bin hrst@helsinki1:~/rn1-tools/
-
-f_proto5: main.bin
-	scp main.bin hrst@proto5:~/rn1-tools/
-
-f_proto6: main.bin
-	scp main.bin hrst@proto6:~/rn1-tools/
-
-f_pulu1: main.bin
-	scp main.bin hrst@pulu1:~/rn1-tools/
 
 stack:
 	cat *.su
@@ -88,5 +68,3 @@ asm: $(ASMS)
 
 e: 
 	gedit --new-window main.c feedbacks.h feedbacks.c navig.h navig.c lidar.h lidar.c lidar_corr.h lidar_corr.c uart.h uart.c motcons.c motcons.h sonar.c sonar.h flash.h flash.c settings.h settings.c &
-s:
-	screen /dev/ttyUSB0 115200
